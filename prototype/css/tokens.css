@@ -1,0 +1,119 @@
+/* Design tokens — taken from EMR-V.2 `src/index.css` (the "instrument"
+   direction): a white page, structure from hairlines and space, one brand
+   blue that only ever means "this responds", clinical status as its own
+   family. House rules carried over: no letter-spacing on text, nothing
+   below 13px, weights no heavier than semibold. */
+
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/archivo-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/archivo-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/archivo-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/archivo-latin-700-normal.woff2') format('woff2');
+}
+
+:root {
+  --font-sans: 'Archivo', 'Segoe UI', Arial, sans-serif;
+
+  /* Surfaces */
+  --canvas: #ffffff;
+  --page: #ffffff;
+  --paper-2: #f7f8fb;
+
+  /* Ink ladder */
+  --ink: #12151f;
+  --n50: #f7f8fb;
+  --n100: #eef0f5;
+  --n200: #dce0e8;
+  --n300: #c2c8d3;
+  --n400: #8891a0;
+  --n500: #6b7484;
+  --n600: #565f70;
+  --n700: #3f4756;
+  --n800: #2c313d;
+
+  /* Action — one colour, only on something you can press */
+  --brand: #0072a2;
+  --brand-hover: #005a80;
+  --brand-deep: #005a80;
+  --brand-wash: #e6f1f6;
+  --brand-line: #a8cfe0;
+
+  /* Composition ramp — one hue, five steps (charts) */
+  --ramp-1: #0072a2;
+  --ramp-2: #2e93bd;
+  --ramp-3: #63b3d3;
+  --ramp-4: #9bd0e6;
+  --ramp-5: #cbe6f2;
+  --ramp-ink: #0b3446;
+
+  /* Clinical / status family */
+  --critical: #b3261e;
+  --critical-bg: #fbe6e4;
+  --critical-line: #e3b0a8;
+  --warning: #a15206;
+  --warning-bg: #fbeed7;
+  --success: #147a42;
+  --success-bg: #e0f3e7;
+  --info: #375d78;
+  --info-bg: #e6edf3;
+  --info-line: #b3c2ce;
+
+  /* Sand — attention that is not danger (also: prototype simulation controls) */
+  --sand: #f2e7ab;
+  --sand-hover: #e9dc95;
+  --sand-deep: #8a6f24;
+  --sand-wash: #fbf6e2;
+  --sand-line: #ddd0a0;
+
+  /* Rules — the only structure there is */
+  --rule-section: #c2c8d3;
+  --rule-structural: #dce0e8;
+  --rule-row: #eef0f5;
+
+  /* Type scale (nothing below 13px) */
+  --t-eyebrow: 13px;
+  --t-micro: 14px;
+  --t-meta: 15px;
+  --t-body: 16px;
+  --t-row: 17px;
+  --t-lede: 20px;
+  --t-section: 24px;
+
+  /* Radii — an instrument has edges; only controls are softened */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-card: 8px;
+
+  /* The only things that float */
+  --shadow-popover: 0 12px 32px -8px rgb(18 21 31 / 0.24), 0 2px 8px rgb(18 21 31 / 0.1);
+  --shadow-dialog: 0 18px 60px rgba(0, 32, 46, 0.28);
+  --shadow-drawer: -18px 0 60px rgba(18, 21, 31, 0.18);
+
+  --scrim: rgba(18, 21, 31, 0.34);
+  --scrim-dialog: rgba(0, 32, 46, 0.44);
+
+  --rail-collapsed: 72px;
+  --rail-expanded: 216px;
+}
