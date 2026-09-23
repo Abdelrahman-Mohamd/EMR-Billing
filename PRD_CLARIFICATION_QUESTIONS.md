@@ -13,12 +13,12 @@ This document asks questions only. It does not decide anything, and it does not 
 
 | | Count |
 |---|---|
-| Open questions | **84** |
-| Critical | **30** |
-| Important | **41** |
-| Nice to clarify | **13** |
+| Open questions | **89** |
+| Critical | **31** |
+| Important | **44** |
+| Nice to clarify | **14** |
 | Contradictions (separate section) | **14** |
-| Assumptions we would otherwise make | **20** |
+| Assumptions we would otherwise make | **21** |
 
 **V2 re-audit**
 
@@ -28,6 +28,8 @@ This document asks questions only. It does not decide anything, and it does not 
 | Updated — meaning or references changed | 18 | C-006, C-009, Q-004, Q-009, Q-011, Q-012, Q-016, Q-017, Q-020, Q-031, Q-037, Q-038, Q-054, Q-058, Q-064, Q-066, Q-069, Q-070 |
 | New — raised by V2 | 12 | C-013, C-014, Q-075, Q-076, Q-077, Q-078, Q-079, Q-080, Q-081, Q-082, Q-083, Q-084 |
 | New — raised while modelling a fresh installation (2026-09-17) | 2 | Q-085, Q-086 |
+| New — raised by meeting notes (2026-09-23) | 11 | Q-087 – Q-097 |
+| Answered — by the client (2026-09-23), kept in place for the record | 6 | Q-087, Q-089, Q-090, Q-091, Q-092, Q-096 |
 | Kept — still valid, references re-paginated to V2 | 66 | all others |
 
 IDs are never reused. Retired entries are listed in section 10 so earlier references still resolve.
@@ -37,12 +39,12 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 | Category | Questions |
 |---|---|
 | Data | 21 |
-| Business Rule | 19 |
-| Workflow | 11 |
+| Business Rule | 22 |
+| Workflow | 12 |
 | Functional | 10 |
 | Calculation | 4 |
 | Validation | 3 |
-| Other | 3 |
+| Other | 4 |
 | Permissions | 4 |
 | Reporting | 3 |
 | Edge Case | 3 |
@@ -536,6 +538,8 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 ---
 
 ### Q-032 — How is the Organization (company) level used?
+
+**Partly answered (meeting, 2026-09-23):** a System Admin creates organizations and assigns practices to them, in Admin → Organizations. What the grouping changes beyond cross-practice reporting — in particular whether it drives an Organization Admin's access — is still open.
 
 **Question ID:** Q-032 · **Category:** Functional · **Priority:** Important · **V2 audit:** Kept
 
@@ -1058,6 +1062,181 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 - **Section:** 1.2 Facility (location) setup · **Page:** 2 · **Excerpt:** "At least one primary facility location is mandatory during initial account creation."
 - **Section:** 10.2 Organization and users · **Page:** 13 · **Excerpt:** `user` — "A person or system account that logs in."
 - **Section:** 10.6 User permissions · **Page:** 23 · **Excerpt:** "Manages setup and users of granted practices; cannot create practices or grant System Admin."
+
+---
+
+### Q-087 — How far should a provider hold reach?
+
+**Question ID:** Q-087 · **Category:** Workflow · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked for a provider hold with a start date, an end date, a reason, the locations it affects and the insurances it affects. V2 has one date and holds everything before it. For the scoped version: does a hold stop charge entry, claim submission, or both? If only some locations or insurances are held, what happens to that provider's other visits — are they billed normally? What happens to visits already held when the end date passes: do they release themselves, or does someone review them? Can a hold be entered in advance, and does it apply to dates of service inside the window or to work done inside it?
+
+**Why clarification is needed:** A hold decides whether money is billed or stopped. Today one date delays every visit of that provider; scoping it by location and payer changes which claims go out and when, and the prototype would be inventing that rule.
+
+**Answered (client, 2026-09-23):** a hold runs between a start date and an end date, and it stops **both** billing and submission — visits inside the window wait in Delayed, and claims already created stop in the new Provider hold. When the end date passes, the provider's work flows normally again with no review step. The locations and insurances named on the hold narrow it; naming none covers all of them (A-P56). Open date questions — whether a hold may be entered for a future window and what it means for work done outside the window — are answered by the same rule: the window is read against the date of service.
+
+**PRD V2 reference:**
+- **Section:** 10.3 Setup · **Page:** 15 · **Excerpt:** `provider` — "Null = no hold. Visits before this date are delayed."
+- **Section:** 6.2 Scrubbing validation matrix · **Page:** 7 · **Excerpt:** "Credentialing"
+
+**Related:** Q-062 asks what a provider claim hold does at all; this asks how a scoped hold should behave.
+
+---
+
+### Q-088 — What replaces payer enrollment, and what feeds the credentialing check?
+
+**Question ID:** Q-088 · **Category:** Business Rule · **Priority:** Critical · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked to replace the provider's "Payer enrollment" section with an "Add rule" option. Enrollment is what the credentialing check reads today: per payer, a status and an effective date. If it is removed, where does the credentialing check get its answer — from the new rules, from the clearinghouse, or is the check dropped? And what is a provider "rule": which conditions can it test, and what does it do when it matches?
+
+**Why clarification is needed:** Credentialing is one of the six scrubbing checks V2 requires. Removing its only data source would silently disable a required check, and "rule" has no definition yet.
+
+**PRD V2 reference:**
+- **Section:** 6.2 Scrubbing validation matrix · **Page:** 7 · **Excerpt:** "Credentialing"
+- **Section:** 10.3 Setup · **Page:** 15 · **Excerpt:** `provider` — "A clinician who bills or treats: name, credentials, NPI, specialty."
+
+**Related:** Q-010 — where credentialing status comes from.
+
+---
+
+### Q-089 — What does "Audit required" mean on an insurance?
+
+**Question ID:** Q-089 · **Category:** Business Rule · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked for an "Audit required" checkbox on an insurance. What should it do? For example: hold the payer's claims for someone to review before submission, require documentation to be attached, mark the payer as being audited, or flag its remittances for checking? Who acts on it, and does it change any queue?
+
+**Why clarification is needed:** As a flag alone it changes nothing; as a hold it changes when claims go out. The two readings produce very different systems, so the field was not added yet.
+
+**Answered (client, 2026-09-23):** both — hold the claim for review *and* require documents. A payer marked Audit required stops its claims in the Audit hold after scrubbing; a reviewer records which documents were attached (plan of care, progress note, daily notes, referral, authorisation letter, itemised statement) and may add a note, and only then is the claim submitted. The record stays on the claim with the reviewer's name (A-P57).
+
+**PRD V2 reference:**
+- **Section:** 10.3 Setup · **Page:** 16 · **Excerpt:** `insurance` — "Null = inherit from insurance_class. Effective value = COALESCE(insurance, class)."
+
+---
+
+### Q-090 — Which scheduling options does submission need?
+
+**Question ID:** Q-090 · **Category:** Workflow · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting said the scheduled-submission options need "more customization" than off / hourly / every four hours / daily at 18:00. What is missing — a specific time of day, several runs a day, particular weekdays, a cut-off after which charges wait for the next run, or a different schedule per practice or per payer?
+
+**Why clarification is needed:** "More customization" cannot be built without knowing which dimension matters. Each option changes when claims leave and how the daily batch figures are counted.
+
+**Answered (client, 2026-09-23):** the missing part was simply a way to fill the dropdown. Admin → Submission & automation now keeps the list of options the practice may choose from — every few hours, every day at a time, or weekdays at a time — and a System Admin adds or removes them. The schedule in use cannot be removed. The job itself is still one practice-wide schedule; per-payer or per-location runs were not asked for (A-P58).
+
+**PRD V2 reference:**
+- **Section:** 5.1 Charge ingestion queue · **Page:** 6 · **Excerpt:** "Supports single submission, bulk submission, or automated scheduled submission."
+
+**Related:** Q-041 — how scheduled submission should be configured (scope, time zone, owner).
+
+---
+
+### Q-091 — Should patient statement preferences be dropped?
+
+**Question ID:** Q-091 · **Category:** Business Rule · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked to remove the "Billing preferences" section from the patient record. Its only field is the V2 column that says a patient should not receive batch statements. Should that column go too — meaning statements are out of scope for the first release — or should the setting live somewhere else, such as the guarantor?
+
+**Why clarification is needed:** The field is in the V2 data model. Removing the only place it can be set would leave a column nothing can fill, and would quietly decide that patient statements are not part of the release.
+
+**Answered (client, 2026-09-23):** remove it. The Billing preferences section is gone from the patient form and the chart, and no patient record carries a statement preference. The V2 `no_statements` column is therefore not implemented. Q-047 — whether patient statements are in scope at all — stays open.
+
+**PRD V2 reference:**
+- **Section:** 10.4 Patient · **Page:** 18 · **Excerpt:** `patient` — "Do not send batch statements."
+
+**Related:** Q-047 — are patient statements in scope.
+
+---
+
+### Q-092 — With "Other" removed, what do Boxes 10a–10c say?
+
+**Question ID:** Q-092 · **Category:** Validation · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked to remove "Other" from Related cause and to leave the field empty until someone chooses. Every case today is "Other", which is how the claim answers "no" to employment, auto and other accident. If the field can be empty, what do Boxes 10a, 10b and 10c print, and can a claim be submitted at all with no cause chosen? Should existing cases be migrated to a different value?
+
+**Why clarification is needed:** Boxes 10a–10c are mandatory on the CMS-1500 and must carry a yes or no. An empty cause leaves the claim without an answer.
+
+**Answered (client, 2026-09-23):** remove it; the logic around an empty cause is handled here. Related cause now offers employment and auto only and may be left empty. An empty cause prints NO in Boxes 10a, 10b and 10c, keeps the injury date optional unless the payer's class requires it (Box 14), and closes the accident state. Every seeded case that was "Other" is now empty (A-P54).
+
+**PRD V2 reference:**
+- **Section:** Chapter 8 — CMS-1500 field mapping · **Page:** 9 · **Excerpt:** "Related cause."
+- **Section:** 10.4 Patient · **Page:** 19 · **Excerpt:** `patient_case` — "Employment Related, Auto, Other."
+
+---
+
+### Q-093 — Is "Ready to submit" really manual submission only?
+
+**Question ID:** Q-093 · **Category:** Other · **Priority:** Nice to clarify · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked to rename the "Ready to submit" tab to "Manual submission". The same queue is also what the scheduled job takes claims from, and "Manual Submission" was the name of a V1 hold that V2 replaced with release buckets. Should the tab be renamed anyway, should the scheduled job be moved elsewhere, or is a different name meant — for example "Ready to bill"?
+
+**Why clarification is needed:** The name would describe only part of what the queue does, and would reuse a term the PRD retired, which is likely to confuse staff trained on V1.
+
+**PRD V2 reference:**
+- **Section:** 5.1 Charge ingestion queue · **Page:** 6 · **Excerpt:** "Supports single submission, bulk submission, or automated scheduled submission."
+
+---
+
+### Q-094 — Which claim does the "original claim number" at release belong to?
+
+**Question ID:** Q-094 · **Category:** Business Rule · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked for an "Original claim number" input in the release dialog. Releasing a charge creates the first claim for that visit, which has no earlier claim. Is this meant for corrected and void claims, which already carry the original reference in Box 22? Or is it a payer's own claim number being recorded when a claim is re-sent? Is it required or optional, who types it, and should it be validated against claims already in the system?
+
+**Why clarification is needed:** The Box 22 reference is generated when a corrected claim is created. Adding a free-text original number at release could produce two competing sources for the same field.
+
+**PRD V2 reference:**
+- **Section:** 5.2 Updated charges queue · **Page:** 6 · **Excerpt:** "2. Create corrected claim | Pre-populates CMS-1500 Box 22 with the Original Reference Number and Resubmission Frequency Code (7 – Replacement, 8 – Void)."
+
+**Related:** Q-019 — where the Original Reference Number comes from.
+
+---
+
+### Q-095 — What do mail, fax and portal mean when a bucket is released?
+
+**Question ID:** Q-095 · **Category:** Workflow · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked for Mail, Fax and Portal options on bucket release. V2 sends claims to the clearinghouse electronically or prints a CMS-1500. Are these delivery methods for the printed claim, or separate submission channels? If a claim is faxed or entered on a payer portal, what status does it take, what is recorded as proof, how is the payer's answer expected back, and does the payer SLA clock still run?
+
+**Why clarification is needed:** A claim that leaves by fax or portal never passes the clearinghouse, so acknowledgement, rejection and remittance handling do not apply to it. That is a different lifecycle, not an option on a button.
+
+**PRD V2 reference:**
+- **Section:** 7.1 Claim lifecycle · **Page:** 8 · **Excerpt:** "Claims successfully validated, compiled into EDI 837 files or PDF print queues, and dispatched to Waystar."
+- **Section:** 6.2 Scrubbing validation matrix · **Page:** 7 · **Excerpt:** "Manual release required"
+
+**Related:** Q-040 — what decides whether a claim goes electronically or on paper.
+
+---
+
+### Q-096 — Should the referring-physician code be removed?
+
+**Question ID:** Q-096 · **Category:** Data · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** The meeting asked to remove both the Code and the Taxonomy from a referring physician. Taxonomy was removed: the V2 table does not have it, although chapter 3 mentions it. Code is a column in the V2 table and is unique per practice, so it was kept. Should the code be removed as well, and if so what identifies a referring physician in imports and searches — the NPI alone?
+
+**Why clarification is needed:** Removing a unique key changes how the directory is matched and de-duplicated, especially for records arriving from the EMR.
+
+**Answered (client, 2026-09-23):** remove it. Neither the code nor the taxonomy is captured any more, and no seeded physician carries either. A referring physician is identified by name and NPI; the V2 `code` column is not implemented, and how imported records are matched is left to the build (A-P55).
+
+**PRD V2 reference:**
+- **Section:** 10.3 Setup · **Page:** 18 · **Excerpt:** `referring_physician` — "UQ per practice"
+- **Section:** 3.2 Case profile object · **Page:** 4 · **Excerpt:** "Referring physician — linked directory profile containing name, NPI, taxonomy, practice name, address, phone / fax and referral orders."
+
+---
+
+### Q-097 — Which coding rule wins: payer, class or default?
+
+**Question ID:** Q-097 · **Category:** Business Rule · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
+
+**Question:** Coding rules can now be written for one insurance or for a whole insurance class. When a code is matched by a class rule and by a payer rule, which one applies? The prototype assumes the payer's own rule wins, then the class rule, then the default rule — the order V2 uses for billing rules. Please confirm, and say whether rules from several levels should ever combine rather than override.
+
+**Why clarification is needed:** Precedence decides which codes actually leave on a claim. V2 names default and payer-specific rules only, so the class level and its order are an assumption.
+
+**PRD V2 reference:**
+- **Section:** 6.1 Coding rules engine · **Page:** 7 · **Excerpt:** "Replace rule. Converts specified CPT / HCPCS codes to alternative codes based on Default System Rules or Payer-Specific Rules."
+- **Section:** 10.3 Setup · **Page:** 16 · **Excerpt:** "Null = inherit from insurance_class. Effective value = COALESCE(insurance, class)."
+
+**Related:** Q-013 — how coding rules are defined and what they change.
 
 ---
 
@@ -1727,6 +1906,13 @@ These are decisions a developer would be forced to take if the questions above g
 **Missing decision:** What else exists before staff enter anything, and what a new practice starts with.
 **Potential assumption:** Seed only the two roles; load the standard ICD-10 and CARC / RARC code sets as lookups; leave procedure codes, fees, insurance classes and all practice data to be entered; open the current month as the first accounting period of a new practice.
 **Client question:** Q-085
+
+### A-021
+**Area:** Coding rules (§6.1, p7; §10.3, p16)
+**Current PRD V2 information:** Rules are Default System Rules or Payer-Specific Rules; insurances inherit billing rules from their class.
+**Missing decision:** Whether a coding rule may target an insurance class, and which level wins.
+**Potential assumption:** Allow class-level rules and resolve payer rule → class rule → default rule, mirroring the billing-rule inheritance.
+**Client question:** Q-097
 
 ### A-020
 **Area:** First account (§1.1–1.2, p2; §10.6, p23)

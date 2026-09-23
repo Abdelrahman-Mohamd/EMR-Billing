@@ -132,8 +132,11 @@ const patientSpecs = (isNew) => [
   { name: 'guarantorType', label: 'Who receives statements', type: 'select', options: [{ value: 'self', label: 'The patient' }, { value: 'other', label: 'Another person' }], placeholder: false, span: 4 },
   { name: 'gName', label: 'Guarantor name', span: 4, placeholder: 'Full name', requiredIf: (vals) => vals.guarantorType === 'other' },
   { name: 'gRel', label: 'Relationship', type: 'select', options: ['Spouse', 'Parent', 'Child', 'Other'], span: 4, requiredIf: (vals) => vals.guarantorType === 'other' },
-  { type: 'section', label: 'Billing preferences' },
-  { name: 'noStatements', label: 'Do not send batch statements', type: 'checkbox', span: 12 },
+  { name: 'gLine1', label: 'Guarantor address', span: 6, placeholder: 'Street address', requiredIf: (vals) => vals.guarantorType === 'other' },
+  { name: 'gCity', label: 'City', span: 3, requiredIf: (vals) => vals.guarantorType === 'other' },
+  { name: 'gState', label: 'State', type: 'state', span: 1, requiredIf: (vals) => vals.guarantorType === 'other' },
+  { name: 'gZip', label: 'ZIP', type: 'zip', span: 2, requiredIf: (vals) => vals.guarantorType === 'other' },
+  { type: 'section', label: 'Notes' },
   { name: 'notes', label: 'Internal notes', type: 'textarea', span: 12, placeholder: 'Visible to staff only', rows: 2 },
   ...(isNew
     ? [
@@ -147,15 +150,16 @@ const patientValues = (p) => ({
   ssn: S.canDecrypt() ? p.ssn : '', phoneCell: p.phoneCell, phoneHome: p.phoneHome, email: p.email,
   line1: p.address.line1, line2: p.address.line2, city: p.address.city, state: p.address.state, zip: p.address.zip,
   guarantorType: p.guarantor ? 'other' : 'self', gName: p.guarantor?.name, gRel: p.guarantor?.relationship,
-  noStatements: p.noStatements, notes: p.notes,
+  gLine1: p.guarantor?.address?.line1, gCity: p.guarantor?.address?.city, gState: p.guarantor?.address?.state, gZip: p.guarantor?.address?.zip,
+  notes: p.notes,
 })
 const applyPatient = (p, vals) => {
   Object.assign(p, {
     firstName: vals.firstName, middleName: vals.middleName, lastName: vals.lastName, dob: vals.dob, gender: vals.gender,
     phoneCell: vals.phoneCell, phoneHome: vals.phoneHome, email: vals.email,
     address: { line1: vals.line1, line2: vals.line2, city: vals.city, state: vals.state, zip: vals.zip },
-    guarantor: vals.guarantorType === 'other' ? { name: vals.gName, relationship: vals.gRel } : null,
-    noStatements: vals.noStatements, notes: vals.notes,
+    guarantor: vals.guarantorType === 'other' ? { name: vals.gName, relationship: vals.gRel, address: { line1: vals.gLine1, city: vals.gCity, state: vals.gState, zip: vals.gZip } } : null,
+    notes: vals.notes,
   })
   if (vals.ssn) p.ssn = vals.ssn
 }
@@ -174,7 +178,7 @@ ACT['pt.create'] = (el) => {
   const p = { id: U.id('p'), practiceId: S.session.practiceId, billingId: 10412 + DB.patients.length + 40, emrId: null, ssn: '', isActive: true }
   applyPatient(p, vals)
   DB.patients.unshift(p)
-  const c = { id: U.id('c'), patientId: p.id, name: 'Default', referrerId: null, injuryType: 'Other', injuryDate: null, startOfCare: DB.today, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, dx: [] }
+  const c = { id: U.id('c'), patientId: p.id, name: 'Default', referrerId: null, injuryType: '', injuryDate: null, startOfCare: DB.today, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, dx: [] }
   DB.cases.push(c)
   S.log('Patient created', { module: 'PATIENT', entityType: 'patient', entityId: p.id, detail: `${S.pfull(p)} · Default case created` })
   UI.closeTop()
@@ -202,7 +206,7 @@ const Chart = {
     const side = `<aside class="subnav"><span class="eyebrow">Patient</span>${link('profile', 'Profile', 'user')}${link('ledger', 'Ledger', 'receipt')}
       <div class="subnav-rule"></div>
       ${c ? `<button type="button" class="case-switch" data-act="chart.caseMenu" data-id="${p.id}"><span class="row"><span class="eyebrow" style="margin:0;padding:0">Case</span><span class="ml-auto muted">${I('chevronDown', 'icon-14')}</span></span><span class="cs-name">${U.esc(c.name)}</span><span class="cs-sub">${cases.length > 1 ? `${cases.length} cases · ` : ''}${c.startOfCare ? 'Since ' + U.date(c.startOfCare) : 'No start of care'}${c.isActive ? '' : ' · Closed'}</span></button>` : ''}
-      <span class="eyebrow">Case</span>${c ? link('case', 'Case details', 'file') + link('diagnoses', 'Diagnoses', 'hash', c.dx.length) + link('coverage', 'Coverage', 'landmark', covs.length) + link('authorizations', 'Authorizations', 'fileCheck', auths.length) + link('visits', 'Visits & claims', 'send', visits.length) : ''}</aside>`
+      <span class="eyebrow">Case</span>${c ? link('case', 'Case details', 'file') + link('diagnoses', 'Diagnoses', 'hash', c.dx.length) + link('coverage', 'Insurance', 'landmark', covs.length) + link('authorizations', 'Authorizations', 'fileCheck', auths.length) + link('visits', 'Visits & claims', 'send', visits.length) : ''}</aside>`
     const body = {
       profile: () => Chart.profile(p),
       ledger: () => Chart.ledger(p),
@@ -228,7 +232,7 @@ const Chart = {
       <div class="section">${UI.sectionHead('Demographics', 'Required for billing: date of birth, gender, address', S.can('PATIENT', 'u') ? UI.btn({ label: 'Edit patient', icon: 'pencil', size: 'sm', act: 'chart.editPatient', data: { id: p.id } }) : '')}
       ${UI.kv([['Name', `${p.firstName} ${p.middleName ? p.middleName + ' ' : ''}${p.lastName}`], ['Date of birth', `${U.date(p.dob)} (${U.age(p.dob, DB.today)} years)`], ['Gender', p.gender], ['SSN', ssnVal + ssnCtl, true], ['Billing ID', String(p.billingId)], ['EMR ID (sync key)', p.emrId ? String(p.emrId) : '']])}</div>
       <div class="section">${UI.sectionHead('Contact & address')}${UI.kv([['Cell phone', p.phoneCell], ['Home phone', p.phoneHome], ['Email', p.email], ['Address', `${p.address.line1}${p.address.line2 ? ', ' + p.address.line2 : ''}<br>${U.esc(p.address.city)}, ${U.esc(p.address.state)} ${U.esc(p.address.zip)}`, true]])}</div>
-      <div class="section">${UI.sectionHead('Guarantor')}${UI.kv([['Guarantor', p.guarantor ? `${p.guarantor.name} (${p.guarantor.relationship})` : 'The patient'], ['Batch statements', p.noStatements ? 'Do not send' : 'Send'], ['Internal notes', p.notes]])}</div>
+      <div class="section">${UI.sectionHead('Guarantor')}${UI.kv([['Guarantor', p.guarantor ? `${p.guarantor.name} (${p.guarantor.relationship})${p.guarantor.address && p.guarantor.address.line1 ? `<span class="sub">${U.esc(p.guarantor.address.line1)}, ${U.esc(p.guarantor.address.city)}, ${U.esc(p.guarantor.address.state)} ${U.esc(p.guarantor.address.zip)}</span>` : ''}` : 'The patient'], ['Internal notes', p.notes]])}</div>
       <div class="section">${UI.sectionHead('History')}${UI.historyView('patient', p.id)}</div>`
   },
 
@@ -272,7 +276,7 @@ const Chart = {
       ${UI.kv([
         ['Case name', c.name], ['Status', c.isActive ? 'Open' : 'Closed'],
         ['Referring physician', (ref ? `${U.esc(ref.name)} · ${ref.type === 'DQ' ? 'Supervising (DQ)' : 'Referring (DN)'} · NPI ${U.esc(ref.npi)}` : '') + need(ref), true],
-        ['Injury type (related cause)', c.injuryType],
+        ['Injury type (related cause)', c.injuryType || 'Not related to an injury'],
         ['Injury / onset date', (c.injuryDate ? U.date(c.injuryDate) : '') + (!c.injuryDate && (['Employment Related', 'Auto'].includes(c.injuryType) || (ins && E.eff(ins, 'injuryDateRequired'))) ? need(false) : ''), true],
         ['Visit locations', seen.length ? U.esc(seen.join(', ')) + ' <span class="muted t-micro">· set on each visit</span>' : '<span class="muted">Set on each visit</span>', true],
         ['Accident state', c.accidentState], ['Employment status', c.employmentStatus],
@@ -428,7 +432,7 @@ const caseSpecs = (c) => {
     ...(DB.referrers.some((r) => r.practiceId === S.session.practiceId) ? [] : [{ type: 'note', html: `<strong>No referring physicians yet.</strong> A case needs one for billing — the name and NPI print in Box 17. ${UI.btn({ label: 'Add a referring physician', size: 'sm', icon: 'arrowRight', act: 'go', data: { hash: '#/admin/referrers' } })}` }]),
     { name: 'referrerId', label: 'Referring physician', type: 'select', required: true, span: 12, help: 'Name and NPI go on the claim (Box 17). Required for billing.', options: DB.referrers.filter((r) => r.practiceId === S.session.practiceId).map((r) => ({ value: r.id, label: `${r.name} · NPI ${r.npi}${E.npiValid(r.npi) ? '' : ' (invalid)'}` })) },
     { type: 'section', label: 'Injury & dates' },
-    { name: 'injuryType', label: 'Related cause', type: 'select', options: ['Employment Related', 'Auto', 'Other'], required: true, span: 4, help: 'Drives Box 10a–c.' },
+    { name: 'injuryType', label: 'Related cause', type: 'select', options: ['Employment Related', 'Auto'], placeholder: 'Not related to an injury', span: 4, help: 'Drives Box 10a–c. Leave it empty and all three answer NO; the injury date and accident state follow from it.' },
     { name: 'injuryDate', label: 'Injury / onset date', type: 'date', span: 4, requiredIf: (v) => ['Employment Related', 'Auto'].includes(v.injuryType) || (ins && E.eff(ins, 'injuryDateRequired')), help: ins && E.eff(ins, 'injuryDateRequired') ? `${ins.name} requires it (Box 14).` : 'Box 14.' },
     { name: 'accidentState', label: 'Accident state', type: 'state', span: 4, placeholder: 'NY', requiredIf: (v) => v.injuryType === 'Auto', help: 'Box 10b when auto related.' },
     { name: 'employmentStatus', label: 'Employment status', span: 6, placeholder: 'e.g. Employed full time', requiredIf: () => ins && ins.type === 'Workers Comp', help: 'Required by the Case exception rule; not in the data model yet.' },
@@ -437,14 +441,29 @@ const caseSpecs = (c) => {
     { name: 'isActive', label: 'Case is open', type: 'checkbox', span: 12 },
   ]
 }
+/** Injury date and accident state are answers to Related Cause, so they wait for it.
+ *  The injury date stays open when the payer asks for it whatever the cause (Box 14). */
+const syncInjury = (ins) => (vals, formEl) => {
+  const cause = !!vals.injuryType
+  const open = { injuryDate: cause || !!(ins && E.eff(ins, 'injuryDateRequired')), accidentState: cause }
+  Object.keys(open).forEach((n) => {
+    const field = formEl.querySelector(`[data-field="${n}"]`)
+    if (!field) return
+    field.classList.toggle('is-disabled', !open[n])
+    field.querySelectorAll('input, select').forEach((x) => {
+      x.disabled = !open[n]
+      if (!open[n]) x.value = ''
+    })
+  })
+}
 ACT['chart.editCase'] = (el) => {
   const c = S.find('cases', el.dataset.id)
-  const h = UI.modal({ title: 'Edit case', desc: 'Visits inherit these values. Saving re-checks pended visits and held claims.', size: 'lg', body: UI.form(caseSpecs(c), { ...c, isActive: c.isActive }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save case', variant: 'primary', act: 'chart.saveCase' }) })
+  const h = UI.modal({ title: 'Edit case', desc: 'Visits inherit these values. Saving re-checks pended visits and held claims.', size: 'lg', body: UI.form(caseSpecs(c), { ...c, isActive: c.isActive }, { onChange: syncInjury(E.primaryIns(c.id)) }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save case', variant: 'primary', act: 'chart.saveCase' }) })
   h.el.dataset.id = c.id
 }
 ACT['chart.newCase'] = (el) => {
   UI.closeMenu()
-  const h = UI.modal({ title: 'New case', desc: 'A case is one episode of care. Diagnoses and coverage are added to it next.', size: 'lg', body: UI.form(caseSpecs(null), { injuryType: 'Other', isActive: true, startOfCare: DB.today }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Create case', variant: 'primary', act: 'chart.saveCase' }) })
+  const h = UI.modal({ title: 'New case', desc: 'A case is one episode of care. Diagnoses and coverage are added to it next.', size: 'lg', body: UI.form(caseSpecs(null), { injuryType: '', isActive: true, startOfCare: DB.today }, { onChange: syncInjury(null) }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Create case', variant: 'primary', act: 'chart.saveCase' }) })
   h.el.dataset.pid = el.dataset.id
 }
 ACT['chart.saveCase'] = (el) => {

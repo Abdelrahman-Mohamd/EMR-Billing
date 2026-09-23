@@ -4,6 +4,7 @@
 
 const ADMIN_SECTIONS = [
   { group: 'Organization', items: [
+    { key: 'organizations', label: 'Organizations', icon: 'layers', perm: 'ADMIN', global: true },
     { key: 'practices', label: 'Practices & locations', icon: 'building', perm: 'ADMIN' },
     { key: 'users', label: 'Users', icon: 'users', perm: 'ADMIN' },
     { key: 'roles', label: 'Roles & permissions', icon: 'lock', perm: 'ADMIN' },
@@ -17,6 +18,7 @@ const ADMIN_SECTIONS = [
     { key: 'codes', label: 'Procedure codes', icon: 'hash', perm: 'ADMIN' },
     { key: 'fees', label: 'Fee schedules', icon: 'dollar', perm: 'ADMIN' },
     { key: 'referrers', label: 'Referring physicians', icon: 'user', perm: 'ADMIN' },
+    { key: 'portals', label: 'Payer portals', icon: 'link', perm: 'ADMIN' },
   ] },
   { group: 'Billing rules', items: [
     { key: 'rules', label: 'Coding rules', icon: 'branch', perm: 'ADMIN' },
@@ -24,7 +26,7 @@ const ADMIN_SECTIONS = [
   ] },
   { group: 'Audit', items: [{ key: 'audit', label: 'Audit log', icon: 'history', perm: 'ADMIN' }] },
 ]
-const adminItems = () => ADMIN_SECTIONS.flatMap((g) => g.items).filter((i) => S.can(i.perm, 'r'))
+const adminItems = () => ADMIN_SECTIONS.flatMap((g) => g.items).filter((i) => S.can(i.perm, 'r') && (!i.global || S.isGlobal()))
 
 Screens.admin = {
   render(parts, q) {
@@ -54,6 +56,7 @@ const canA = (op) => S.can('ADMIN', op)
 
 const Adm = {
   sub: {
+    organizations: 'An owner that groups practices, so reports can run across all of them. Optional — a practice can stand on its own.',
     practices: 'Practices and their locations. A practice appears as “Company” in the sidebar switcher.',
     users: 'Users, service accounts and their practice / location grants.',
     roles: 'Permissions per role and module. A user with several roles gets the union.',
@@ -65,11 +68,13 @@ const Adm = {
     codes: 'CPT / HCPCS codes with category and active flag, shared by every practice.',
     fees: 'The billed price per unit for one code and one insurance; otherwise the code’s default fee.',
     referrers: 'Referring (DN) and supervising (DQ) physicians. The type sets the Box 17 qualifier.',
+    portals: 'Where each payer’s claims and remittances are checked online. Credentials are stored on the insurance and masked for every role except System Admin.',
     rules: 'Replace and Drop rules run during scrubbing; payer-specific rules override default rules.',
     automation: 'Scheduled submission interval, the AI coding add-on and the SLA source.',
     audit: 'Every action taken in the system: who, what, when and on which record.',
   },
   actions: {
+    organizations: () => (S.isGlobal() ? UI.btn({ label: 'New organization', icon: 'plus', variant: 'primary', act: 'org.edit' }) : ''),
     practices: () => (S.isGlobal() ? UI.btn({ label: 'New practice', icon: 'plus', variant: 'primary', act: 'prac.new' }) : `<span class="t-micro muted">${I('lock', 'icon-14')} Only System Admin creates practices</span>`),
     users: () => (canA('c') ? UI.btn({ label: 'New user', icon: 'userPlus', variant: 'primary', act: 'user.edit' }) : ''),
     roles: () => (canA('c') ? UI.btn({ label: 'New role', icon: 'plus', variant: 'primary', act: 'role.new' }) : ''),
@@ -82,6 +87,65 @@ const Adm = {
     referrers: () => (canA('c') ? UI.btn({ label: 'New physician', icon: 'plus', variant: 'primary', act: 'ref.edit' }) : ''),
     rules: () => (canA('c') ? UI.btn({ label: 'New rule', icon: 'plus', variant: 'primary', act: 'rule.edit' }) : ''),
   },
+}
+
+// ---------------------------------------------------------------- organizations
+Adm.organizations = () => {
+  const orgs = DB.companies
+  const practicesOf = (o) => DB.practices.filter((p) => p.companyId === o.id)
+  return UI.table({
+    cols: [
+      { key: 'name', label: 'Organization', sort: true, render: (o) => `<span class="ink fw-500">${U.esc(o.name)}</span>` },
+      { key: 'practices', label: 'Practices', render: (o) => (practicesOf(o).length ? practicesOf(o).map((p) => U.esc(p.name)).join(', ') : '<span class="muted">None yet</span>') },
+      { key: 'n', label: 'Count', cls: 'r', render: (o) => practicesOf(o).length },
+      { key: 'st', label: 'Status', render: (o) => UI.status(o.isActive ? 'success' : 'inert', o.isActive ? 'Active' : 'Inactive') },
+      { key: 'act', label: '', cls: 'r', render: (o) => `<div class="row-actions">${canA('u') ? UI.iconBtn({ icon: 'pencil', label: 'Edit organization', act: 'org.edit', data: { id: o.id } }) : ''}</div>` },
+    ],
+    rows: orgs, view: S.view('adm-org', { sort: 'name', dir: 'asc', page: 1 }), viewKey: 'adm-org', rowAct: canA('u') ? 'org.edit' : null, noun: 'organization',
+    empty: UI.empty({ icon: 'layers', title: 'No organizations', text: 'An organization groups the practices of one owner so reports can run across them. It holds no billing data, and a practice can be billed without one.', action: S.isGlobal() ? UI.btn({ label: 'New organization', icon: 'plus', variant: 'primary', act: 'org.edit' }) : '' }),
+  })
+}
+ACT['org.edit'] = (el) => {
+  const o = el.dataset.id ? S.find('companies', el.dataset.id) : null
+  const editable = canA(o ? 'u' : 'c') && S.isGlobal()
+  const mine = o ? DB.practices.filter((p) => p.companyId === o.id).map((p) => p.id) : []
+  const h = UI.modal({
+    title: o ? o.name : 'New organization',
+    desc: 'Groups the practices of one owner for cross-practice reporting.',
+    size: 'md',
+    body: UI.form([
+      { name: 'name', label: 'Organization name', required: true, span: 12, disabled: !editable, placeholder: 'e.g. Harborline Rehab Group' },
+      { type: 'section', label: 'Practices in this organization' },
+      ...(DB.practices.length
+        ? [{ type: 'note', html: DB.practices.map((p) => `<label class="check-row"><input type="checkbox" data-org-prac="${p.id}" ${mine.includes(p.id) ? 'checked' : ''} ${editable ? '' : 'disabled'}><span>${U.esc(p.name)}<span class="desc">${U.esc(p.legalName)}${p.companyId && p.companyId !== (o || {}).id ? ` · currently in ${U.esc((S.find('companies', p.companyId) || {}).name || 'another organization')}` : ''}</span></span></label>`).join('') }]
+        : [{ type: 'note', label: 'No practices exist yet. Create the organization first and add practices to it later.' }]),
+      { name: 'isActive', label: 'Active', type: 'checkbox', span: 12, disabled: !editable },
+    ], o || { isActive: true }),
+    foot: UI.btn({ label: editable ? 'Cancel' : 'Close', variant: 'quiet', act: 'layer.close' }) + (editable ? UI.btn({ label: o ? 'Save organization' : 'Create organization', variant: 'primary', act: 'org.save' }) : ''),
+  })
+  if (o) h.el.dataset.id = o.id
+}
+ACT['org.save'] = (el) => {
+  const layer = el.closest('.layer')
+  const vals = UI.submitForm(UI.formOf(layer))
+  if (!vals) return
+  let o = layer.dataset.id ? S.find('companies', layer.dataset.id) : null
+  if (o) Object.assign(o, { name: vals.name, isActive: vals.isActive })
+  else {
+    o = { id: U.id('co'), name: vals.name, isActive: vals.isActive }
+    DB.companies.push(o)
+  }
+  // A practice belongs to at most one organization
+  layer.querySelectorAll('[data-org-prac]').forEach((cb) => {
+    const p = S.find('practices', cb.dataset.orgPrac)
+    if (!p) return
+    if (cb.checked) p.companyId = o.id
+    else if (p.companyId === o.id) p.companyId = null
+  })
+  S.log(layer.dataset.id ? 'Organization updated' : 'Organization created', { module: 'ADMIN', entityType: 'company', entityId: o.id, detail: `${o.name} · ${U.plural(DB.practices.filter((p) => p.companyId === o.id).length, 'practice')}` })
+  UI.closeTop()
+  UI.toast('success', layer.dataset.id ? 'Organization saved' : `${o.name} created`)
+  R.refresh()
 }
 
 // ---------------------------------------------------------------- practices & locations
@@ -99,8 +163,9 @@ Adm.practices = () => {
       })}</div>`
   }
   const locs = DB.locations.filter((l) => l.practiceId === sel.id)
-  // The organization groups one owner's practices; shown only when there is one
-  const org = DB.company ? `<div class="card card-pad mb-16" data-section="organization"><div class="row"><span class="scope-ico" style="background:var(--brand-wash);color:var(--brand-deep)">${I('layers', 'icon-18')}</span><div class="grow"><div class="eyebrow">Organization</div><div class="t-row ink fw-500">${U.esc(DB.company.name)}</div><div class="t-micro muted">Owns ${U.plural(DB.practices.filter((p) => p.companyId === DB.company.id).length, 'practice')}. Used for reports across the owner’s practices; holds no billing data.</div></div></div></div>` : ''
+  // The organization groups one owner's practices; shown only when this practice is in one
+  const co = S.companyOf(sel)
+  const org = co ? `<div class="card card-pad mb-16" data-section="organization"><div class="row"><span class="scope-ico" style="background:var(--brand-wash);color:var(--brand-deep)">${I('layers', 'icon-18')}</span><div class="grow"><div class="eyebrow">Organization</div><div class="t-row ink fw-500">${U.esc(co.name)}</div><div class="t-micro muted">Owns ${U.plural(DB.practices.filter((p) => p.companyId === co.id).length, 'practice')}. Used for reports across the owner’s practices; holds no billing data.</div></div>${S.isGlobal() ? UI.btn({ label: 'Manage', size: 'sm', act: 'go', data: { hash: '#/admin/organizations' } }) : ''}</div></div>` : ''
   return `${org}
     ${UI.table({
       cols: [
@@ -149,6 +214,7 @@ const practiceSpecs = (withLocation, editingId = null) => [
   { name: 'taxId', label: 'Tax ID', required: true, span: 4, placeholder: '00-0000000', validate: (v, all) => (all.taxIdType === 'SSN' ? (/^\d{3}-\d{2}-\d{4}$/.test(v) ? '' : 'Please enter a valid SSN.') : /^\d{2}-\d{7}$/.test(v) ? '' : 'Please enter a valid EIN.') },
   { name: 'taxonomy', label: 'Taxonomy code', required: true, span: 4, placeholder: '225100000X', validate: (v) => (/^[0-9A-Z]{9}X$/i.test(v) ? '' : 'Please enter a valid taxonomy code.') },
   { name: 'npi', label: 'Group NPI', type: 'npi', required: true, span: 4 },
+  ...(DB.companies.length ? [{ name: 'companyId', label: 'Organization', type: 'select', span: 6, options: DB.companies.filter((c) => c.isActive).map((c) => ({ value: c.id, label: c.name })), help: 'Optional — groups practices of one owner for reporting.' }] : []),
   ...(withLocation
     ? [
         { type: 'section', label: 'Primary facility (mandatory)' },
@@ -180,7 +246,7 @@ ACT['prac.save'] = (el) => {
     S.log('Practice updated', { module: 'ADMIN', detail: data.name })
     UI.toast('success', 'Practice saved')
   } else {
-    const p = { id: U.id('pr'), companyId: DB.company ? DB.company.id : null, phone: '', isActive: true, ...data }
+    const p = { id: U.id('pr'), companyId: vals.companyId || null, phone: '', isActive: true, ...data }
     DB.practices.push(p)
     DB.locations.push({ id: U.id('L'), practiceId: p.id, code: vals.locCode, name: vals.locName, npi: vals.locNpi, address: { line1: vals.locLine1, city: vals.locCity, state: vals.state, zip: vals.locZip }, pos: '11', isPrimary: true, isActive: true, emr: { uniqueLocationId: '', link: 'Not linked', election: 'EMR only' } })
     DB.periods.push({ id: DB.today.slice(0, 7), status: 'Open', closedBy: null, closedOn: null, practiceId: p.id })
@@ -499,18 +565,23 @@ Adm.providers = () => {
       { key: 'name', label: 'Provider', sort: (p) => p.lastName, render: (p) => `<span class="ink fw-500">${U.esc(S.provName(p) || '(unnamed)')}</span><span class="sub">${U.esc(p.specialty || '—')}</span>` },
       { key: 'npi', label: 'NPI', render: (p) => (E.npiValid(p.npi) ? p.npi : `<span class="status critical">${p.npi || 'Missing'}</span>`) },
       { key: 'tax', label: 'Taxonomy · license', render: (p) => `${U.esc(p.taxonomy || '—')}<span class="sub">${U.esc(p.stateLicense || '—')}</span>` },
-      { key: 'hold', label: 'Claim hold', render: (p) => (p.claimHoldUntil && p.claimHoldUntil > DB.today ? `<span class="status attention">Until ${U.date(p.claimHoldUntil)}</span><span class="sub">${U.esc(p.claimHoldReason)}</span>` : '<span class="muted">None</span>') },
+      { key: 'hold', label: 'Claim hold', render: (p) => (p.claimHoldUntil ? `<span class="status ${E.holdRunning(p) ? 'attention' : 'inert'}">${U.esc(E.holdWindow(p))}</span><span class="sub">${U.esc(p.claimHoldReason)} · ${U.esc(E.holdScope(p))}</span>` : '<span class="muted">None</span>') },
       { key: 'enr', label: 'Payer enrollment', render: (p) => { const a = p.enrollments.filter((e) => e.status === 'Active').length; const pen = p.enrollments.filter((e) => e.status === 'Pending').length; return `${a}/${payers.length} active${pen ? ` · <span class="status warning">${pen} pending</span>` : ''}` } },
       { key: 'st', label: 'Status', render: (p) => (p.draft ? UI.chip('critical', 'Draft from EMR') : UI.status(p.isActive ? 'success' : 'inert', p.isActive ? 'Active' : 'Inactive')) },
     ],
     empty: UI.empty({ icon: 'stethoscope', title: 'No providers yet', text: 'Providers are the clinicians who treat and bill — every visit names a billing and a rendering provider, printed with their NPI on the claim. They do not sign in. A provider can also arrive as a draft profile when an EMR session names someone unknown.', action: canA('c') ? UI.btn({ label: 'Add a provider', icon: 'plus', variant: 'primary', act: 'prov.edit' }) : '' }),
-    rows: list, view: S.view('adm-prov', { sort: 'code', dir: 'asc', page: 1 }), viewKey: 'adm-prov', rowAct: 'prov.edit', noun: 'provider', mark: (p) => (p.draft ? 'critical' : p.claimHoldUntil && p.claimHoldUntil > DB.today ? 'attention' : null),
+    rows: list, view: S.view('adm-prov', { sort: 'code', dir: 'asc', page: 1 }), viewKey: 'adm-prov', rowAct: 'prov.edit', noun: 'provider', mark: (p) => (p.draft ? 'critical' : E.holdRunning(p) ? 'attention' : null),
   })
 }
 ACT['prov.edit'] = (el) => {
   const p = el.dataset.id ? S.find('providers', el.dataset.id) : null
   const editable = canA(p ? 'u' : 'c')
   const payers = DB.insurances.filter((i) => i.practiceId === S.session.practiceId && !i.draft)
+  const locs = DB.locations.filter((l) => l.practiceId === S.session.practiceId)
+  const scopeList = (items, attr, chosen) =>
+    items.length
+      ? items.map((x) => `<label class="check-row"><input type="checkbox" ${attr}="${x.id}" ${chosen.includes(x.id) ? 'checked' : ''} ${editable ? '' : 'disabled'}><span>${U.esc(x.name)}</span></label>`).join('')
+      : '<div class="t-micro muted">None yet.</div>'
   const enrHtml = `<div class="form-section-title" style="margin-top:20px">Payer enrollment (credentialing)</div><div class="t-micro muted-2 mt-4 mb-8">Claims are checked for active enrollment with the payer on the date of service.</div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Payer</th><th>Status</th><th>Effective</th></tr></thead><tbody>${payers.map((i) => { const e = p ? p.enrollments.find((x) => x.insuranceId === i.id) : null; return `<tr><td class="ink">${U.esc(i.name)}</td><td><select class="mini-select" data-enr="${i.id}" ${editable ? '' : 'disabled'} aria-label="Enrollment with ${U.esc(i.name)}">${['Active', 'Pending', 'Not enrolled'].map((s) => `<option ${((e && e.status) || 'Not enrolled') === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td><td><input class="mini-input" style="width:140px" type="date" data-enr-date="${i.id}" value="${(e && e.effective) || ''}" ${editable ? '' : 'disabled'} aria-label="Effective date"></td></tr>` }).join('')}</tbody></table></div>${payers.length ? '' : `<div class="mt-8">${UI.notice('warning', 'No insurances yet.', 'Enrollment is recorded per payer. Add the practice’s insurances first; until the provider is enrolled with a payer, that payer’s claims stop in the Credentialing hold.')}</div>`}`
   const h = UI.modal({
     title: p ? S.provName(p) || 'Provider' : 'New provider',
@@ -526,9 +597,12 @@ ACT['prov.edit'] = (el) => {
       { name: 'taxonomy', label: 'Taxonomy code', required: true, span: 6, disabled: !editable },
       { name: 'stateLicense', label: 'State license', span: 6, disabled: !editable },
       { type: 'section', label: 'Claim hold' },
-      { type: 'note', label: 'While a hold is active, this provider’s visits wait in Delayed instead of going out on claims. Clear the date to release them.' },
-      { name: 'claimHoldUntil', label: 'Hold until', type: 'date', span: 6, disabled: !editable },
-      { name: 'claimHoldReason', label: 'Reason', span: 6, placeholder: 'e.g. Pending Provider Credentialing', requiredIf: (v) => !!v.claimHoldUntil, disabled: !editable },
+      { type: 'note', label: 'While the hold is running, this provider’s visits inside the window wait in Delayed and unsent claims stop in the Provider hold — billing and submission both. When the end date passes, they go out normally.' },
+      { name: 'claimHoldFrom', label: 'Hold from', type: 'date', span: 4, requiredIf: (v) => !!v.claimHoldUntil, disabled: !editable },
+      { name: 'claimHoldUntil', label: 'Hold until', type: 'date', span: 4, disabled: !editable, help: 'Clear it to lift the hold.', validate: (val, v) => (val && v.claimHoldFrom && val < v.claimHoldFrom ? 'Please enter a valid date.' : '') },
+      { name: 'claimHoldReason', label: 'Reason', span: 4, placeholder: 'e.g. Pending Provider Credentialing', requiredIf: (v) => !!v.claimHoldUntil, disabled: !editable },
+      { type: 'html', span: 6, html: `<div class="eyebrow mb-8">Locations the hold covers</div>${scopeList(locs, 'data-hold-loc', (p && p.claimHoldLocations) || [])}<div class="t-micro muted-2 mt-4">Tick none to cover every location.</div>` },
+      { type: 'html', span: 6, html: `<div class="eyebrow mb-8">Payers the hold covers</div>${scopeList(payers, 'data-hold-ins', (p && p.claimHoldInsurances) || [])}<div class="t-micro muted-2 mt-4">Tick none to cover every payer.</div>` },
       { name: 'isActive', label: 'Active', type: 'checkbox', span: 12, disabled: !editable },
     ], p || { isActive: true, specialty: 'PHYSICAL THERAPIST', taxonomy: '225100000X', code: String(330 + DB.providers.length) }) + enrHtml,
     foot: UI.btn({ label: editable ? 'Cancel' : 'Close', variant: 'quiet', act: 'layer.close' }) + (editable ? UI.btn({ label: 'Save provider', variant: 'primary', act: 'prov.save' }) : ''),
@@ -540,7 +614,9 @@ ACT['prov.save'] = (el) => {
   const vals = UI.submitForm(UI.formOf(layer))
   if (!vals) return
   const enrollments = U.qsa('[data-enr]', layer).filter((s) => s.value !== 'Not enrolled').map((s) => ({ insuranceId: s.dataset.enr, status: s.value, effective: layer.querySelector(`[data-enr-date="${s.dataset.enr}"]`).value || null }))
-  const data = { firstName: vals.firstName, lastName: vals.lastName, credential: vals.credential, code: vals.code, specialty: vals.specialty, npi: vals.npi, taxonomy: vals.taxonomy, stateLicense: vals.stateLicense, claimHoldUntil: vals.claimHoldUntil || null, claimHoldReason: vals.claimHoldUntil ? vals.claimHoldReason : '', isActive: vals.isActive, enrollments, draft: false }
+  const picked = (attr) => U.qsa(`[${attr}]`, layer).filter((x) => x.checked).map((x) => x.getAttribute(attr))
+  const held = !!vals.claimHoldUntil
+  const data = { firstName: vals.firstName, lastName: vals.lastName, credential: vals.credential, code: vals.code, specialty: vals.specialty, npi: vals.npi, taxonomy: vals.taxonomy, stateLicense: vals.stateLicense, claimHoldFrom: held ? vals.claimHoldFrom || null : null, claimHoldUntil: vals.claimHoldUntil || null, claimHoldReason: held ? vals.claimHoldReason : '', claimHoldLocations: held ? picked('data-hold-loc') : [], claimHoldInsurances: held ? picked('data-hold-ins') : [], isActive: vals.isActive, enrollments, draft: false }
   let p
   if (layer.dataset.id) {
     p = S.find('providers', layer.dataset.id)
@@ -549,7 +625,7 @@ ACT['prov.save'] = (el) => {
     p = { id: U.id('P'), practiceId: S.session.practiceId, ...data }
     DB.providers.push(p)
   }
-  S.log(layer.dataset.id ? 'Provider updated' : 'Provider created', { module: 'ADMIN', entityType: 'provider', entityId: p.id, detail: `${S.provName(p)}${p.claimHoldUntil ? ` · hold until ${U.date(p.claimHoldUntil)}` : ''}` })
+  S.log(layer.dataset.id ? 'Provider updated' : 'Provider created', { module: 'ADMIN', entityType: 'provider', entityId: p.id, detail: `${S.provName(p)}${p.claimHoldUntil ? ` · ${E.holdText(p)}` : ''}` })
   UI.closeTop()
   const sum = E.cascadeSummary(E.cascade())
   UI.toast('success', 'Provider saved', sum ? `What happened next: ${sum}.` : '', 7000)
@@ -687,7 +763,7 @@ Adm.insurances = () => {
       { key: 'code', label: 'Payer', sort: true, render: (i) => { const cls = E.classOf(i); return `<span class="ink fw-500">${U.esc(S.insLabel(i))}</span><span class="sub">${U.esc(cls ? cls.name : '— no class')} · ${U.esc(i.type || '—')}</span>` } },
       { key: 'payerId', label: 'Payer ID', render: (i) => U.esc(i.payerId || '—') },
       { key: 'rules', label: 'Effective billing rules', render: (i) => [E.eff(i, 'authRequired') && UI.tag('Auth required'), E.eff(i, 'injuryDateRequired') && UI.tag('Injury date required'), E.eff(i, 'specialtyModifiers') && UI.tag('Specialty modifiers'), i.format === 'CMS1500' && UI.tag('Paper CMS-1500')].filter(Boolean).join(' ') + (E.RULES.some((r) => !E.inherited(i, r.key)) ? ` <span class="t-micro muted">· overrides class</span>` : '') || '<span class="muted">—</span>' },
-      { key: 'hold', label: 'Insurance hold', render: (i) => (i.insuranceHold ? `${UI.tag('Manual release', 'sand')}<span class="sub">${U.esc((S.find('releaseBuckets', i.releaseBucketId) || {}).name || '(no bucket)')}</span>` : '<span class="muted">Automatic</span>') },
+      { key: 'hold', label: 'Insurance hold', render: (i) => `${i.insuranceHold ? `${UI.tag('Manual release', 'sand')}<span class="sub">${U.esc((S.find('releaseBuckets', i.releaseBucketId) || {}).name || '(no bucket)')}</span>` : '<span class="muted">Automatic</span>'}${i.auditRequired ? `<span class="sub">${UI.tag('Audit required', 'sand')}</span>` : ''}` },
       { key: 'sla', label: 'SLA', sort: (i) => i.slaDays, render: (i) => `${i.slaDays} days` },
       { key: 'st', label: 'Status', render: (i) => (i.draft ? UI.chip('critical', 'Draft from EMR') : UI.status(i.isActive ? 'success' : 'inert', i.isActive ? 'Active' : 'Inactive')) },
     ],
@@ -706,15 +782,14 @@ ACT['ins.edit'] = (el) => {
     return
   }
   const editable = canA(ins ? 'u' : 'c')
-  const pw = ins && ins.portalPassword ? (S.canDecrypt() ? ins.portalPassword : '') : ''
   const pid = S.session.practiceId
   const classes = DB.insuranceClasses.filter((c) => c.practiceId === pid && (c.isActive || (ins && ins.classId === c.id)))
   // "Inactive buckets cannot be assigned to new insurances" — an existing assignment stays selectable.
   const buckets = DB.releaseBuckets.filter((b) => b.practiceId === pid && (b.isActive || (ins && ins.releaseBucketId === b.id)))
   const triOpts = [{ value: 'inherit', label: 'Inherit from class' }, { value: 'yes', label: 'Yes — override' }, { value: 'no', label: 'No — override' }]
   const start = ins
-    ? { ...ins, ...ins.address, portalPassword: pw, ...Object.fromEntries(E.RULES.map((r) => [r.key, TRI(ins[r.key])])) }
-    : { format: '837P', maxUnits: 6, slaDays: 30, insuranceHold: false, ...Object.fromEntries(E.RULES.map((r) => [r.key, 'inherit'])) }
+    ? { ...ins, ...ins.address, ...Object.fromEntries(E.RULES.map((r) => [r.key, TRI(ins[r.key])])) }
+    : { format: '837P', maxUnits: 6, slaDays: 30, insuranceHold: false, auditRequired: false, ...Object.fromEntries(E.RULES.map((r) => [r.key, 'inherit'])) }
   const h = UI.modal({
     title: ins ? S.insLabel(ins) : 'New insurance',
     desc: 'A payer as the practice bills it.',
@@ -742,14 +817,13 @@ ACT['ins.edit'] = (el) => {
       { type: 'section', label: 'Manual release' },
       { name: 'insuranceHold', label: 'Insurance hold', type: 'checkbox', span: 12, disabled: !editable, desc: 'Claims for this payer stop in a release bucket after scrubbing and go out only when a user releases them.' },
       { name: 'releaseBucketId', label: 'Release bucket', type: 'select', span: 6, disabled: !editable, hidden: !start.insuranceHold, requiredIf: (v) => !!v.insuranceHold, options: buckets.map((b) => ({ value: b.id, label: b.name + (b.isActive ? '' : ' (inactive)') })), help: buckets.length ? 'Shown only when the insurance hold is checked; required then.' : 'No active bucket — create one in Admin → Release buckets.' },
+      { type: 'section', label: 'Payer audit' },
+      { name: 'auditRequired', label: 'Audit required', type: 'checkbox', span: 12, disabled: !editable, desc: 'Claims for this payer stop in the Audit hold after scrubbing. A reviewer records which documents were attached, and the claim goes out only then.' },
       { type: 'section', label: 'Submission & SLA' },
       { name: 'format', label: 'Claim format', type: 'select', span: 4, placeholder: false, options: [{ value: '837P', label: 'EDI 837P' }, { value: 'CMS1500', label: 'Paper CMS-1500 (print queue)' }], disabled: !editable },
       { name: 'maxUnits', label: 'Max units per line', type: 'number', span: 4, min: 1, max: 20, required: true, disabled: !editable },
       { name: 'slaDays', label: 'Payment SLA (days)', type: 'number', span: 4, min: 1, max: 365, required: true, disabled: !editable },
-      { type: 'section', label: 'Payer portal (encrypted)' },
-      { name: 'portalUrl', label: 'Portal URL', span: 12, disabled: !editable },
-      { name: 'portalUser', label: 'Portal user', span: 6, disabled: !editable },
-      { name: 'portalPassword', label: 'Portal password', span: 6, disabled: !editable, placeholder: ins && ins.portalPassword && !S.canDecrypt() ? '•••••••• — masked for your role' : '', help: S.canDecrypt() ? 'Visible because you are a System Admin.' : 'Decrypted only for System Admin. Type to replace.' },
+      ...(ins ? [{ type: 'note', html: `Portal access for this payer is kept in <strong>Admin → Payer portals</strong>. ${UI.btn({ label: 'Open payer portals', size: 'sm', icon: 'arrowRight', act: 'go', data: { hash: '#/admin/portals' } })}` }] : []),
     ], start, {
       onChange: (vals, formEl) => {
         const f = formEl.querySelector('[data-field="releaseBucketId"]')
@@ -770,22 +844,67 @@ ACT['ins.save'] = (el) => {
   const data = {
     code: Number(vals.code), name: vals.name, classId: vals.classId, type: vals.type, payerId: vals.payerId, address: { line1: vals.line1, city: vals.city, state: vals.state, zip: vals.zip }, phone: vals.phone, fax: vals.fax,
     ...Object.fromEntries(E.RULES.map((r) => [r.key, UNTRI(vals[r.key])])),
-    insuranceHold: vals.insuranceHold, releaseBucketId: bucket && bucket.practiceId === S.session.practiceId ? bucket.id : null,
-    format: vals.format, maxUnits: Number(vals.maxUnits), slaDays: Number(vals.slaDays), portalUrl: vals.portalUrl, portalUser: vals.portalUser, draft: false,
+    insuranceHold: vals.insuranceHold, releaseBucketId: bucket && bucket.practiceId === S.session.practiceId ? bucket.id : null, auditRequired: vals.auditRequired,
+    format: vals.format, maxUnits: Number(vals.maxUnits), slaDays: Number(vals.slaDays), draft: false,
   }
   let ins
   if (layer.dataset.id) {
     ins = S.find('insurances', layer.dataset.id)
     Object.assign(ins, data)
   } else {
-    ins = { id: U.id('i'), practiceId: S.session.practiceId, isActive: true, portalPassword: '', ...data }
+    ins = { id: U.id('i'), practiceId: S.session.practiceId, isActive: true, portalUrl: '', portalUser: '', portalPassword: '', ...data }
     DB.insurances.push(ins)
   }
-  if (vals.portalPassword) ins.portalPassword = vals.portalPassword
   S.log(layer.dataset.id ? 'Insurance updated' : 'Insurance created', { module: 'ADMIN', entityType: 'insurance', entityId: ins.id, detail: `${ins.name}${ins.insuranceHold ? ` · insurance hold → ${bucket.name}` : ''}` })
   UI.closeTop()
   const sum = E.cascadeSummary(E.cascade())
   UI.toast('success', 'Insurance saved', sum ? `What happened next: ${sum}.` : 'Rules apply to the next scrub.', 7000)
+  R.refresh()
+}
+
+// ---------------------------------------------------------------- payer portals
+Adm.portals = () => {
+  const payers = DB.insurances.filter((i) => i.practiceId === S.session.practiceId && !i.draft)
+  const dash = '<span class="muted">—</span>'
+  return UI.table({
+    cols: [
+      { key: 'payer', label: 'Payer', sort: (i) => i.name, render: (i) => `<span class="ink fw-500">${U.esc(S.insLabel(i))}</span>` },
+      { key: 'url', label: 'Portal', render: (i) => (i.portalUrl ? `<a href="${U.esc(i.portalUrl)}" target="_blank" rel="noopener">${U.esc(i.portalUrl)}</a>` : dash) },
+      { key: 'user', label: 'User', render: (i) => U.esc(i.portalUser) || dash },
+      { key: 'pw', label: 'Password', render: (i) => (i.portalPassword ? (S.canDecrypt() ? `<span class="code">${U.esc(i.portalPassword)}</span>` : '•••••••• <span class="t-micro muted">masked</span>') : dash) },
+      { key: 'act', label: '', cls: 'r', render: (i) => `<div class="row-actions">${canA('u') ? UI.iconBtn({ icon: 'pencil', label: 'Edit portal access', act: 'portal.edit', data: { id: i.id } }) : ''}</div>` },
+    ],
+    rows: payers, view: S.view('adm-portal', { sort: 'payer', dir: 'asc', page: 1 }), viewKey: 'adm-portal', rowAct: canA('u') ? 'portal.edit' : null, noun: 'payer',
+    empty: UI.empty({ icon: 'landmark', title: 'No insurances yet', text: 'Portal access is recorded per payer. Add the practice’s insurances first.', action: canA('c') ? UI.btn({ label: 'Add an insurance', icon: 'arrowRight', act: 'go', data: { hash: '#/admin/insurances' } }) : '' }),
+  })
+}
+ACT['portal.edit'] = (el) => {
+  const ins = S.find('insurances', el.dataset.id)
+  const editable = canA('u')
+  const h = UI.modal({
+    title: `${S.insLabel(ins)} — payer portal`,
+    desc: 'Where this payer’s claims and remittances are checked online.',
+    size: 'md',
+    body: UI.form([
+      { name: 'portalUrl', label: 'Portal URL', span: 12, disabled: !editable, placeholder: 'https://' },
+      { name: 'portalUser', label: 'Portal user', span: 6, disabled: !editable },
+      { name: 'portalPassword', label: 'Portal password', span: 6, disabled: !editable, placeholder: ins.portalPassword && !S.canDecrypt() ? '•••••••• — masked for your role' : '', help: S.canDecrypt() ? 'Visible because you are a System Admin.' : 'Decrypted only for System Admin. Type to replace.' },
+    ], { portalUrl: ins.portalUrl, portalUser: ins.portalUser, portalPassword: S.canDecrypt() ? ins.portalPassword : '' }),
+    foot: UI.btn({ label: editable ? 'Cancel' : 'Close', variant: 'quiet', act: 'layer.close' }) + (editable ? UI.btn({ label: 'Save portal access', variant: 'primary', act: 'portal.save' }) : ''),
+  })
+  h.el.dataset.id = ins.id
+}
+ACT['portal.save'] = (el) => {
+  const layer = el.closest('.layer')
+  const vals = UI.submitForm(UI.formOf(layer))
+  if (!vals) return
+  const ins = S.find('insurances', layer.dataset.id)
+  ins.portalUrl = vals.portalUrl
+  ins.portalUser = vals.portalUser
+  if (vals.portalPassword || S.canDecrypt()) ins.portalPassword = vals.portalPassword
+  S.log('Payer portal access saved', { module: 'ADMIN', entityType: 'insurance', entityId: ins.id, detail: ins.name })
+  UI.closeTop()
+  UI.toast('success', 'Portal access saved')
   R.refresh()
 }
 
@@ -798,7 +917,7 @@ Adm.codes = () => {
       { key: 'description', label: 'Description', sort: true, render: (c) => U.esc(c.description) },
       { key: 'procedureType', label: 'Type', sort: true, render: (c) => U.esc(c.procedureType || '—') },
       { key: 'isTimed', label: 'Timed (8-minute rule)', render: (c) => (c.isTimed ? UI.tag('Timed') : '<span class="muted">Untimed</span>') },
-      { key: 'defaultModifier', label: 'Default modifier', render: (c) => U.esc(c.defaultModifier || '—') },
+      { key: 'defaultModifier', label: 'Default modifiers', render: (c) => U.esc([c.defaultModifier, c.defaultModifier2].filter(Boolean).join(' · ')) || '—' },
       { key: 'defaultFee', label: 'Default fee', sort: true, cls: 'r', render: (c) => (c.defaultFee ? U.money(c.defaultFee) : `<span class="status critical">$0.00</span>`) },
       { key: 'isActive', label: 'Status', render: (c) => UI.status(c.isActive ? 'success' : 'inert', c.isActive ? 'Active' : 'Inactive — not offered on new charge lines') },
       { key: 'act', label: '', cls: 'r', render: (c) => (canEdit ? UI.iconBtn({ icon: 'pencil', label: 'Edit code', act: 'code.edit', data: { id: c.id } }) : '') },
@@ -815,9 +934,10 @@ ACT['code.edit'] = (el) => {
     body: UI.form([
       { name: 'code', label: 'CPT / HCPCS', required: true, span: 4, maxLength: 5, disabled: !!c, validate: (v) => (!/^[A-Z0-9]{5}$/i.test(v) ? 'Please enter a valid code.' : !c && DB.procedureCodes.some((x) => x.code === v.toUpperCase()) ? 'This code exists.' : '') },
       { name: 'description', label: 'Description', required: true, span: 8 },
-      { name: 'defaultModifier', label: 'Default modifier', span: 4, maxLength: 2 },
-      { name: 'defaultFee', label: 'Default fee per unit', type: 'money', required: true, span: 4 },
-      { name: 'procedureType', label: 'Procedure type', type: 'select', required: true, span: 4, options: ['Evaluation', 'Therapeutic', 'Modality', 'Supply / DME'] },
+      { name: 'defaultModifier', label: 'Default modifier 1', span: 3, maxLength: 2 },
+      { name: 'defaultModifier2', label: 'Default modifier 2', span: 3, maxLength: 2, validate: (v, all) => (v && !all.defaultModifier ? 'Use modifier 1 first.' : v && v.toUpperCase() === (all.defaultModifier || '').toUpperCase() ? 'The two modifiers must differ.' : '') },
+      { name: 'defaultFee', label: 'Default fee per unit', type: 'money', required: true, span: 3 },
+      { name: 'procedureType', label: 'Procedure type', type: 'select', required: true, span: 3, options: ['Evaluation', 'Therapeutic', 'Modality', 'Supply / DME'] },
       { name: 'isTimed', label: 'Timed — units follow the 8-minute rule', type: 'checkbox', span: 12 },
       { name: 'isActive', label: 'Active', type: 'checkbox', span: 12, desc: 'Inactive codes cannot be added to new charge lines.' },
     ], c ? { ...c, defaultFee: c.defaultFee.toFixed(2) } : { defaultModifier: 'GP', procedureType: 'Therapeutic', isActive: true }),
@@ -831,7 +951,7 @@ ACT['code.save'] = (el) => {
   if (!vals) return
   if (layer.dataset.id) {
     const c = S.find('procedureCodes', layer.dataset.id)
-    Object.assign(c, { description: vals.description, defaultModifier: vals.defaultModifier.toUpperCase(), defaultFee: Number(vals.defaultFee), isTimed: vals.isTimed, procedureType: vals.procedureType, isActive: vals.isActive, isNew: false })
+    Object.assign(c, { description: vals.description, defaultModifier: vals.defaultModifier.toUpperCase(), defaultModifier2: (vals.defaultModifier2 || '').toUpperCase(), defaultFee: Number(vals.defaultFee), isTimed: vals.isTimed, procedureType: vals.procedureType, isActive: vals.isActive, isNew: false })
   } else DB.procedureCodes.push({ id: `pc${vals.code.toUpperCase()}`, code: vals.code.toUpperCase(), description: vals.description, defaultModifier: vals.defaultModifier.toUpperCase(), defaultFee: Number(vals.defaultFee), isTimed: vals.isTimed, procedureType: vals.procedureType, isActive: vals.isActive })
   DB.visits.filter((v) => ['Exception', 'Review', 'Pended', 'Delayed', 'Released'].includes(v.status)).forEach((v) => E.repriceVisit(v))
   S.log('Procedure code saved', { module: 'ADMIN', detail: vals.code || S.find('procedureCodes', layer.dataset.id).code })
@@ -934,7 +1054,6 @@ ACT['fee.delete'] = async (el) => {
 // ---------------------------------------------------------------- referring physicians
 Adm.referrers = () => UI.table({
   cols: [
-    { key: 'code', label: 'Code', sort: true, render: (r) => `<span class="code">${r.code}</span>` },
     { key: 'name', label: 'Physician', sort: true, render: (r) => `<span class="ink fw-500">${U.esc(r.name)}</span><span class="sub">${U.esc(r.practiceName || '')}</span>` },
     { key: 'type', label: 'Type (Box 17)', render: (r) => UI.tag(r.type === 'DQ' ? 'DQ · Supervising' : 'DN · Referring', r.type === 'DQ' ? 'sand' : 'brand') },
     { key: 'npi', label: 'NPI', render: (r) => (E.npiValid(r.npi) ? r.npi : `<span class="status critical">${U.esc(r.npi || 'Missing')} — invalid</span>`) },
@@ -951,15 +1070,13 @@ ACT['ref.edit'] = (el) => {
     desc: 'Linked directory profile. Name, type and NPI are required for billing.',
     size: 'md',
     body: UI.form([
-      { name: 'name', label: 'Name', required: true, span: 8, placeholder: 'First Last, MD' },
-      { name: 'code', label: 'Code', required: true, span: 4 },
+      { name: 'name', label: 'Name', required: true, span: 12, placeholder: 'First Last, MD' },
       { name: 'type', label: 'Type', type: 'select', required: true, span: 6, placeholder: false, options: [{ value: 'DN', label: 'Referring (DN)' }, { value: 'DQ', label: 'Supervising (DQ)' }], help: 'Sets the Box 17 qualifier.' },
       { name: 'npi', label: 'NPI', type: 'npi', required: true, span: 6, validate: (v) => (E.DUMMY_NPIS.includes(v) ? 'Please enter a valid NPI.' : '') },
-      { name: 'taxonomy', label: 'Taxonomy', span: 6 },
-      { name: 'practiceName', label: 'Practice name', span: 6 },
+      { name: 'practiceName', label: 'Practice name', span: 12 },
       { name: 'phone', label: 'Phone', type: 'tel', span: 6 },
       { name: 'fax', label: 'Fax', type: 'tel', span: 6 },
-    ], r || { type: 'DN', code: `${9 + DB.referrers.length}RF` }),
+    ], r || { type: 'DN' }),
     foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save physician', variant: 'primary', act: 'ref.save' }),
   })
   if (r) h.el.dataset.id = r.id
@@ -991,7 +1108,7 @@ Adm.rules = () => {
     cols: [
       { key: 'type', label: 'Rule', render: (r) => UI.tag(r.type, r.type === 'Replace' ? 'brand' : 'sand') },
       { key: 'fromCode', label: 'Code', render: (r) => `<span class="code">${r.fromCode}</span>${r.type === 'Replace' ? ` → <span class="code">${r.toCode}</span>` : ' → dropped'}` },
-      { key: 'scope', label: 'Scope', render: (r) => (r.scope === 'default' ? 'Default (all payers)' : `${U.esc(S.find('insurances', r.scope).name)} only`) },
+      { key: 'scope', label: 'Applies to', render: (r) => (r.scope === 'default' ? 'Default (all payers)' : r.scope.startsWith('class:') ? `${U.esc((S.find('insuranceClasses', r.scope.slice(6)) || {}).name || 'Class')} class` : `${U.esc((S.find('insurances', r.scope) || {}).name || 'Payer')} only`) },
       { key: 'note', label: 'Why', render: (r) => `<span style="white-space:normal">${U.esc(r.note || '')}</span>` },
       { key: 'active', label: 'Active', render: (r) => (canA('u') ? `<input type="checkbox" aria-label="Active" data-act="rule.toggle" data-id="${r.id}" ${r.active ? 'checked' : ''}>` : r.active ? 'Yes' : 'No') },
       { key: 'act', label: '', cls: 'r', render: (r) => `<div class="row-actions">${canA('u') ? UI.iconBtn({ icon: 'pencil', label: 'Edit rule', act: 'rule.edit', data: { id: r.id } }) : ''}${canA('d') ? UI.iconBtn({ icon: 'trash', label: 'Delete rule', act: 'rule.delete', data: { id: r.id }, danger: true }) : ''}</div>` },
@@ -1032,7 +1149,7 @@ ACT['rule.edit'] = (el) => {
       { name: 'type', label: 'Rule type', type: 'radio', required: true, options: [{ value: 'Replace', label: 'Replace', desc: 'Convert a code to an alternative code.' }, { value: 'Drop', label: 'Drop', desc: 'Remove the code from the claim.' }] },
       { name: 'fromCode', label: 'Code', type: 'select', required: true, span: 6, options: DB.procedureCodes.map((c) => ({ value: c.code, label: `${c.code} — ${c.description}` })) },
       { name: 'toCode', label: 'Replace with', type: 'select', span: 6, requiredIf: (v) => v.type === 'Replace', options: DB.procedureCodes.map((c) => ({ value: c.code, label: `${c.code} — ${c.description}` })), validate: (v, all) => (v && v === all.fromCode ? 'Please choose a different code.' : '') },
-      { name: 'scope', label: 'Applies to', type: 'select', required: true, placeholder: false, options: [{ value: 'default', label: 'Default — all payers' }, ...payers.map((p) => ({ value: p.id, label: `${p.name} only (overrides default)` }))] },
+      { name: 'scope', label: 'Applies to', type: 'select', required: true, placeholder: false, help: 'A payer rule wins over its class rule, and a class rule wins over the default.', options: [{ value: 'default', label: 'Default — all payers' }, ...DB.insuranceClasses.filter((c) => c.practiceId === S.session.practiceId && c.isActive).map((c) => ({ value: `class:${c.id}`, label: `Class — ${c.name}` })), ...payers.map((p) => ({ value: p.id, label: `${p.name} only (overrides default)` }))] },
       { name: 'note', label: 'Why', placeholder: 'Optional reason' },
     ], r || { type: 'Replace', scope: 'default' }),
     foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save rule', variant: 'primary', act: 'rule.save' }),
@@ -1065,7 +1182,8 @@ Adm.automation = () => {
   const editable = canA('u')
   return `<div style="max-width:720px">${UI.form([
     { type: 'section', label: 'Scheduled submission' },
-    { name: 'schedule', label: 'Submit released charges automatically', type: 'select', placeholder: false, disabled: !editable, options: [{ value: 'off', label: 'Off — submit manually' }, { value: 'hourly', label: 'Every hour' }, { value: '4h', label: 'Every 4 hours' }, { value: 'daily-18', label: 'Every day at 18:00' }], help: `Last run ${s.lastScheduledRun ? U.stampLabel(s.lastScheduledRun, DB.today) : 'never'}.` },
+    { name: 'schedule', label: 'Submit released charges automatically', type: 'select', placeholder: false, disabled: !editable, options: [{ value: 'off', label: 'Off — submit manually' }, ...s.scheduleOptions.map((o) => ({ value: o.id, label: o.label }))], help: `Last run ${s.lastScheduledRun ? U.stampLabel(s.lastScheduledRun, DB.today) : 'never'}.` },
+    { type: 'note', html: `The list is yours to fill: add the times this practice submits on, or remove the ones it never uses. ${editable ? UI.btn({ label: 'Manage the list', size: 'sm', icon: 'clock', act: 'sched.manage' }) : ''}` },
     { type: 'section', label: 'AI coding quality' },
     { name: 'aiCoding', label: 'AI add-on: check diagnosis-to-CPT consistency during scrubbing', type: 'checkbox', disabled: !editable, desc: 'Failures go to the Coding Issue hold.' },
     { type: 'section', label: 'Payer SLA engine' },
@@ -1078,6 +1196,73 @@ ACT['auto.save'] = (el) => {
   S.log('Automation settings saved', { module: 'ADMIN', detail: `Schedule ${vals.schedule} · AI coding ${vals.aiCoding ? 'on' : 'off'}` })
   UI.toast('success', 'Settings saved', `${vals.aiCoding ? 'The AI coding check runs' : 'The AI coding check is skipped'} on the next scrub.`)
   R.refresh()
+}
+
+// ---------------------------------------------------------------- scheduled-submission options (client 2026-09-23)
+const SCHED_KINDS = [
+  { value: 'hours', label: 'Every few hours' },
+  { value: 'daily', label: 'Every day at a time' },
+  { value: 'weekdays', label: 'Weekdays at a time' },
+]
+const schedLabel = (v) =>
+  v.kind === 'hours' ? `Every ${Number(v.hours) === 1 ? 'hour' : `${Number(v.hours)} hours`}` : `${v.kind === 'daily' ? 'Every day' : 'Weekdays'} at ${v.time}`
+const schedBody = () => {
+  const rows = DB.settings.scheduleOptions
+  return `${rows.length
+    ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Option</th><th>Used now</th><th></th></tr></thead><tbody>${rows
+        .map((o) => `<tr><td class="ink">${U.esc(o.label)}</td><td>${DB.settings.schedule === o.id ? UI.chip('success', 'In use') : '<span class="muted">—</span>'}</td><td class="r">${DB.settings.schedule === o.id ? '' : UI.iconBtn({ icon: 'trash', label: `Remove ${o.label}`, act: 'sched.del', data: { id: o.id }, danger: true })}</td></tr>`)
+        .join('')}</tbody></table></div>`
+    : UI.empty({ icon: 'clock', title: 'No options yet', text: 'Without one, released charges are only submitted by hand.' })}
+  <div class="form-section-title" style="margin-top:20px">Add an option</div>
+  ${UI.form(
+    [
+      { name: 'kind', label: 'How often', type: 'select', placeholder: false, span: 5, options: SCHED_KINDS },
+      { name: 'hours', label: 'Every (hours)', type: 'number', span: 3, min: 1, max: 12, hidden: true },
+      { name: 'time', label: 'At', type: 'time', span: 4 },
+    ],
+    { kind: 'daily', hours: 4, time: '18:00' },
+    {
+      onChange: (vals, formEl) => {
+        const show = (n, on) => { const f = formEl.querySelector(`[data-field="${n}"]`); if (f) f.hidden = !on }
+        show('hours', vals.kind === 'hours')
+        show('time', vals.kind !== 'hours')
+      },
+    },
+  )}`
+}
+ACT['sched.manage'] = () => {
+  UI.modal({
+    title: 'Scheduled submission options',
+    desc: 'What the dropdown on this screen offers. The option in use cannot be removed.',
+    size: 'md',
+    body: `<div data-sched-body>${schedBody()}</div>`,
+    foot: UI.btn({ label: 'Close', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Add option', variant: 'primary', act: 'sched.add' }),
+  })
+}
+const schedRefresh = (el) => {
+  const box = el.closest('.layer').querySelector('[data-sched-body]')
+  if (box) box.innerHTML = schedBody()
+  R.refresh()
+}
+ACT['sched.add'] = (el) => {
+  const vals = UI.submitForm(UI.formOf(el.closest('.layer')))
+  if (!vals) return
+  if (vals.kind === 'hours' ? !vals.hours : !vals.time) return UI.toast('warning', 'Nothing to add', vals.kind === 'hours' ? 'Say how many hours apart.' : 'Choose a time of day.')
+  const label = schedLabel(vals)
+  if (DB.settings.scheduleOptions.some((o) => o.label === label)) return UI.toast('warning', 'Already on the list', `“${label}” is already an option.`)
+  DB.settings.scheduleOptions.push({ id: U.id('sch'), label, kind: vals.kind, hours: vals.kind === 'hours' ? Number(vals.hours) : null, time: vals.kind === 'hours' ? null : vals.time })
+  S.log('Submission schedule option added', { module: 'ADMIN', detail: label })
+  UI.toast('success', 'Option added', `“${label}” is now in the dropdown.`)
+  schedRefresh(el)
+}
+ACT['sched.del'] = async (el) => {
+  const o = DB.settings.scheduleOptions.find((x) => x.id === el.dataset.id)
+  if (!o || DB.settings.schedule === o.id) return
+  const ok = await UI.confirm({ title: 'Remove this option?', message: `“${o.label}” will no longer be offered.`, confirmLabel: 'Remove', tone: 'critical' })
+  if (!ok) return
+  DB.settings.scheduleOptions = DB.settings.scheduleOptions.filter((x) => x.id !== o.id)
+  S.log('Submission schedule option removed', { module: 'ADMIN', detail: o.label })
+  schedRefresh(el)
 }
 
 // ---------------------------------------------------------------- audit log

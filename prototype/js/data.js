@@ -58,12 +58,12 @@ function buildSeed() {
   const TODAY = '2026-09-15'
   const db = {
     today: TODAY,
-    company: null, practices: [], locations: [], roles: [], users: [], providers: [], insuranceClasses: [], insurances: [],
+    companies: [], practices: [], locations: [], roles: [], users: [], providers: [], insuranceClasses: [], insurances: [],
     releaseBuckets: [], procedureCodes: [], feeSchedules: [], payerContracts: [], referrers: [], patients: [], cases: [], coverages: [],
     authorizations: [], visits: [], chargeLines: [], claims: [], payments: [], batches: [], eras: [],
     denials: [], exceptions: [], updates: [], runs: [], periods: [], codingRules: [], audit: [],
     emrLog: [], icd10: [], carc: [], rarc: [],
-    settings: { schedule: 'daily-18', aiCoding: true, slaSource: 'manual', lastScheduledRun: '2026-09-14T18:00' },
+    settings: { schedule: 'daily-18', scheduleOptions: [{ id: 'hourly', label: 'Every hour', kind: 'hours', hours: 1, time: null }, { id: '4h', label: 'Every 4 hours', kind: 'hours', hours: 4, time: null }, { id: 'daily-18', label: 'Every day at 18:00', kind: 'daily', hours: null, time: '18:00' }], aiCoding: true, slaSource: 'manual', lastScheduledRun: '2026-09-14T18:00' },
   }
   DB = db
   S.quiet = true
@@ -74,7 +74,7 @@ function buildSeed() {
     db.audit.push({ id: U.id('au'), at: at(iso, hm), userId, action, module, entityType, entityId, detail, practiceId })
 
   // ------------------------------------------------------------ organization
-  db.company = { id: 'co1', name: 'Harborline Rehab Group', isActive: true }
+  db.companies.push({ id: 'co1', name: 'Harborline Rehab Group', isActive: true })
   db.practices.push(
     { id: 'pr1', companyId: 'co1', code: 'HPT1', name: 'Harborline Physical Therapy', legalName: 'Harborline Physical Therapy, PLLC', dba: 'Harborline PT', npi: '1609847312', taxId: '84-2217765', taxIdType: 'EIN', taxonomy: '225100000X', address: { line1: '8622 5th Avenue, Suite 2', line2: '', city: 'Brooklyn', state: 'NY', zip: '11209' }, phone: '718-555-0100', isActive: true },
     { id: 'pr2', companyId: 'co1', code: 'NSS2', name: 'Northgate Sports & Spine', legalName: 'Northgate Sports & Spine Physical Therapy, P.C.', dba: '', npi: '1710958423', taxId: '87-4410932', taxIdType: 'EIN', taxonomy: '225100000X', address: { line1: '45 Northern Boulevard', line2: 'Floor 3', city: 'Great Neck', state: 'NY', zip: '11021' }, phone: '516-555-0190', isActive: true },
@@ -123,7 +123,7 @@ function buildSeed() {
     ['97039', 'Unlisted modality (retired locally)', false, 'GP', 20],
   ].forEach(([code, description, isTimed, mod, fee]) =>
     db.procedureCodes.push({
-      id: `pc${code}`, code, description, isTimed, defaultModifier: mod, defaultFee: fee,
+      id: `pc${code}`, code, description, isTimed, defaultModifier: mod, defaultModifier2: '', defaultFee: fee,
       // procedure_type and is_active are new in PRD V2 §10.3 (CH-13)
       procedureType: /^9716/.test(code) || code === '97750' ? 'Evaluation' : ['97010', '97014', 'G0283', '97035', '97033', '97039'].includes(code) ? 'Modality' : 'Therapeutic',
       isActive: code !== '97039', isNew: code === '97033', addedOn: code === '97033' ? '2026-09-14' : '2024-01-01',
@@ -152,7 +152,7 @@ function buildSeed() {
 
   // ------------------------------------------------------------ insurances (§10.3)
   // Billing rules are null = "inherit from the class"; a value overrides the class for this insurance only.
-  const insu = (o) => db.insurances.push({ phone: '800-555-0100', fax: '800-555-0199', icdVersion: null, acceptAssignment: null, specialtyModifiers: null, authRequired: null, injuryDateRequired: null, insuranceHold: false, releaseBucketId: null, maxUnits: 6, slaDays: 30, format: '837P', portalUrl: 'https://provider.example-payer.com', portalUser: 'harborline_billing', portalPassword: 'Tr1dent-Harbor-26', isActive: true, draft: false, practiceId: 'pr1', ...o })
+  const insu = (o) => db.insurances.push({ auditRequired: false, phone: '800-555-0100', fax: '800-555-0199', icdVersion: null, acceptAssignment: null, specialtyModifiers: null, authRequired: null, injuryDateRequired: null, insuranceHold: false, releaseBucketId: null, maxUnits: 6, slaDays: 30, format: '837P', portalUrl: 'https://provider.example-payer.com', portalUser: 'harborline_billing', portalPassword: 'Tr1dent-Harbor-26', isActive: true, draft: false, practiceId: 'pr1', ...o })
   insu({ id: 'i1', code: 1001, name: 'Medicare Part B', classId: 'ic1', type: 'Medicare', payerId: '13202', address: { line1: 'PO Box 6178', city: 'Indianapolis', state: 'IN', zip: '46206' }, maxUnits: 4, slaDays: 14, portalUrl: 'https://portal.example-medicare.gov' })
   insu({ id: 'i2', code: 1002, name: 'Empire BlueCross BlueShield', classId: 'ic2', type: 'Commercial', payerId: '803', address: { line1: 'PO Box 1407, Church Street Station', city: 'New York', state: 'NY', zip: '10008' } })
   insu({ id: 'i3', code: 1003, name: 'Aetna', classId: 'ic3', type: 'Commercial', payerId: '60054', address: { line1: 'PO Box 981106', city: 'El Paso', state: 'TX', zip: '79998' } })
@@ -196,25 +196,25 @@ function buildSeed() {
   // ------------------------------------------------------------ providers & referrers
   const allActive = (ids, status = 'Active') => ids.map((insuranceId) => ({ insuranceId, status, effective: '2024-01-01' }))
   const PR1_INS = ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8']
-  const prov = (o) => db.providers.push({ practiceId: 'pr1', taxonomy: '225100000X', specialty: 'PHYSICAL THERAPIST', claimHoldUntil: null, claimHoldReason: '', isActive: true, draft: false, enrollments: allActive(PR1_INS), ...o })
+  const prov = (o) => db.providers.push({ practiceId: 'pr1', taxonomy: '225100000X', specialty: 'PHYSICAL THERAPIST', claimHoldFrom: null, claimHoldUntil: null, claimHoldReason: '', claimHoldLocations: [], claimHoldInsurances: [], isActive: true, draft: false, enrollments: allActive(PR1_INS), ...o })
   prov({ id: 'P1', code: '297', firstName: 'Aisha', lastName: 'Rahman', credential: 'PT, DPT', npi: '1356482917', stateLicense: 'NY 041822' })
   prov({ id: 'P2', code: '301', firstName: 'Marcus', lastName: 'Delaney', credential: 'PT', npi: '1467593028', stateLicense: 'NY 043517', enrollments: [...allActive(['i1', 'i2', 'i3', 'i5', 'i6', 'i7', 'i8']), { insuranceId: 'i4', status: 'Pending', effective: null }] })
   prov({ id: 'P3', code: '305', firstName: 'Elena', lastName: 'Petrova', credential: 'PT, DPT', npi: '1578604139', stateLicense: 'NY 044902' })
-  prov({ id: 'P4', code: '318', firstName: 'Jordan', lastName: 'Okafor', credential: 'PT', npi: '1689715240', stateLicense: 'NY 047731', claimHoldUntil: '2026-09-30', claimHoldReason: 'Pending Provider Credentialing', enrollments: allActive(PR1_INS, 'Pending').map((e) => ({ ...e, effective: null })) })
+  prov({ id: 'P4', code: '318', firstName: 'Jordan', lastName: 'Okafor', credential: 'PT', npi: '1689715240', stateLicense: 'NY 047731', claimHoldFrom: '2026-09-01', claimHoldUntil: '2026-09-30', claimHoldReason: 'Pending Provider Credentialing', enrollments: allActive(PR1_INS, 'Pending').map((e) => ({ ...e, effective: null })) })
   prov({ id: 'P5', code: '322', firstName: 'Sofia', lastName: 'Marchetti', credential: 'OTR/L', npi: '1790826351', stateLicense: 'NY 012290', taxonomy: '225X00000X', specialty: 'OCCUPATIONAL THERAPIST' })
   prov({ id: 'P6', code: 'EMR-7781', firstName: 'Liam', lastName: 'Chen', credential: '', npi: '', stateLicense: '', taxonomy: '', draft: true, draftFrom: 'First finalized EMR note on 09/14/2026', enrollments: [] })
   prov({ id: 'P9', code: '327', firstName: 'Caleb', lastName: 'Wright', credential: 'PT', npi: '', stateLicense: 'NY 048115' })
   prov({ id: 'P7', practiceId: 'pr2', code: '110', firstName: 'Noah', lastName: 'Feldman', credential: 'PT, DPT', npi: '1801937462', stateLicense: 'NY 039981', enrollments: allActive(['i10', 'i11']) })
   prov({ id: 'P8', practiceId: 'pr2', code: '112', firstName: 'Grace', lastName: 'Liu', credential: 'PT', npi: '1912048573', stateLicense: 'NY 040377', enrollments: allActive(['i10', 'i11']) })
 
-  const refr = (o) => db.referrers.push({ practiceId: 'pr1', type: 'DN', taxonomy: '207X00000X', ...o })
-  refr({ id: 'R1', code: '3VY', name: 'Priya Natarajan, MD', npi: '1720394851', practiceName: 'Bay Orthopaedic Associates', phone: '718-555-0311', fax: '718-555-0312' })
-  refr({ id: 'R2', code: '4KD', name: 'Thomas Beckett, MD', npi: '1831405962', practiceName: 'Kings Joint Replacement Center', phone: '718-555-0322', fax: '718-555-0323' })
-  refr({ id: 'R3', code: '5LM', name: 'Hannah Morales, DO', npi: '1942516073', practiceName: 'Slope Family Medicine', phone: '718-555-0333', fax: '718-555-0334', taxonomy: '207Q00000X' })
-  refr({ id: 'R4', code: '6PA', name: 'Kwame Asante, MD', npi: '1053627184', practiceName: 'Harbor Hand & Upper Extremity', phone: '718-555-0344', fax: '718-555-0345' })
-  refr({ id: 'R5', code: '7QX', name: 'Leonard Voss, MD', npi: '9999999999', practiceName: 'Voss Pain Management', phone: '718-555-0355', fax: '' })
-  refr({ id: 'R6', code: '8SV', name: 'Rebecca Stone, MD', npi: '1164738295', practiceName: 'Harborline Medical Supervision', phone: '718-555-0366', fax: '', type: 'DQ' })
-  refr({ id: 'R7', code: '2NG', name: 'Samuel Ortiz, MD', npi: '1275849306', practiceName: 'North Shore Orthopedics', phone: '516-555-0377', fax: '', practiceId: 'pr2' })
+  const refr = (o) => db.referrers.push({ practiceId: 'pr1', type: 'DN', ...o })
+  refr({ id: 'R1', name: 'Priya Natarajan, MD', npi: '1720394851', practiceName: 'Bay Orthopaedic Associates', phone: '718-555-0311', fax: '718-555-0312' })
+  refr({ id: 'R2', name: 'Thomas Beckett, MD', npi: '1831405962', practiceName: 'Kings Joint Replacement Center', phone: '718-555-0322', fax: '718-555-0323' })
+  refr({ id: 'R3', name: 'Hannah Morales, DO', npi: '1942516073', practiceName: 'Slope Family Medicine', phone: '718-555-0333', fax: '718-555-0334' })
+  refr({ id: 'R4', name: 'Kwame Asante, MD', npi: '1053627184', practiceName: 'Harbor Hand & Upper Extremity', phone: '718-555-0344', fax: '718-555-0345' })
+  refr({ id: 'R5', name: 'Leonard Voss, MD', npi: '9999999999', practiceName: 'Voss Pain Management', phone: '718-555-0355', fax: '' })
+  refr({ id: 'R6', name: 'Rebecca Stone, MD', npi: '1164738295', practiceName: 'Harborline Medical Supervision', phone: '718-555-0366', fax: '', type: 'DQ' })
+  refr({ id: 'R7', name: 'Samuel Ortiz, MD', npi: '1275849306', practiceName: 'North Shore Orthopedics', phone: '516-555-0377', fax: '', practiceId: 'pr2' })
 
   // ------------------------------------------------------------ patients, cases, coverage (§3.2, §10.4)
   let billingId = 10412
@@ -222,7 +222,7 @@ function buildSeed() {
   const pt = (o) => {
     const p = {
       practiceId: 'pr1', middleName: '', ssn: '', phoneHome: '', email: '', guarantor: null,
-      noStatements: false, notes: '', isActive: true, billingId: billingId++, emrId: emrId + Math.floor(Math.random() * 90 + 10), ...o,
+      notes: '', isActive: true, billingId: billingId++, emrId: emrId + Math.floor(Math.random() * 90 + 10), ...o,
     }
     emrId += 131
     db.patients.push(p)
@@ -233,7 +233,7 @@ function buildSeed() {
   const visitDefaults = {}
   const cs = (o) => {
     const { locationId, billingProviderId, ...rest } = o
-    const c = { name: 'Default', injuryType: 'Other', injuryDate: null, startOfCare: null, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, ...rest }
+    const c = { name: 'Default', injuryType: '', injuryDate: null, startOfCare: null, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, ...rest }
     c.dx = (o.dx || []).map((code) => ({ code, desc: db.icd10.find((d) => d.code === code).desc }))
     visitDefaults[c.id] = { locationId, billingProviderId }
     db.cases.push(c)

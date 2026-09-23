@@ -12,7 +12,7 @@ const Sim = (() => {
   // Falls back to any active code, so scenarios also work in the Fresh System
   const line = (code, units, pointers = [1]) => {
     const pc = E.pcByCode(code) || DB.procedureCodes.find((x) => x.isActive)
-    return pc ? { procedureCodeId: pc.id, units, modifiers: pc.defaultModifier ? [pc.defaultModifier] : [], pointers } : null
+    return pc ? { procedureCodeId: pc.id, units, modifiers: [pc.defaultModifier, pc.defaultModifier2].filter(Boolean), pointers } : null
   }
   const lines = (...ls) => ls.filter(Boolean)
   const freshProvider = () => DB.providers.find((p) => p.practiceId === S.session.practiceId && !p.draft && p.isActive && E.npiValid(p.npi) && !p.claimHoldUntil)
@@ -205,10 +205,10 @@ const Sim = (() => {
         }
       }
       const loc = primaryLoc()
-      const p = { id: U.id('p'), practiceId: S.session.practiceId, billingId: 10412 + n + 40, emrId: 56370000 + n * 17, firstName: first, middleName: '', lastName: last, gender, dob: `19${70 + (n % 25)}-0${1 + (n % 8)}-1${n % 9}`, address: { line1: `${100 + n} Fourth Avenue`, line2: '', city: 'Brooklyn', state: 'NY', zip: '11217' }, phoneCell: `718-555-01${String(n % 90).padStart(2, '0')}`, phoneHome: '', email: '', ssn: '', guarantor: null, noStatements: false, notes: '', isActive: true }
+      const p = { id: U.id('p'), practiceId: S.session.practiceId, billingId: 10412 + n + 40, emrId: 56370000 + n * 17, firstName: first, middleName: '', lastName: last, gender, dob: `19${70 + (n % 25)}-0${1 + (n % 8)}-1${n % 9}`, address: { line1: `${100 + n} Fourth Avenue`, line2: '', city: 'Brooklyn', state: 'NY', zip: '11217' }, phoneCell: `718-555-01${String(n % 90).padStart(2, '0')}`, phoneHome: '', email: '', ssn: '', guarantor: null, notes: '', isActive: true }
       DB.patients.unshift(p)
       const ref = DB.referrers.find((r) => r.practiceId === S.session.practiceId && E.npiValid(r.npi))
-      const c = { id: U.id('c'), patientId: p.id, name: 'Default', referrerId: ref ? ref.id : null, injuryType: 'Other', injuryDate: null, startOfCare: dos, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, dx: [{ code: 'M25.561', desc: E.dxLabel('M25.561') }] }
+      const c = { id: U.id('c'), patientId: p.id, name: 'Default', referrerId: ref ? ref.id : null, injuryType: '', injuryDate: null, startOfCare: dos, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, dx: [{ code: 'M25.561', desc: E.dxLabel('M25.561') }] }
       DB.cases.push(c)
       DB.coverages.push({ id: U.id('cv'), caseId: c.id, insuranceId: ins.id, rank: 1, memberId: `W${String(700000000 + n * 7919)}`, groupNumber: '0184421', claimNumber: '', subscriber: null, employer: null })
       S.log('Patient chart and case received from EMR', { module: 'PATIENT', entityType: 'patient', entityId: p.id, userId: 'u8', detail: `${S.pfull(p)} · Default case` })

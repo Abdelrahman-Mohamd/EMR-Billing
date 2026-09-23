@@ -73,8 +73,9 @@ Screens.reports = {
     const pids = st.scope === 'all' && practices.length > 1 ? practices.map((p) => p.id) : [S.session.practiceId]
     const rep = Rep.build(key, pids)
     const max = Math.max(1, ...rep.bars.map((b) => b.v))
-    const scopeCtl = practices.length > 1 ? UI.seg([{ value: 'practice', label: S.practice().name }, { value: 'all', label: `All practices · ${DB.company.name}` }], st.scope, 'rep.scope') : ''
-    return `<div class="screen"><div class="page-x screen-head"><div><h1 class="screen-title">Reports</h1><p class="screen-sub">${pids.length > 1 ? `Cross-practice report for ${U.esc(DB.company.name)}` : `${U.esc(S.practice().name)} · granted practices only`}</p></div>
+    const org = S.companyOf(S.practice())
+    const scopeCtl = practices.length > 1 ? UI.seg([{ value: 'practice', label: S.practice().name }, { value: 'all', label: org ? `All practices · ${org.name}` : 'All my practices' }], st.scope, 'rep.scope') : ''
+    return `<div class="screen"><div class="page-x screen-head"><div><h1 class="screen-title">Reports</h1><p class="screen-sub">${pids.length > 1 ? `Cross-practice report for ${U.esc(org ? org.name : 'your practices')}` : `${U.esc(S.practice().name)} · granted practices only`}</p></div>
       <div class="screen-actions">${scopeCtl}${UI.btn({ label: 'Export CSV', icon: 'download', act: 'rep.export', data: { key } })}</div></div>
       <div class="page-x screen-body">
         <div class="mt-16">${UI.tabs(REPORTS, key, 'rep.tab')}</div>

@@ -11,12 +11,12 @@ function buildFresh() {
   const TODAY = '2026-09-15'
   const db = {
     today: TODAY,
-    company: null, practices: [], locations: [], roles: [], users: [], providers: [], insuranceClasses: [], insurances: [],
+    companies: [], practices: [], locations: [], roles: [], users: [], providers: [], insuranceClasses: [], insurances: [],
     releaseBuckets: [], procedureCodes: [], feeSchedules: [], payerContracts: [], referrers: [], patients: [], cases: [], coverages: [],
     authorizations: [], visits: [], chargeLines: [], claims: [], payments: [], batches: [], eras: [],
     denials: [], exceptions: [], updates: [], runs: [], periods: [], codingRules: [], audit: [],
     emrLog: [], icd10: [], carc: [], rarc: [],
-    settings: { schedule: 'daily-18', aiCoding: true, slaSource: 'manual', lastScheduledRun: null },
+    settings: { schedule: 'daily-18', scheduleOptions: [{ id: 'hourly', label: 'Every hour', kind: 'hours', hours: 1, time: null }, { id: '4h', label: 'Every 4 hours', kind: 'hours', hours: 4, time: null }, { id: 'daily-18', label: 'Every day at 18:00', kind: 'daily', hours: null, time: '18:00' }], aiCoding: true, slaSource: 'manual', lastScheduledRun: null },
   }
   DB = db
   // Standard code sets used by pickers — not practice data (assumption A-P47, Q-085)

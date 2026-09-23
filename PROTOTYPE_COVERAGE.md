@@ -7,6 +7,7 @@ This file maps every requirement in **`Billing System PRD v2.docx`** to the clic
 - **Workflow IDs** (`W1`–`W8`) are the core workflows in `PROJECT_MEMORY.md` §7. **Prototype assumptions** (`A-P##`) are listed in section 5.
 - Migrated from V1 on 2026-09-16. Section 3 lists what changed in the prototype and why.
 - **Two environments** (added 2026-09-17): **Demo Data** and **Fresh System**, in the same prototype. Sections 8 and 9 describe them.
+- **Meeting notes of 2026-09-23** are recorded as *Confirmed by meeting* where they were built, and as questions Q-087 – Q-097 where they were not. A meeting note is not a PRD requirement: rows below still cite V2, and anything the meeting adds on top of V2 is marked as such.
 - **Product, plus review notes** (2026-09-17): the **Billing System** screens contain only product content. Assumptions, client questions and prototype notes are a thin **Review Notes** annotation layer — one small control and numbered markers. Section 10 describes it. Where the matrix below says “review note”, the information is shown there, not in the application.
 
 **The prototype is not the product.** Plain HTML, CSS and JavaScript with in-memory demo data: no backend, no persistence (a refresh resets everything), no real authentication, no real integrations. **Open it:** double-click `prototype/index.html` (see `prototype/README.md`).
@@ -80,7 +81,7 @@ This file maps every requirement in **`Billing System PRD v2.docx`** to the clic
 | PRD V2 Reference | Module | Feature | Prototype Screen | Prototype Interaction | Workflow | Status | Notes |
 |---|---|---|---|---|---|---|---|
 | §5.1 p6 | Charges | Ingestion queue of charges ready for validation | Charges → Ready to submit | Released visits wait here | W4 | Implemented | |
-| §5.1 p6 | Charges | Single, bulk and scheduled submission | Ready to submit; Admin → Submission & automation | Submit, Submit selected, Run scheduled job now | W4 | Partially Implemented | Scheduled job runs on demand (A-P32, Q-041) |
+| §5.1 p6 | Charges | Single, bulk and scheduled submission | Ready to submit; Admin → Submission & automation | Submit, Submit selected, Run scheduled job now; **the practice fills the list of schedule options itself** | W4 | Partially Implemented | Scheduled job runs on demand (A-P32, Q-041). *Schedule list confirmed by the client 2026-09-23* (A-P58) |
 | §5.2 p6 | Charges | Updated queue: Inactivate | Updated → Review update | Update archived; claim unchanged | W5 | Implemented | |
 | §5.2 p6 | Charges / Claims | Updated queue: corrected claim (Box 22 original ref + 7/8) | Updated → Review update; claim menu | Frequency-7 replacement or frequency-8 void; Box 22 shows code and reference | W5 | Needs Clarification | Source of original reference (A-P19, Q-019); void effect on money (Q-044) |
 | §5.2 p6 | Charges | Updated queue: Submit anyway | Updated → Review update | Duplicate warning; fresh claim created | W5 | Needs Clarification | Conflicts with one claim per payer (C-004) |
@@ -91,7 +92,7 @@ This file maps every requirement in **`Billing System PRD v2.docx`** to the clic
 |---|---|---|---|---|---|---|---|
 | §6.1 p7 | Billing rules | Replace rule | Admin → Coding rules; scrub results | Medicare 97014 → G0283 at scrub | W4 | Implemented | |
 | §6.1 p7 | Billing rules | Drop rule | Coding rules; scrub results | Default rule drops 97010 | W4 | Implemented | |
-| §6.1 p7 | Billing rules | Payer rules override default; run on fresh, resubmitted, corrected claims | Coding rules → Test the rules | Tester shows which rule wins | W4 | Needs Clarification | Primary claims only (A-P12); "posting grids" undefined (Q-013) |
+| §6.1 p7 | Billing rules | Payer rules override default; run on fresh, resubmitted, corrected claims | Coding rules → Test the rules | **Applies to: default, an insurance class, or one payer**; the tester shows which rule wins | W4 | Needs Clarification | *Class level confirmed by meeting 2026-09-23*, beyond V2's default / payer split; precedence assumed payer → class → default (A-P51, Q-097). Primary claims only (A-P12); "posting grids" undefined (Q-013) |
 | §6.2 p7 | Claims | Data integrity → Missing Data hold | Claims → Holds | Kevin O'Brien lacks a group number; fix coverage → auto-resubmit. Now also checks the visit has a location and billing provider | W4, W6 | Implemented | |
 | §6.2 p7 | Claims | Authorization → Authorization Hold (effective rule) | Holds | Maria Gonzalez; add authorization → held claim resubmits, pended visits return | W4, W6 | Implemented | Requirement read from the insurer's effective rule (CH-02) |
 | §6.2 p7 | Claims | Credentialing → Credentialing Hold | Holds | James Whitaker (pending with UHC); set enrollment Active → resubmits | W4, W6 | Needs Clarification | Enrollment list is a prototype addition (A-P08, Q-010) |
@@ -134,21 +135,21 @@ This file maps every requirement in **`Billing System PRD v2.docx`** to the clic
 
 | PRD V2 Reference | Module | Feature | Prototype Screen | Prototype Interaction | Workflow | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| §10.2 pp12–13 | Admin | company / practice / location | Practices & locations; switcher | Practice and location CRUD; the organization card appears only when an organization exists (Demo Data) — no screen creates one | W1 | Needs Clarification | Who creates the company and how practices join it (Q-032); review note on Practices |
+| §10.2 pp12–13 | Admin | company / practice / location | **Admin → Organizations** (new); Practices & locations; switcher | Organizations created and renamed by a System Admin, practices ticked into one; the practice form and the practice card show the organization | W1 | Needs Clarification | *Confirmed by meeting 2026-09-23.* Creation answered; what the grouping changes is still open (Q-032). A practice belongs to at most one organization (A-P50) |
 | §10.2 pp13–14 | Access | app_user, role (JSON CRUD), user_practice (location_ids), user_role (union) | Users; Roles & permissions | Multi-role users with practice/location grants; Practice Admin cannot grant System Admin | — | Implemented | |
 | §10.2 p14 | Access | Two roles are seeded: System Admin and Practice Admin | Fresh System (initial state); Roles & permissions | A Fresh System starts with exactly these two roles; Demo Data adds four demo roles for the walkthrough | W1 | Implemented | What else exists at installation is not stated (Q-085); first account assumed (A-P48, Q-086) |
-| §10.3 p15 *(CH-15)* | Setup | provider: Provider ID, optional credential, claim hold | Admin → Providers | Provider ID column; credential optional; hold until/reason → Delayed; clearing releases | W1, W4 | Needs Clarification | Hold date meaning assumed (A-P07, Q-062) |
+| §10.3 p15 *(CH-15)* | Setup | provider: Provider ID, optional credential, claim hold | Admin → Providers | Provider ID column; credential optional; **hold window (from / until), reason and the locations and payers it covers** → visits Delayed and unsent claims in the **Provider hold**; clearing the end date releases both | W1, W4 | Implemented | *Confirmed by the client 2026-09-23, beyond V2's single date:* the hold stops billing and submission together and lifts itself when the window ends (A-P07, A-P56, Q-062) |
 | **§10.3 p15** *(new, CH-02)* | Setup | **insurance_class: code, name, five rule defaults, active** | **Admin → Insurance classes** | List with rule defaults, member count and override count; create, edit, deactivate; changing a default flows to inheriting insurances | W1 | Needs Clarification | When a change takes effect assumed: next scrub (A-P42, Q-081) |
 | **§10.3 p16** *(changed, CH-02)* | Setup | **insurance: class required; rules nullable (inherit) with COALESCE; insurance type** | **Admin → Insurances** | Class picker (required); each rule *Inherit / Yes / No*; live **Effective values** panel showing value and source; list shows effective rules and "overrides class" | W1 | Implemented | Class vs insurance type overlap (Q-081) |
 | **§10.3 p16** *(new, CH-01)* | Setup | **insurance_hold check mark; release_bucket_id shown only when held, required then, same practice** | Admin → Insurances | Bucket field hidden until hold ticked; required when ticked; only the practice's buckets offered | W1 | Implemented | |
 | **§10.3 pp16–17** *(new, CH-03)* | Setup | **release_bucket: created by Practice Admin; name unique per practice; description; active; inactive not assignable to new insurances** | **Admin → Release buckets** | Create, edit, deactivate; held insurances and waiting-claim counts; unique-name validation; inactive buckets hidden from other insurances' pickers | W1 | Needs Clarification | Deactivation with assigned insurances/waiting claims assumed (A-P41, Q-077) |
-| §10.3 p16 | Setup | insurance: payer ID, address, encrypted portal credentials | Admin → Insurances | Password masked except for System Admin | W1 | Implemented | |
-| **§10.3 p17** *(changed, CH-13)* | Setup | **procedure_code: procedure type, active flag (inactive not added to new lines); global; timed; default modifier/fee** | Admin → Procedure codes; charge entry | Type and status columns; editable by global roles; inactive 97039 not offered on new lines (existing lines keep their code) | W1, W4 | Needs Clarification | Inactive code arriving from the EMR (A-P46, Q-082); type's purpose (Q-083); maintainer (A-P26, Q-066) |
+| §10.3 p16 | Setup | insurance: payer ID, address, encrypted portal credentials | Admin → Insurances; **Admin → Payer portals** (new tab) | Portal URL, user and password edited in their own tab, stored on the insurance; password masked except for System Admin | W1 | Implemented | *Portal tab confirmed by meeting 2026-09-23* — the same fields, one place to edit them |
+| **§10.3 p17** *(changed, CH-13)* | Setup | **procedure_code: procedure type, active flag (inactive not added to new lines); global; timed; default modifier(s)/fee** | Admin → Procedure codes; charge entry | Type and status columns; editable by global roles; inactive 97039 not offered on new lines (existing lines keep their code) | W1, W4 | Needs Clarification | Inactive code arriving from the EMR (A-P46, Q-082); type's purpose (Q-083); maintainer (A-P26, Q-066) |
 | **§10.3 p17** *(changed, CH-08)* | Setup | **fee_schedule: billed price only, effective dates** | Admin → Fee schedules | Billed / unit, default fee, effective dates; no allowed column | W1 | Implemented | Payer allowed amounts live only in the simulated payer (A-P34) |
-| **§10.3 p18** *(changed, CH-12)* | Setup | **referring_physician: type Referring (DN) / Supervising (DQ) sets Box 17 qualifier** | Admin → Referring physicians | Type select; Box 17 qualifier follows it | W1 | Implemented | |
-| §10.4 p18 *(changed, CH-14)* | Patient | patient: demographics, guarantor, emr_id, **optional SSN**, no-statements, notes; **no emergency contact** | Patients; chart → Profile | Create (with Default case), edit, deactivate, delete only without visits | W3 | Implemented | Deletion rule assumed (A-P36, Q-034) |
+| **§10.3 p18** *(changed, CH-12)* | Setup | **referring_physician: code (unique per practice), name, type Referring (DN) / Supervising (DQ), NPI** | Admin → Referring physicians | Type select; Box 17 qualifier follows it; **code and taxonomy removed** (client, 2026-09-23) | W1 | Partially Implemented | *Confirmed by the client, against V2:* V2 keys the directory by `code` (UQ per practice); the prototype identifies a physician by name and NPI (A-P55, Q-096) |
+| §10.4 p18 *(changed, CH-14)* | Patient | patient: demographics, guarantor (name, **address**, dob, relationship), emr_id, **optional SSN**, ~~no-statements~~, notes | Patients; chart → Profile | Create (with Default case), edit, deactivate, delete only without visits; **guarantor address captured** (meeting 2026-09-23, and a V2 field that was missing); **Billing preferences removed** (client, 2026-09-23) | W3 | Partially Implemented | *Confirmed by the client, against V2:* `no_statements` is not implemented — no screen sets a statement preference (Q-091, Q-047). Guarantor date of birth still not captured (Q-069) |
 | **§10.4 p19** *(changed, CH-04/CH-05)* | Patient | **patient_case: referring physician, ordered ICD-10 list ≤12, injury type/date, accident state, dates — no location, providers or discipline** | Chart → Case, Diagnoses | Case form without location/provider/discipline; case shows "Visit locations" derived from visits | W3 | Needs Clarification | Hierarchy text still places them above the case (C-014) |
-| §10.4 pp19–20 | Patient | case_insurance, authorization | Chart → Coverage, Authorizations | Full CRUD | W3 | Implemented | |
+| §10.4 pp19–20 | Patient | case_insurance, authorization | Chart → **Insurance** (tab renamed, meeting 2026-09-23), Authorizations | Full CRUD | W3 | Implemented | |
 | **§10.5 p20** *(changed, CH-04/CH-06)* | Charges | **visit: location and providers set on the visit (EMR payload or manual entry); authorization optional; diagnosis snapshot; Review → Pended/Delayed → Released** | Charges tabs; visit detail; New charge | Visit detail edits location, billing and rendering provider; manual entry requires all three; simulator payload carries them; release, pend, re-check, refresh snapshot | W4 | Needs Clarification | No default when EMR omits them (A-P43, Q-080) |
 | **§10.5 p21** *(changed, CH-09/CH-10)* | Charges | **charge_line: place of service (defaults from location), notes; balances computed not stored** | Visit detail; New charge; patient ledger | Per-line POS select and internal note; balance = amount − payments − adjustments | W4, W7 | Partially Implemented | Prototype caches the insurer/patient split for display; QA verifies it always equals the computed formula (A-P45, Q-017) |
 | **§10.5 p21** *(changed, CH-11)* | Claims | **claim: 837P/CMS1500, statuses, clearinghouse ref, one per rank, referring physician snapshot** | Claims; claim detail → Claim facts, CMS-1500 | Claim facts show the snapshot physician and type; Box 17 prints it | W4 | Implemented | Status vocabulary (C-003) |
@@ -183,9 +184,9 @@ This file maps every requirement in **`Billing System PRD v2.docx`** to the clic
 
 | Status | Count |
 |---|---|
-| Implemented | 36 |
-| Partially Implemented | 14 |
-| Needs Clarification | 38 |
+| Implemented | 35 |
+| Partially Implemented | 16 |
+| Needs Clarification | 37 |
 | Not Implemented | 1 |
 | Not Applicable | 1 |
 | **Total rows** | **90** |
@@ -277,6 +278,15 @@ None of these are confirmed requirements. Each is the simplest behaviour that le
 | A-P47 | Both environments load the standard ICD-10 (a short list), CARC and RARC code sets as lookups; they are code standards, not practice data. Procedure codes, fees and insurance classes are **not** pre-loaded in the Fresh System. | Q-085 |
 | A-P48 | A Fresh System has one System Administrator account (`admin`) to sign in with; that person creates the first practice. | Q-086 |
 | A-P49 | A new practice starts with the current month open as its accounting period, so Month end can be used; closing it opens the next (A-P30). | Q-085, Q-049 |
+| A-P50 | A practice belongs to at most one organization; ticking it into another moves it. Organizations are created by a System Admin. *(Meeting 2026-09-23.)* | Q-032 |
+| A-P51 | A coding rule may target an insurance class; precedence is the payer's own rule, then its class rule, then the default. *(Meeting 2026-09-23; V2 names default and payer rules only.)* | Q-097, Q-013 |
+| A-P52 | A procedure code carries two default modifiers and both are copied onto a new charge line; a replaced code brings its own two. *(Meeting 2026-09-23; V2 has one default_modifier column.)* | — |
+| A-P53 | Injury date and accident state stay closed until a Related cause is chosen; start of care, discharge date and employment status are not affected. *(Meeting 2026-09-23, narrow reading.)* | Q-092 |
+| A-P54 | A case may have no related cause. Boxes 10a, 10b and 10c then all answer NO, the injury date is asked for only when the payer's class requires it (Box 14), and the accident state stays closed. *(Client 2026-09-23; V2 lists "Employment Related, Auto, Other" for the column.)* | Q-092 |
+| A-P55 | A referring physician is identified by name and NPI. The V2 `code` column (UQ per practice) and the taxonomy are not captured, so matching imported records is left to the build. *(Client 2026-09-23.)* | Q-096 |
+| A-P56 | A provider hold runs between two dates and stops billing and submission together: visits with a date of service inside the window wait in Delayed, unsent claims stop in the Provider hold, and both resume by themselves once the end date passes. Naming locations or insurances narrows the hold; naming none covers all. Clearing the end date lifts the hold. *(Client 2026-09-23; V2 has one date, §10.3 p15.)* | Q-087, Q-062 |
+| A-P57 | A payer marked Audit required stops its claims in the Audit hold after scrubbing. A reviewer records the documents attached and an optional note; the claim is then submitted and the record stays on it. *(Client 2026-09-23; not a V2 rule.)* | Q-089 |
+| A-P58 | The scheduled-submission dropdown is filled by the practice: a System Admin adds or removes options (every few hours, every day at a time, weekdays at a time). The option in use cannot be removed, and there is still one schedule per practice. *(Client 2026-09-23; V2 names single, bulk and scheduled submission only, §5.1 p6.)* | Q-090, Q-041 |
 
 ---
 
@@ -433,7 +443,7 @@ No emoji, no colour blocks, no illustrations: neutral ink, hairlines and the exi
   type: 'assumption' | 'question' | 'note', title, body, q: ['Q-011'], ref: '§6.2 p7' }
 ```
 
-57 notes cover 46 of the 57 routes, at most 3 on a screen. Each body is two sentences or fewer; every assumption and question cites the register, the PRD, or both.
+73 notes cover the product's routes, at most 3 on a screen — including the meeting items that are waiting for an answer. Each body is two sentences or fewer; every assumption and question cites the register, the PRD, or both.
 
 ### 10.4 What stays in the product, and what becomes a note
 
@@ -450,3 +460,38 @@ Notes (kept out of the UI): PRD citations, question and contradiction IDs, assum
   - *Content:* three types only, unique IDs, every body at most 330 characters, every question and assumption referenced.
   - *Phone (390 px):* the popover fits without sideways scroll.
 - **Application regression with notes off:** 51 + 73 + 48 checks and the Fresh System suite (55) pass; the 51-route Fresh crawl is clean.
+
+---
+
+## 11. Meeting notes of 2026-09-23
+
+Sixteen comments were reviewed against PRD V2 and the prototype before anything was built. Fourteen changes were built; four comments are waiting for an answer and the prototype was left unchanged. Six of the items first held back — removing Billing preferences, removing "Other" from Related cause, removing the referring-physician code, the provider-hold window and scope, "Audit required", and the scheduling list — were confirmed by the client on 2026-09-23 and then built; where a change goes against V2, the row says so. A meeting note is not a PRD requirement: where a note goes beyond V2, the row above says so and the behaviour is listed as a prototype assumption.
+
+### Built
+
+| Comment | What was built | Status |
+|---|---|---|
+| Organizations tab to group practices | Admin → Organizations: create, rename, deactivate, tick practices in; practice form has an optional Organization; reports and the practice card read it | Confirmed by meeting; V2 defines the company table (§10.2 p13) |
+| Payer portal in its own tab | Admin → Payer portals lists every payer's portal URL, user and masked password; removed from the insurance editor, which now links to it. Same fields on `insurance` | Confirmed by meeting; V2 keeps the columns on insurance (§10.3 p16) |
+| Default modifier 1 / 2 | Two default modifiers per procedure code; both copied to a new line; a Replace rule brings the replacement's two | Confirmed by meeting; beyond V2's single column (A-P52) |
+| Referring physician: remove Taxonomy and Code | Both fields and the Code column removed from the directory; no seeded physician carries either | Taxonomy: the V2 table has no such column (§10.3 p18). Code: **confirmed by the client 2026-09-23, against V2**, which keys the directory by it (A-P55) |
+| Coding rules: apply to an insurance class | "Applies to" offers default, a class, or one payer; scrubbing resolves payer → class → default and names the level that fired | Confirmed by meeting; beyond V2 (A-P51, Q-097) |
+| Guarantor address | Street, city, state and ZIP on the patient form, shown in the chart | **Confirmed by V2** — the guarantor is "name, address, dob, relationship" (§10.4 p18); the prototype was missing it |
+| Coverage tab renamed Insurance | Chart tab label only; route, data and behaviour unchanged | Confirmed by meeting; matches V2's `case_insurance` |
+| Injury & dates wait for Related cause | Injury date and accident state are disabled until a cause is chosen | Confirmed by meeting, narrow reading (A-P53) |
+| Remove "Other" from Related cause | The field offers employment and auto only and may be left empty; an empty cause prints NO in Boxes 10a–10c, keeps the injury date optional unless the payer requires it, and closes the accident state; seeded cases that were "Other" are now empty | **Confirmed by the client 2026-09-23, against V2** (§10.4 p19 lists Other) — the logic around an empty cause is A-P54 |
+| Remove Billing preferences | The section is gone from the patient form and the chart; no patient record carries a statement preference. Internal notes stay | **Confirmed by the client 2026-09-23, against V2** — `no_statements` (§10.4 p18) is not implemented (Q-091) |
+| Provider hold with a start date, locations and insurances | Hold from / until, reason, and tick-lists of the locations and payers it covers. Visits inside the window wait in Delayed; unsent claims stop in the new **Provider hold** scrubbing check; both resume when the end date passes | **Confirmed by the client 2026-09-23**, beyond V2's single date (A-P56) |
+| "Audit required" on an insurance | The payer's claims stop in the **Audit hold**; a reviewer records the documents attached and an optional note, and the claim is then submitted. The record stays on the claim | **Confirmed by the client 2026-09-23** — hold for review *and* require documents; not a V2 rule (A-P57) |
+| More scheduling options | Admin → Submission & automation keeps the list behind the dropdown: add or remove "every few hours", "every day at a time", "weekdays at a time". The option in use cannot be removed | **Confirmed by the client 2026-09-23** (A-P58) |
+
+### Not built — waiting for an answer
+
+| Comment | Why it was not built | Question |
+|---|---|---|
+| Replace payer enrollment with "Add rule" | Enrollment is the only data the credentialing check reads; "rule" is undefined | Q-088 (see also Q-010) |
+| Rename "Ready to submit" to "Manual submission" | The queue also feeds the scheduled job, and V1's retired "Manual Submission" hold used that name | Q-093 |
+| "Original claim number" in the release dialog | A released charge has no earlier claim; Box 22 already carries the original reference on corrected claims | Q-094 (see also Q-019) |
+| Bucket release by mail, fax or portal | A claim that bypasses the clearinghouse has a different lifecycle (acknowledgement, rejection, remittance) | Q-095 (see also Q-040) |
+
+Each of these also appears as a review note on the screen it affects, so the client sees the open question where the change was expected.

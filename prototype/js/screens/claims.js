@@ -28,6 +28,8 @@ const Cl = {
       missing: { label: 'Complete claim data', hash: `#/patients/${p.id}/coverage?case=${cs.id}` },
       auth: { label: 'Add authorization', hash: `#/patients/${p.id}/authorizations?case=${cs.id}` },
       cred: { label: 'Update enrollment', hash: `#/admin/providers?open=${v.treatingProviderId}` },
+      hold: { label: 'Open the provider', hash: `#/admin/providers?open=${v.treatingProviderId}` },
+      audit: null,
       payer: { label: 'Correct the charge', hash: `#/charges/visit/${v.id}` },
       coding: { label: 'Review diagnosis pointers', hash: `#/charges/visit/${v.id}` },
       manual: null,
@@ -94,6 +96,7 @@ Cl.list = (tab, scope, v) => {
       { key: 'act', label: '', cls: 'r', render: (r) => {
         if (!canU) return ''
         if (r.c.holdReason === 'manual') return UI.btn({ label: 'Release', size: 'sm', icon: 'send', act: 'cl.release', data: { id: r.id } })
+        if (r.c.holdReason === 'audit') return UI.btn({ label: 'Record audit', size: 'sm', icon: 'check', variant: 'primary', act: 'cl.audit', data: { id: r.id } })
         const fx = Cl.fixFor(r.c)
         return `<div class="row-actions">${fx ? UI.btn({ label: fx.label, size: 'sm', act: 'go', data: { hash: fx.hash } }) : ''}${UI.btn({ label: 'Re-scrub', size: 'sm', icon: 'refresh', act: 'cl.rescrub', data: { id: r.id } })}</div>`
       } },
@@ -153,6 +156,36 @@ ACT['cl.rescrub'] = (el) => {
     S.emit('hold.autoresubmitted', { holdsSent: [c] })
     UI.toast('success', `${c.number} passed scrubbing`, 'Submitted to Waystar.')
   } else UI.toast('warning', `${c.number} is still on hold`, U.esc(`${E.HOLDS[c.holdReason].label}: ${c.scrub.results.find((x) => x.key === c.holdReason).detail}`), 7000)
+  R.refresh()
+}
+/** A payer that requires an audit gets a review before submission: which documents
+ *  were attached, and anything the reviewer wants on the record (client 2026-09-23). */
+const AUDIT_DOCS = ['Plan of care', 'Progress note', 'Daily treatment notes', 'Referral / order', 'Authorization letter', 'Itemized statement']
+ACT['cl.audit'] = (el) => {
+  const c = S.find('claims', el.dataset.id)
+  const ins = S.find('insurances', (S.find('coverages', c.coverageId) || {}).insuranceId)
+  const h = UI.modal({
+    title: `Audit ${c.number}`,
+    desc: `${ins ? ins.name : 'This payer'} reviews claims before they are submitted. Record what was attached.`,
+    size: 'md',
+    body: UI.form([
+      { type: 'html', span: 12, html: `<div class="eyebrow mb-8">Documents attached</div>${AUDIT_DOCS.map((d) => `<label class="check-row"><input type="checkbox" data-audit-doc="${U.esc(d)}"><span>${U.esc(d)}</span></label>`).join('')}` },
+      { name: 'note', label: 'Reviewer note', type: 'textarea', span: 12, rows: 2, placeholder: 'Optional — what was checked' },
+    ], {}),
+    foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Record audit', variant: 'primary', act: 'cl.auditSave' }),
+  })
+  h.el.dataset.id = c.id
+}
+ACT['cl.auditSave'] = (el) => {
+  const layer = el.closest('.layer')
+  const vals = UI.submitForm(UI.formOf(layer))
+  if (!vals) return
+  const docs = U.qsa('[data-audit-doc]', layer).filter((x) => x.checked).map((x) => x.getAttribute('data-audit-doc'))
+  if (!docs.length) return UI.toast('warning', 'Nothing recorded', 'Tick at least one document before completing the audit.')
+  const c = S.find('claims', layer.dataset.id)
+  const st = E.recordAudit(c, { docs, note: vals.note })
+  UI.closeTop()
+  UI.toast(st === 'Submitted' ? 'success' : 'warning', st === 'Submitted' ? `${c.number} audited and submitted` : `${c.number} is still on hold`, st === 'Submitted' ? `${docs.join(', ')} recorded.` : E.HOLDS[c.holdReason].label)
   R.refresh()
 }
 ACT['cl.release'] = async (el) => {
@@ -322,6 +355,7 @@ const ClaimDetail = {
     const canC = S.can('BILLING', 'c')
     if (c.status === 'Hold' && canU) {
       if (c.holdReason === 'manual') actions += UI.btn({ label: 'Release from bucket', icon: 'send', variant: 'primary', act: 'cl.release', data: { id: c.id } })
+      else if (c.holdReason === 'audit') actions += UI.btn({ label: 'Record audit', icon: 'check', variant: 'primary', act: 'cl.audit', data: { id: c.id } }) + UI.btn({ label: 'Re-scrub', icon: 'refresh', act: 'cl.rescrub', data: { id: c.id } })
       else {
         const fx = Cl.fixFor(c)
         actions += UI.btn({ label: 'Re-scrub', icon: 'refresh', act: 'cl.rescrub', data: { id: c.id } }) + (fx ? UI.btn({ label: fx.label, icon: 'arrowRight', variant: 'primary', act: 'go', data: { hash: fx.hash } }) : '')
@@ -333,6 +367,8 @@ const ClaimDetail = {
     if (c.format === 'CMS1500' || tab === 'cms1500') actions += UI.btn({ label: 'Print CMS-1500', icon: 'printer', act: 'cms.print', data: { id: c.id } })
     const notices = []
     if (c.status === 'Hold' && c.holdReason === 'manual') notices.push(UI.notice('warning', 'Waiting in a release bucket:', `${U.esc(c.scrub.results.find((x) => x.key === 'manual').detail)} It is never resubmitted automatically.`, 'clock'))
+    else if (c.status === 'Hold' && c.holdReason === 'audit') notices.push(UI.notice('warning', 'Waiting for a payer audit:', `${U.esc(c.scrub.results.find((x) => x.key === 'audit').detail)} Record the documents attached and the claim goes out.`, 'clock'))
+    else if (c.audit) notices.push(UI.notice('info', 'Audited:', `${U.esc(c.audit.docs.join(', '))} recorded by ${U.esc(S.userName(c.audit.by))}${c.audit.note ? ` — ${U.esc(c.audit.note)}` : ''}.`, 'check'))
     else if (c.status === 'Hold') notices.push(UI.notice('critical', `${E.HOLDS[c.holdReason].label}:`, `${U.esc(c.scrub.results.find((x) => x.key === c.holdReason).detail)} Fix the cause and the claim is resubmitted automatically.`, 'alert'))
     if (c.status === 'Rejected') notices.push(UI.notice('critical', `Rejected ${U.date(c.rejection.date)} — ${U.esc(c.rejection.code)}:`, U.esc(c.rejection.reason), 'alert'))
     if (c.ar === 'Delayed' && c.status === 'Submitted') notices.push(UI.notice('warning', 'Delayed A/R:', `The payer SLA was due ${U.date(c.slaDue)} with no payment acknowledgement, so the claim was cloned into A/R follow-up on ${U.date(c.arSince)}.`, 'clock'))

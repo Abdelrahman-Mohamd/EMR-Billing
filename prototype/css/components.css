@@ -744,6 +744,13 @@
   min-height: 76px;
   line-height: 1.5;
 }
+/* a field waiting on an earlier answer */
+.field.is-disabled {
+  opacity: 0.55;
+}
+.field.is-disabled .field-label {
+  color: var(--n400);
+}
 .field-error {
   font-size: var(--t-micro);
   color: var(--critical);

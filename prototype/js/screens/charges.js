@@ -139,7 +139,7 @@ Ch.visitTab = (tab, all, v) => {
   }[tab]
   return `${controls}${scheduleNote}${UI.table({ cols, rows, view: v, viewKey, rowAct: 'visit.open', selectable, noun: 'visit', mark: (r) => (tab === 'pended' ? 'warning' : tab === 'delayed' ? 'attention' : null), empty: v.q || n ? UI.empty({ icon: 'search', title: 'No visits match', text: 'Clear the search or filters to see everything.' }) : UI.empty({ icon: 'inbox', title: 'All clear', text: emptyText }) })}`
 }
-Ch.scheduleLabel = () => ({ off: 'Off — submit manually', hourly: 'Every hour', '4h': 'Every 4 hours', 'daily-18': 'Every day at 18:00' }[DB.settings.schedule])
+Ch.scheduleLabel = () => (DB.settings.scheduleOptions.find((o) => o.id === DB.settings.schedule) || { label: 'Off — submit manually' }).label
 
 Ch.updatedTab = (updates, v) => {
   const rows = updates.map((u) => {

@@ -539,12 +539,14 @@ M13 Dashboard/Reports/Month End/Eligibility [Not specified]
 
 | | Count |
 |---|---|
-| Open questions | 84 (30 Critical · 41 Important · 13 Nice to clarify) |
+| Open questions | 89 (31 Critical · 44 Important · 14 Nice to clarify) |
 | Contradictions | 14 |
-| Assumptions we would otherwise make | 20 |
+| Assumptions we would otherwise make | 21 |
 | Retired (answered by V2) | 2 — Q-023, Q-039 |
 | New from V2 | Q-075 – Q-084, C-013, C-014 |
 | New from modelling a fresh installation (2026-09-17) | Q-085 (initial / reference data at installation and per new practice), Q-086 (first account and first practice) |
+| New from meeting notes (2026-09-23) | Q-087 – Q-097 (provider hold scope, payer enrollment replacement, audit-required flag, scheduling options, statement preferences, related cause, submission-queue naming, original claim number, bucket release channels, referring-physician code, coding-rule precedence) |
+| Answered by the client (2026-09-23), kept for the record | Q-087 (provider hold: window, scope, both sides), Q-089 (audit hold + documents), Q-090 (the practice fills the schedule list), Q-091 (Billing preferences removed), Q-092 ("Other" removed from Related cause), Q-096 (referring-physician code removed) |
 
 **Status:** pending client clarification. Nothing has been answered by the client.
 
@@ -672,3 +674,30 @@ Full detail with page references: **`PRD_V1_TO_V2_CHANGELOG.md`**.
 - The application layer was unchanged by this refactor: it already contained product content only.
 - QA: new Review Notes suite, 33 checks (notes-off scan of 57 routes and 162 dialogs/menus, contextual counts, markers, detail, dialog-level marker, prototype controls, toggles, content sanity, phone). Application suites 51 + 73 + 48 and Fresh 55 pass with notes off; Fresh route crawl clean.
 - `PROTOTYPE_COVERAGE.md` §10 rewritten; `prototype/README.md` rewritten; guide chapter 12 wording updated.
+
+### 2026-09-23 (meeting notes reviewed and partly built)
+- 16 comments from a client meeting were validated against PRD V2 and the prototype before any code changed. **Built 8**, **held 8** (plus 2 sub-items) pending answers; nothing was implemented merely because a note existed.
+- Built: **Admin → Organizations** (create/rename/deactivate, practices ticked in; `company` becomes a collection, `S.companyOf`); **Admin → Payer portals** (same insurance columns, one place to edit them); **two default modifiers** per procedure code; **taxonomy removed** from referring physicians (not a V2 column); **coding rules can target an insurance class** (precedence payer → class → default); **guarantor address** (a V2 field the prototype was missing); **chart tab Coverage → Insurance**; **injury date and accident state wait for Related cause**.
+- Held, with the prototype unchanged and a review note on the screen: provider hold scoping (Q-087), payer enrollment → "Add rule" (Q-088, would disable the credentialing check), "Audit required" (Q-089), scheduling options (Q-090), removing Billing preferences (Q-091, a V2 column), removing "Other" from Related cause (Q-092, Boxes 10a–10c), renaming Ready to submit (Q-093), original claim number at release (Q-094), bucket release by mail/fax/portal (Q-095), removing the referring-physician code (Q-096).
+- The meeting **partly answered Q-032**: a System Admin creates organizations and assigns practices; what the grouping changes is still open.
+- New prototype assumptions A-P50…A-P53; new register assumption A-021. Register: 95 open questions (Q-087 – Q-097 new), 366 excerpt fragments verified.
+- Provenance is explicit in the docs: *Confirmed by V2*, *Confirmed by meeting*, *Assumption*, *Needs clarification*.
+
+### 2026-09-23 (client answers — three held items built)
+- The client answered three of the held meeting items. All three were built, and each goes against PRD V2, so the divergence is recorded in `PROTOTYPE_COVERAGE.md` rather than as a review note in the product (the client asked for no trace in the UI).
+- **Q-091 — Billing preferences removed.** The section is gone from the patient form and the chart; no patient record carries a statement preference. Internal notes stay. V2's `no_statements` (§10.4 p18) is not implemented; Q-047 (are statements in scope at all) stays open.
+- **Q-092 — "Other" removed from Related cause.** The field offers employment and auto only and may be left empty. An empty cause prints NO in Boxes 10a, 10b and 10c, keeps the injury date optional unless the payer's class requires it (Box 14), and closes the accident state. Seeded cases that were "Other" are now empty. (A-P54.)
+- **Q-096 — Referring-physician code removed.** Neither code nor taxonomy is captured; the Code column is gone from the directory. A physician is identified by name and NPI; V2 keys the table by `code` (UQ per practice), so matching imported records is left to the build. (A-P55.)
+- Meeting-note tally is now **11 built, 7 waiting**: provider hold scoping (Q-087), payer enrollment → "Add rule" (Q-088), "Audit required" (Q-089), scheduling options (Q-090), renaming Ready to submit (Q-093), original claim number at release (Q-094), bucket release by mail/fax/portal (Q-095).
+- Register: **92 open questions** (Q-091, Q-092 and Q-096 answered by the client and kept in place for the record); coverage status counts Implemented 34 / Partially 16 / Needs Clarification 38.
+- QA: 51 + 73 + 48 + 55 + 33 + 46 = **306 checks, 0 failures, 0 console errors**. The meeting suite now asserts the three changes are built (options, gating, Boxes 10a–10c, no statement preference, no code on any record) and that the remaining seven are still untouched.
+
+### 2026-09-23 (client answers — provider hold, payer audit, schedule list)
+- **Q-087 — the provider hold is a window.** `claimHoldFrom` / `claimHoldUntil`, a reason, and tick-lists of the locations and insurances it covers (none ticked = all). It stops **both sides**: a visit whose date of service falls in the window waits in Delayed, and an unsent claim stops in the new **Provider hold** scrubbing check (`HOLDS.hold`, second in `HOLD_ORDER`). Past the end date both resume by themselves; clearing the end date lifts the hold. (A-P56.)
+- `cascade()` now also re-reads visits sitting in **Charge Review**, so a hold entered today stops work that was already waiting to be billed — previously only Delayed/Pended/Exception visits were re-evaluated. `cascadeSummary` reports "n visits stopped before billing".
+- **Q-089 — Audit required.** A checkbox on the insurance. The payer's claims fail the new `audit` check after scrubbing and sit in the **Audit hold**; "Record audit" asks which documents were attached (plan of care, progress note, daily notes, referral, authorisation letter, itemised statement) plus an optional note, then re-scrubs and submits. `claim.audit = { by, at, docs, note }` stays on the claim and is shown on it. (A-P57.)
+- **Q-090 — the schedule dropdown is fed by the practice.** `DB.settings.scheduleOptions` holds the list; Admin → Submission & automation → "Manage the list" adds (every N hours / every day at a time / weekdays at a time) and removes options. The option in use cannot be removed; duplicates are refused. `Ch.scheduleLabel()` reads the list. (A-P58.)
+- Meeting-note tally is now **14 built, 4 waiting**: payer enrollment → "Add rule" (Q-088), renaming Ready to submit (Q-093), original claim number at release (Q-094), bucket release by mail/fax/portal (Q-095).
+- Register: **89 open questions** (Q-087, Q-089 – Q-092 and Q-096 answered); coverage status counts Implemented 35 / Partially 16 / Needs Clarification 37; 366 excerpt fragments re-verified.
+- QA: 51 + 73 + 48 + 55 + 33 + 43 + **31 (new round-2 suite)** = **334 checks, 0 failures, 0 console errors**.
+

@@ -127,10 +127,10 @@ Screens.dashboard = {
     if (pendingEras.length) alerts.push({ tone: 'info', icon: 'inbox', text: `${U.plural(pendingEras.length, 'ERA file')} waiting to post (${pendingEras.map((e) => S.find('insurances', e.insuranceId).name).join(', ')})`, sub: `${U.money(U.sum(pendingEras, E.eraTotal))} in remittances`, hash: '#/payments' })
     const slaDue = claims.filter((c) => c.status === 'Submitted' && !c.ar && c.slaDue && c.slaDue < DB.today)
     if (slaDue.length) alerts.push({ tone: 'warning', icon: 'clock', text: `${U.plural(slaDue.length, 'claim')} past payer SLA with no payment`, sub: 'The SLA engine escalates them to A/R as Delayed', hash: '#/ar/delayed' })
-    const heldProv = DB.providers.filter((p) => p.practiceId === S.session.practiceId && p.claimHoldUntil && p.claimHoldUntil > DB.today)
+    const heldProv = DB.providers.filter((p) => p.practiceId === S.session.practiceId && E.holdRunning(p))
     heldProv.forEach((p) => {
       const n = visits.filter((v) => v.status === 'Delayed' && v.treatingProviderId === p.id).length
-      alerts.push({ tone: 'attention', icon: 'pause', text: `${S.provName(p)} on claim hold until ${U.date(p.claimHoldUntil)}`, sub: `${p.claimHoldReason} · ${U.plural(n, 'visit')} delayed`, hash: '#/charges/delayed' })
+      alerts.push({ tone: 'attention', icon: 'pause', text: `${S.provName(p)} on claim hold ${E.holdWindow(p)}`, sub: `${p.claimHoldReason} · ${E.holdScope(p)} · ${U.plural(n, 'visit')} delayed`, hash: '#/charges/delayed' })
     })
     const noAuth = visits.filter((v) => v.status === 'Pended' && v.pendReason === 'No authorization available').length
     if (noAuth) alerts.push({ tone: 'warning', icon: 'flag', text: `${U.plural(noAuth, 'visit')} pended for missing authorization`, sub: 'Record the new authorization on the case to release them', hash: '#/charges/pended' })

@@ -20,13 +20,15 @@ const E = (() => {
   /** Scrubbing validation matrix, in the order the PRD lists it (§6.2). */
   const HOLDS = {
     missing: { label: 'Missing data', check: 'Data integrity', source: 'System default' },
+    hold: { label: 'Provider hold', check: 'Provider claim hold', source: 'Provider profile' },
     auth: { label: 'Authorization hold', check: 'Authorization', source: 'Insurance settings' },
     cred: { label: 'Credentialing hold', check: 'Credentialing', source: 'Provider profile' },
     payer: { label: 'Payer rule hold', check: 'Payer rules', source: 'Payer / insurance settings' },
     coding: { label: 'Coding issue hold', check: 'AI coding quality', source: 'AI add-on' },
+    audit: { label: 'Audit hold', check: 'Payer audit', source: 'Insurance settings' },
     manual: { label: 'Release bucket', check: 'Manual release required', source: 'Insurance settings' },
   }
-  const HOLD_ORDER = ['missing', 'auth', 'cred', 'payer', 'coding', 'manual']
+  const HOLD_ORDER = ['missing', 'hold', 'auth', 'cred', 'payer', 'coding', 'audit', 'manual']
 
   const REJECTIONS = [
     { code: 'A7:33', reason: 'Subscriber and subscriber ID not found' },
@@ -142,10 +144,39 @@ const E = (() => {
   }
 
   // ---------------------------------------------------------------- providers
-  /** Provider claim hold (§10.3). Interpretation of "visits before this date are
-   *  delayed": a visit is delayed while the hold is active and its DOS falls
-   *  before the hold date (Q23). */
-  const holdActive = (prov, dos) => !!(prov && prov.claimHoldUntil && DB.today < prov.claimHoldUntil && dos < prov.claimHoldUntil)
+  /** Provider claim hold. V2 has one date and delays every visit before it (§10.3);
+   *  the client (2026-09-23) asked for a window — a start and an end date — and for
+   *  the locations and insurances it covers. While today is inside the window, the
+   *  provider's work in it is stopped on both sides: visits wait in Delayed and
+   *  unsent claims stop in the Provider hold. Naming no location or insurance means
+   *  all of them. When the end date passes, everything flows normally again (A-P56). */
+  const holdRunning = (prov) =>
+    !!(prov && prov.claimHoldUntil && DB.today <= prov.claimHoldUntil && (!prov.claimHoldFrom || DB.today >= prov.claimHoldFrom))
+  const holdCovers = (prov, dos, locationId, insId) => {
+    if (!holdRunning(prov)) return false
+    if (prov.claimHoldFrom ? dos < prov.claimHoldFrom : false) return false
+    if (dos > prov.claimHoldUntil) return false
+    const locs = prov.claimHoldLocations || []
+    const inss = prov.claimHoldInsurances || []
+    if (locs.length && !locs.includes(locationId)) return false
+    if (inss.length && !inss.includes(insId)) return false
+    return true
+  }
+  const holdWindow = (prov) => (prov.claimHoldFrom ? `${U.date(prov.claimHoldFrom)} – ${U.date(prov.claimHoldUntil)}` : `until ${U.date(prov.claimHoldUntil)}`)
+  const holdScope = (prov) => {
+    const locs = (prov.claimHoldLocations || []).map((id) => (f('locations', id) || {}).name).filter(Boolean)
+    const inss = (prov.claimHoldInsurances || []).map((id) => (f('insurances', id) || {}).name).filter(Boolean)
+    if (!locs.length && !inss.length) return 'every location and payer'
+    return [locs.length ? locs.join(', ') : 'every location', inss.length ? inss.join(', ') : 'every payer'].join(' · ')
+  }
+  const holdText = (prov) => `on claim hold ${holdWindow(prov)} (${holdScope(prov)}) — ${prov.claimHoldReason}`
+  /** A visit is held when the hold covers its date of service, its location and the
+   *  payer that would be billed. */
+  const holdActive = (prov, v) => {
+    const c = v && S.caseOf(v)
+    const cov = c ? coverage(c.id, 1) : null
+    return holdCovers(prov, v.dos, v.locationId, cov ? cov.insuranceId : null)
+  }
   const enrollment = (prov, insId) => (prov ? (prov.enrollments || []).find((e) => e.insuranceId === insId) : null)
 
   // ---------------------------------------------------------------- billing exceptions (§4.4)
@@ -254,9 +285,9 @@ const E = (() => {
       const found = detectExceptions(v)
       syncExceptions(v, found)
       if (found.length) v.status = 'Exception'
-      else if (holdActive(prov, v.dos)) {
+      else if (holdActive(prov, v)) {
         v.status = 'Delayed'
-        v.delayReason = `${S.provName(prov)} is on claim hold until ${U.date(prov.claimHoldUntil)} — ${prov.claimHoldReason}`
+        v.delayReason = `${S.provName(prov)} is ${holdText(prov)}`
       } else if (v.manualPend) v.status = 'Pended'
       else if (!cov) {
         v.status = 'Pended'
@@ -276,9 +307,18 @@ const E = (() => {
   }
 
   // ---------------------------------------------------------------- coding rules (§6.1)
+  /** Coding-rule precedence: the payer's own rule, then its insurance class, then the default.
+   *  Class-level rules come from the meeting notes; V2 §6.1 names default and payer rules only. */
   const ruleFor = (code, insId) => {
     const active = DB.codingRules.filter((r) => r.active && r.fromCode === code)
-    return active.find((r) => r.scope === insId) || active.find((r) => r.scope === 'default') || null
+    const ins = f('insurances', insId)
+    const classScope = ins && ins.classId ? `class:${ins.classId}` : null
+    return (
+      active.find((r) => r.scope === insId) ||
+      (classScope ? active.find((r) => r.scope === classScope) : null) ||
+      active.find((r) => r.scope === 'default') ||
+      null
+    )
   }
   const applyCodingRules = (claim, ins, dos) => {
     const applied = []
@@ -286,7 +326,7 @@ const E = (() => {
       const code = pc(line.procedureCodeId)
       const rule = ruleFor(code.code, ins.id)
       if (!rule) return
-      const scope = rule.scope === 'default' ? 'Default rule' : `${ins.name} rule`
+      const scope = rule.scope === 'default' ? 'Default rule' : rule.scope.startsWith('class:') ? `${(f('insuranceClasses', rule.scope.slice(6)) || {}).name || 'Class'} class rule` : `${ins.name} rule`
       if (rule.type === 'Replace') {
         const to = pcByCode(rule.toCode)
         if (!to) return
@@ -296,7 +336,9 @@ const E = (() => {
         line.rate = p.rate
         line.priceSource = p.source
         line.balIns = p.amount
-        if (to.defaultModifier && !line.modifiers.includes(to.defaultModifier)) line.modifiers = [to.defaultModifier, ...line.modifiers.filter((m) => m !== code.defaultModifier)]
+        const toMods = [to.defaultModifier, to.defaultModifier2].filter(Boolean)
+        const fromMods = [code.defaultModifier, code.defaultModifier2].filter(Boolean)
+        if (toMods.length) line.modifiers = [...toMods, ...line.modifiers.filter((m) => !toMods.includes(m) && !fromMods.includes(m))]
         applied.push({ type: 'Replace', text: `${code.code} → ${to.code}`, scope, ruleId: rule.id })
       } else if (rule.type === 'Drop') {
         line.dropped = true
@@ -342,7 +384,12 @@ const E = (() => {
     if (claimLines(claim).length === 0) missing.push('charge lines')
     res('missing', missing.length ? 'fail' : 'pass', missing.length ? `Missing or invalid: ${missing.join(', ')}.` : 'Mandatory fields filled, digit lengths valid, no special characters.')
 
-    // 3 · authorization
+    // 3 · provider claim hold — the submission side of the same window (client 2026-09-23)
+    if (!holdRunning(prov)) res('hold', 'skip', prov && prov.claimHoldUntil ? `${S.provName(prov, false)}'s hold is not running on ${U.date(DB.today)}.` : 'The rendering provider is not on claim hold.')
+    else if (holdCovers(prov, v.dos, v.locationId, ins.id)) res('hold', 'fail', `${S.provName(prov, false)} is ${holdText(prov)}. The claim waits until the hold ends.`)
+    else res('hold', 'pass', `${S.provName(prov, false)} is on claim hold ${holdWindow(prov)}, but it covers ${holdScope(prov)} — not this claim.`)
+
+    // 4 · authorization
     if (!eff(ins, 'authRequired') || claim.rank > 1) res('auth', 'skip', claim.rank > 1 ? 'Not re-checked on a secondary claim.' : `${ins.name} does not require authorization.`)
     else if (claim.authId) res('auth', 'pass', `Authorization ${f('authorizations', claim.authId).number} already applied.`)
     else {
@@ -351,12 +398,12 @@ const E = (() => {
       else res('auth', 'fail', 'No authorization with an active date range and remaining visits for this date of service.')
     }
 
-    // 4 · credentialing
+    // 5 · credentialing
     const en = enrollment(prov, ins.id)
     if (en && en.status === 'Active' && (!en.effective || en.effective <= v.dos)) res('cred', 'pass', `${S.provName(prov, false)} is actively enrolled with ${ins.name}.`)
     else res('cred', 'fail', `${S.provName(prov, false)} is ${en ? en.status.toLowerCase() : 'not enrolled'} with ${ins.name} for this date of service.`)
 
-    // 5 · payer rules — unit caps and conditional boxes
+    // 6 · payer rules — unit caps and conditional boxes
     const payerIssues = []
     claimLines(claim).forEach((l) => {
       if (ins.maxUnits && l.units > ins.maxUnits) payerIssues.push(`${pc(l.procedureCodeId).code} billed ${l.units} units (max ${ins.maxUnits})`)
@@ -367,7 +414,7 @@ const E = (() => {
     if (['PIP', 'Workers Comp'].includes(ins.type) && !cov.claimNumber) payerIssues.push('Box 11b needs the claim number')
     res('payer', payerIssues.length ? 'fail' : 'pass', payerIssues.length ? payerIssues.join(' · ') + '.' : `Units within ${ins.name} limits; conditional boxes filled.`)
 
-    // 6 · AI coding quality (add-on, simulated)
+    // 7 · AI coding quality (add-on, simulated)
     if (!DB.settings.aiCoding) res('coding', 'skip', 'AI coding add-on is switched off.')
     else {
       const issues = []
@@ -382,7 +429,13 @@ const E = (() => {
       res('coding', issues.length ? 'fail' : 'pass', issues.length ? issues.join(' · ') + '.' : 'Diagnosis-to-CPT consistency verified.')
     }
 
-    // 7 · manual release — insurance hold routes the claim to its release bucket (PRD V2 §6.2, CH-01)
+    // 8 · payer audit — the payer's claims are reviewed and documented before they go
+    //     out (client 2026-09-23; not a V2 rule, see A-P57)
+    if (!ins.auditRequired) res('audit', 'skip', `${ins.name} does not audit claims.`)
+    else if (claim.audit) res('audit', 'pass', `Audited by ${S.userName(claim.audit.by)} — ${claim.audit.docs.join(', ')}${claim.audit.note ? ` · ${claim.audit.note}` : ''}.`)
+    else res('audit', 'fail', `${ins.name} is marked Audit required: a reviewer must check this claim and record the documents attached before it is submitted.`)
+
+    // 9 · manual release — insurance hold routes the claim to its release bucket (PRD V2 §6.2, CH-01)
     if (eff(ins, 'insuranceHold') && !claim.released) {
       claim.bucketId = ins.releaseBucketId
       const b = bucketOf(claim)
@@ -471,6 +524,7 @@ const E = (() => {
       format: insOf(cov).format,
       status: 'Scrubbing',
       holdReason: null,
+      audit: null,
       frequency: '1',
       originalRef: null,
       sentDate: null,
@@ -535,15 +589,20 @@ const E = (() => {
   /** Re-scrub every held claim and every waiting visit — how "auto-resubmitted
    *  when the hold reason is resolved" (§7.1) is simulated. */
   const cascade = () => {
-    const out = { toReview: [], holdsSent: [], stillHeld: 0, stillWaiting: 0 }
+    const out = { toReview: [], stopped: [], holdsSent: [], stillHeld: 0, stillWaiting: 0 }
+    // Charge Review is included: a hold entered today has to stop work that is already
+    // waiting to be billed, not only work that was already waiting for something.
     DB.visits
-      .filter((v) => ['Exception', 'Incomplete', 'Pended', 'Delayed'].includes(v.status) && !v.manualPend)
+      .filter((v) => ['Exception', 'Incomplete', 'Pended', 'Delayed', 'Review'].includes(v.status) && !v.manualPend)
       .forEach((v) => {
         const was = v.status
         repriceVisit(v)
         intake(v)
         if (v.status === 'Review' && was !== 'Review') out.toReview.push(v)
-        else if (v.status !== 'Review') out.stillWaiting += 1
+        else if (v.status !== 'Review') {
+          if (was === 'Review') out.stopped.push(v)
+          else out.stillWaiting += 1
+        }
       })
     DB.claims
       // Claims waiting in a release bucket only leave by a user's release (PRD V2 §10.3; prototype assumption A-P37, C-013)
@@ -559,9 +618,18 @@ const E = (() => {
     if (out.toReview.length) S.emit('visit.returned', out)
     return out
   }
+  /** Record the review a payer's audit requires, then re-scrub: the claim goes out
+   *  if nothing else holds it. */
+  const recordAudit = (claim, data) => {
+    claim.audit = { by: S.session.userId, at: S.now(), docs: data.docs, note: data.note || '' }
+    S.log('Claim audit recorded', { module: 'BILLING', entityType: 'claim', entityId: claim.id, detail: `${claim.audit.docs.join(', ')}${claim.audit.note ? ` · ${claim.audit.note}` : ''}` })
+    return scrub(claim, {})
+  }
+
   const cascadeSummary = (out) => {
     const parts = []
     if (out.toReview.length) parts.push(`${U.plural(out.toReview.length, 'visit')} moved to Charge Review`)
+    if (out.stopped.length) parts.push(`${U.plural(out.stopped.length, 'visit')} stopped before billing`)
     if (out.holdsSent.length) parts.push(`${U.plural(out.holdsSent.length, 'held claim')} re-scrubbed and submitted`)
     return parts.join(' · ')
   }
@@ -1073,7 +1141,7 @@ const E = (() => {
     LIMITS, DUMMY_NPIS, DUMMY_PHONES, HOLDS, HOLD_ORDER, REJECTIONS, AGING,
     pc, pcByCode, coverages, coverage, insOf, primaryIns, linesOfVisit, claimLines, claimTotal, claimsOfVisit,
     activeClaimOfVisit, paymentsOfClaim, claimPaid, claimBalance, claimInsBalance, visitTotal, dxLabel, carcKnown,
-    carcDesc, feeRow, price, priceLine, repriceVisit, authRemaining, authStatus, authUsable, holdActive, enrollment,
+    carcDesc, feeRow, price, priceLine, repriceVisit, authRemaining, authStatus, authUsable, holdActive, holdCovers, holdRunning, holdWindow, holdScope, holdText, recordAudit, enrollment,
     zipState, npiValid, detectExceptions, syncExceptions, intake, ruleFor, scrub, newClaim, setClaimSeq, resetSequences, submit, cascade,
     cascadeSummary, release, pend, returnToReview, respond, resubmit, releaseFromBucket, waitingInBucket, corrected, adjudicate, createEra,
     eraTotal, applyAdjudication, postEra, postEraClaim, postBatch, postPatientPayment, reversePayment, runSla,

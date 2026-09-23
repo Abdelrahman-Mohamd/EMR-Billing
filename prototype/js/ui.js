@@ -208,7 +208,7 @@ const UI = (() => {
         .map((o) => `<label class="choice ${String(o.value) === String(v) ? 'selected' : ''}"><input type="radio" name="${spec.name}" value="${esc(o.value)}" data-field-input="${spec.name}" ${String(o.value) === String(v) ? 'checked' : ''} ${o.disabled ? 'disabled' : ''}><span><span class="c-title">${esc(o.label)}</span>${o.desc ? `<span class="c-desc" style="display:block">${esc(o.desc)}</span>` : ''}</span></label>`)
         .join('')}</div>`
     } else {
-      const map = { money: 'text', npi: 'text', zip: 'text', state: 'text', tel: 'tel', number: 'number', date: 'date', email: 'email', password: 'password' }
+      const map = { money: 'text', npi: 'text', zip: 'text', state: 'text', tel: 'tel', number: 'number', date: 'date', time: 'time', email: 'email', password: 'password' }
       const t = map[spec.type] || 'text'
       const mode = { money: 'decimal', npi: 'numeric', zip: 'numeric', tel: 'tel', number: 'numeric' }[spec.type]
       const max = { npi: 10, zip: 5, state: 2, tel: 12 }[spec.type] || spec.maxLength

@@ -46,6 +46,8 @@ const S = (() => {
     return u.grants.map((g) => find('practices', g.practiceId)).filter((p) => p && p.isActive)
   }
   const practice = () => find('practices', session.practiceId)
+  /** The organization a practice belongs to, if any (optional grouping). */
+  const companyOf = (p) => (p && p.companyId ? find('companies', p.companyId) : null)
   const grant = () => {
     const u = user()
     return u ? u.grants.find((g) => g.practiceId === session.practiceId) : null
@@ -149,7 +151,7 @@ const S = (() => {
   return {
     quiet: false,
     session, find, user, roles, rolesOf, can, level, levelOf, hasRole, isGlobal, canDecrypt, roleLabel,
-    practices, practice, grant, locAllowed, locationScopeLabel, caseOf, patientOf, patientOfVisit, visitOf,
+    practices, practice, companyOf, grant, locAllowed, locationScopeLabel, caseOf, patientOf, patientOfVisit, visitOf,
     locationsOfPractice, inScopeVisit, inScopeClaim, inScopePatient, pname, pfull, provName, userName,
     insLabel, now, log, historyOf, emit, on, view, resetViews, workItem,
   }
