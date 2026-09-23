@@ -91,8 +91,7 @@ Adm.practices = () => {
   const sel = S.find('practices', st.sel) || list[0]
   // Day 1 (Fresh System): no practice exists yet
   if (!sel) {
-    return `${UI.notice('info', 'Organization (optional).', 'The company level exists only so reports can run across one owner’s practices and holds no billing data. It is not needed to start billing.')}
-      <div class="card mt-16">${UI.empty({
+    return `<div class="card">${UI.empty({
         icon: 'building',
         title: 'No practices yet',
         text: 'A practice is the billing entity: its legal name, Tax ID, taxonomy and group NPI print on every claim, and every patient, provider, insurance and charge belongs to exactly one practice. Creating it also creates the primary location, which is mandatory.',
@@ -100,7 +99,9 @@ Adm.practices = () => {
       })}</div>`
   }
   const locs = DB.locations.filter((l) => l.practiceId === sel.id)
-  return `<div class="card card-pad mb-16"><div class="row"><span class="scope-ico" style="background:var(--brand-wash);color:var(--brand-deep)">${I('layers', 'icon-18')}</span><div class="grow"><div class="eyebrow">Organization (optional)</div>${DB.company ? `<div class="t-row ink fw-500">${U.esc(DB.company.name)}</div><div class="t-micro muted">Owns ${U.plural(DB.practices.filter((p) => p.companyId === DB.company.id).length, 'practice')}. Exists only so reports can run across one owner’s practices; holds no billing data.</div>` : `<div class="t-row ink fw-500">None</div><div class="t-micro muted">Optional — exists only so reports can run across one owner’s practices; holds no billing data.</div>`}</div></div></div>
+  // The organization groups one owner's practices; shown only when there is one
+  const org = DB.company ? `<div class="card card-pad mb-16" data-section="organization"><div class="row"><span class="scope-ico" style="background:var(--brand-wash);color:var(--brand-deep)">${I('layers', 'icon-18')}</span><div class="grow"><div class="eyebrow">Organization</div><div class="t-row ink fw-500">${U.esc(DB.company.name)}</div><div class="t-micro muted">Owns ${U.plural(DB.practices.filter((p) => p.companyId === DB.company.id).length, 'practice')}. Used for reports across the owner’s practices; holds no billing data.</div></div></div></div>` : ''
+  return `${org}
     ${UI.table({
       cols: [
         { key: 'code', label: 'Code', render: (r) => `<span class="code">${r.code}</span>` },

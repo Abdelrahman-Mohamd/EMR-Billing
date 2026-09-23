@@ -134,7 +134,7 @@ This file maps every requirement in **`Billing System PRD v2.docx`** to the clic
 
 | PRD V2 Reference | Module | Feature | Prototype Screen | Prototype Interaction | Workflow | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| §10.2 pp12–13 | Admin | company / practice / location | Practices & locations; switcher | CRUD | W1 | Implemented | |
+| §10.2 pp12–13 | Admin | company / practice / location | Practices & locations; switcher | Practice and location CRUD; the organization card appears only when an organization exists (Demo Data) — no screen creates one | W1 | Needs Clarification | Who creates the company and how practices join it (Q-032); review note on Practices |
 | §10.2 pp13–14 | Access | app_user, role (JSON CRUD), user_practice (location_ids), user_role (union) | Users; Roles & permissions | Multi-role users with practice/location grants; Practice Admin cannot grant System Admin | — | Implemented | |
 | §10.2 p14 | Access | Two roles are seeded: System Admin and Practice Admin | Fresh System (initial state); Roles & permissions | A Fresh System starts with exactly these two roles; Demo Data adds four demo roles for the walkthrough | W1 | Implemented | What else exists at installation is not stated (Q-085); first account assumed (A-P48, Q-086) |
 | §10.3 p15 *(CH-15)* | Setup | provider: Provider ID, optional credential, claim hold | Admin → Providers | Provider ID column; credential optional; hold until/reason → Delayed; clearing releases | W1, W4 | Needs Clarification | Hold date meaning assumed (A-P07, Q-062) |
@@ -183,9 +183,9 @@ This file maps every requirement in **`Billing System PRD v2.docx`** to the clic
 
 | Status | Count |
 |---|---|
-| Implemented | 37 |
+| Implemented | 36 |
 | Partially Implemented | 14 |
-| Needs Clarification | 37 |
+| Needs Clarification | 38 |
 | Not Implemented | 1 |
 | Not Applicable | 1 |
 | **Total rows** | **90** |
@@ -433,7 +433,7 @@ No emoji, no colour blocks, no illustrations: neutral ink, hairlines and the exi
   type: 'assumption' | 'question' | 'note', title, body, q: ['Q-011'], ref: '§6.2 p7' }
 ```
 
-56 notes cover 46 of the 57 routes, at most 3 on a screen. Each body is two sentences or fewer; every assumption and question cites the register, the PRD, or both.
+57 notes cover 46 of the 57 routes, at most 3 on a screen. Each body is two sentences or fewer; every assumption and question cites the register, the PRD, or both.
 
 ### 10.4 What stays in the product, and what becomes a note
 

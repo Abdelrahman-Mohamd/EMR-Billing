@@ -139,6 +139,8 @@ const ReviewNotes = (() => {
     // ---------------------------------------------------------------- admin
     { id: 'n-adm-prac', screen: at('admin', 'practices'), type: 'note', title: 'A practice always has a primary location',
       body: 'V2 makes one mandatory at account creation, so the practice and its first location are created together. The practice is labelled “Company” in the sidebar, as the data model names it.', q: ['C-010'], ref: '§1.1–1.2 p2' },
+    { id: 'n-adm-org', screen: at('admin', 'practices'), anchor: '[data-section="organization"]', type: 'question', title: 'Who creates the organization?',
+      body: 'V2 defines an optional company above practices, used for cross-practice reports and the Organization Admin, but not who creates it or how practices join it. There is no screen for it here: Demo Data comes with one, a new installation has none.', q: ['Q-032'], ref: '§10.2 p13' },
     { id: 'n-adm-prac-fresh', screen: fresh(at('admin', 'practices')), type: 'assumption', title: 'The first account and the first practice',
       body: 'V2 seeds two roles and says nothing about how the first user is created. A new installation here has one System Administrator, who creates the first practice.', q: ['Q-086'], ref: '§10.2 p14' },
     { id: 'n-adm-users', screen: at('admin', 'users'), type: 'note', title: 'Clinicians are not users',
@@ -219,19 +221,25 @@ const Review = (() => {
   const hidden = () => !st.on || !Env.current() || R.parse().parts[0] === 'welcome'
   const notes = () => (hidden() ? [] : ReviewNotes.forScreen())
   const NUM = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨']
+  /** marker number for a note, counting only notes whose element is on the page; null if none */
+  const numberOf = (n, list) => {
+    const shown = list.filter((x) => x.anchor && document.querySelector(x.anchor))
+    const i = shown.indexOf(n)
+    return i < 0 ? null : NUM[i] || String(i + 1)
+  }
 
   const qLink = (id) => `<a class="rn-q" href="https://github.com/Abdelrahman-Mohamd/EMR-Billing/blob/main/PRD_CLARIFICATION_QUESTIONS.md" target="_blank" rel="noopener" title="Open the clarification register">${esc(id)}</a>`
   const detailHtml = (n, i) => `<div class="rn-detail">
       <button type="button" class="rn-back" data-act="rn.list">← All notes</button>
       <div class="rn-type rn-${n.type}">${TYPE[n.type]}</div>
-      <h3>${n.anchor ? `<span class="rn-num-inline">${NUM[i] || i + 1}</span>` : ''}${esc(n.title)}</h3>
+      <h3>${numberOf(n, notes()) ? `<span class="rn-num-inline">${numberOf(n, notes())}</span>` : ''}${esc(n.title)}</h3>
       <p>${esc(n.body)}</p>
       <div class="rn-meta">${n.q && n.q.length ? `<div>${n.q.map(qLink).join(' · ')}</div>` : ''}${n.ref ? `<div>PRD V2 · ${esc(n.ref)}</div>` : ''}</div>
     </div>`
   const listHtml = (list) => {
     if (!list.length) return '<p class="rn-empty">No review notes for this screen.</p>'
     return `<ul class="rn-list">${list
-      .map((n, i) => `<li><button type="button" data-act="rn.open" data-id="${n.id}"><span class="rn-num ${n.anchor ? '' : 'plain'}">${n.anchor ? NUM[i] || i + 1 : '–'}</span><span><span class="rn-t">${esc(n.title)}</span><span class="rn-type rn-${n.type}">${TYPE[n.type]}</span></span></button></li>`)
+      .map((n, i) => `<li><button type="button" data-act="rn.open" data-id="${n.id}"><span class="rn-num ${numberOf(n, list) ? '' : 'plain'}">${numberOf(n, list) || '–'}</span><span><span class="rn-t">${esc(n.title)}</span><span class="rn-type rn-${n.type}">${TYPE[n.type]}</span></span></button></li>`)
       .join('')}</ul>`
   }
   const panelHtml = (list) => {
@@ -270,9 +278,9 @@ const Review = (() => {
   // markers sit in their own overlay, so the application's markup is never touched
   const placeMarkers = (list) => {
     const layer = document.getElementById('rn-markers')
-    const anchored = list.filter((n) => n.anchor)
+    const anchored = list.filter((n) => n.anchor && document.querySelector(n.anchor))
     layer.innerHTML = anchored
-      .map((n, i) => `<button type="button" class="rn-marker" data-act="rn.open" data-id="${n.id}" data-i="${list.indexOf(n)}" title="Review note">${NUM[list.indexOf(n)] || list.indexOf(n) + 1}</button>`)
+      .map((n, i) => `<button type="button" class="rn-marker" data-act="rn.open" data-id="${n.id}" data-i="${list.indexOf(n)}" title="Review note">${numberOf(n, list)}</button>`)
       .join('')
     position()
   }
