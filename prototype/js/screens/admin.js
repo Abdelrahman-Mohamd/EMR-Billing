@@ -116,9 +116,19 @@ ACT['org.edit'] = (el) => {
     body: UI.form([
       { name: 'name', label: 'Organization name', required: true, span: 12, disabled: !editable, placeholder: 'e.g. Harborline Rehab Group' },
       { type: 'section', label: 'Practices in this organization' },
-      ...(DB.practices.length
-        ? [{ type: 'note', html: DB.practices.map((p) => `<label class="check-row"><input type="checkbox" data-org-prac="${p.id}" ${mine.includes(p.id) ? 'checked' : ''} ${editable ? '' : 'disabled'}><span>${U.esc(p.name)}<span class="desc">${U.esc(p.legalName)}${p.companyId && p.companyId !== (o || {}).id ? ` · currently in ${U.esc((S.find('companies', p.companyId) || {}).name || 'another organization')}` : ''}</span></span></label>`).join('') }]
-        : [{ type: 'note', label: 'No practices exist yet. Create the organization first and add practices to it later.' }]),
+      { type: 'html', span: 12, html: UI.multipick({
+        attr: 'data-org-prac',
+        disabled: !editable,
+        placeholder: 'Search or pick practices',
+        search: 'Search practices by name',
+        empty: 'No practices exist yet. Create the organization first and add practices to it later.',
+        chosen: mine,
+        options: DB.practices.map((p) => ({
+          value: p.id,
+          label: p.name,
+          sub: `${p.legalName}${p.companyId && p.companyId !== (o || {}).id ? ` · currently in ${(S.find('companies', p.companyId) || {}).name || 'another organization'}` : ''}`,
+        })),
+      }) },
       { name: 'isActive', label: 'Active', type: 'checkbox', span: 12, disabled: !editable },
     ], o || { isActive: true }),
     foot: UI.btn({ label: editable ? 'Cancel' : 'Close', variant: 'quiet', act: 'layer.close' }) + (editable ? UI.btn({ label: o ? 'Save organization' : 'Create organization', variant: 'primary', act: 'org.save' }) : ''),

@@ -699,5 +699,11 @@ Full detail with page references: **`PRD_V1_TO_V2_CHANGELOG.md`**.
 - **Q-090 — the schedule dropdown is fed by the practice.** `DB.settings.scheduleOptions` holds the list; Admin → Submission & automation → "Manage the list" adds (every N hours / every day at a time / weekdays at a time) and removes options. The option in use cannot be removed; duplicates are refused. `Ch.scheduleLabel()` reads the list. (A-P58.)
 - Meeting-note tally is now **14 built, 4 waiting**: payer enrollment → "Add rule" (Q-088), renaming Ready to submit (Q-093), original claim number at release (Q-094), bucket release by mail/fax/portal (Q-095).
 - Register: **89 open questions** (Q-087, Q-089 – Q-092 and Q-096 answered); coverage status counts Implemented 35 / Partially 16 / Needs Clarification 37; 366 excerpt fragments re-verified.
-- QA: 51 + 73 + 48 + 55 + 33 + 43 + **31 (new round-2 suite)** = **334 checks, 0 failures, 0 console errors**.
+- QA: 51 + 73 + 48 + 55 + 33 + 43 + **42 (new round-2 suite)** = **345 checks, 0 failures, 0 console errors**.
+
+### 2026-09-24 (a searchable multi-select)
+- New UI primitive `UI.multipick({ attr, options, chosen, placeholder, search, empty, disabled })` in `ui.js`: chosen rows show as removable chips in the box, the panel holds a search field and tick rows. Each checkbox still carries the caller's data attribute, so a screen reads the chosen ids exactly as it read a plain checkbox list — `ACT['org.save']` was not touched.
+- The panel is `position: fixed` and placed on open (`placePick`), so the dialog's scroll area cannot clip it; it follows the box on scroll and resize, flips above when there is no room below, and closes on Escape, on an outside click and whenever a layer closes (`UI.closePick`).
+- Used by Admin → Organizations for "Practices in this organization" (client request, 2026-09-24). The provider-hold scope lists still use plain tick lists.
+- QA: the round-2 suite gained 11 checks for the picker (chips, filtering, no-match, untick, chip removal, Escape, what is saved, nothing left behind); phone width checked.
 

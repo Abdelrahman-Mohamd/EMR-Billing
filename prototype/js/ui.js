@@ -379,6 +379,7 @@ const UI = (() => {
       close: () => {
         if (handle.closed) return
         handle.closed = true
+        closePick()
         const i = stack.indexOf(handle)
         if (i >= 0) stack.splice(i, 1)
         el.classList.add(closingClass)
@@ -396,6 +397,7 @@ const UI = (() => {
   }
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') {
+      if (closePick()) return
       if (closeMenu()) return
       const top = stack[stack.length - 1]
       if (top && !top.el.dataset.noEsc) {
@@ -479,6 +481,98 @@ const UI = (() => {
     })
 
   // ------------------------------------------------------------------ menus
+  // ------------------------------------------------------------------ searchable multi-select
+  /** A dropdown that is searched, not scrolled: chosen rows show as chips in the box,
+   *  the panel holds a search field and tick rows. Each checkbox carries `attr` so a
+   *  screen reads the chosen ids exactly as it would read a plain checkbox list.
+   *  options: [{ value, label, sub }] */
+  const pickChip = (attr, value, label) =>
+    `<span class="pick-chip">${esc(label)}<button type="button" class="pick-x" data-act="pick.remove" data-attr="${attr}" data-value="${esc(value)}" aria-label="Remove ${esc(label)}">${I('x', 'icon-14')}</button></span>`
+  const pickSummary = (panel) => {
+    const attr = panel.dataset.pickAttr
+    const on = U.qsa(`[${attr}]`, panel).filter((x) => x.checked)
+    const box = panel.parentElement.querySelector('.pick-chips')
+    box.innerHTML = on.length
+      ? on.map((x) => pickChip(attr, x.getAttribute(attr), x.dataset.pickLabel)).join('')
+      : `<span class="pick-ph">${esc(panel.dataset.pickPh)}</span>`
+    const count = panel.parentElement.querySelector('.pick-count')
+    if (count) count.textContent = on.length ? `${on.length} selected` : ''
+  }
+  const multipick = ({ attr, options, chosen = [], placeholder = 'None selected', search = 'Search', empty = 'Nothing to choose from yet.', disabled = false }) => {
+    const pid = `pk${++formSeq}`
+    const chips = options.filter((o) => chosen.includes(o.value))
+    return `<div class="multipick ${disabled ? 'is-disabled' : ''}" data-pick="${pid}">
+      <div class="control pick-box ${disabled ? 'disabled' : ''}" role="combobox" aria-expanded="false" aria-controls="${pid}-panel" tabindex="${disabled ? -1 : 0}" ${disabled ? '' : 'data-act="pick.open"'}>
+        <span class="pick-chips">${chips.length ? chips.map((o) => pickChip(attr, o.value, o.label)).join('') : `<span class="pick-ph">${esc(placeholder)}</span>`}</span>
+        <span class="chev">${I('chevronDown', 'icon-14')}</span>
+      </div>
+      <div class="pick-panel" id="${pid}-panel" data-pick-attr="${attr}" data-pick-ph="${esc(placeholder)}" hidden>
+        ${options.length ? `<label class="qsearch pick-search">${I('search')}<span class="sr-only">${esc(search)}</span><input type="search" placeholder="${esc(search)}" data-input="pick.filter" autocomplete="off"></label>` : ''}
+        <div class="pick-list">${options.length
+          ? options
+              .map((o) => `<label class="check-row pick-row"><input type="checkbox" ${attr}="${esc(o.value)}" data-pick-label="${esc(o.label)}" data-change="pick.tick" ${chosen.includes(o.value) ? 'checked' : ''}><span>${esc(o.label)}${o.sub ? `<span class="desc">${esc(o.sub)}</span>` : ''}</span></label>`)
+              .join('')
+          : `<div class="pick-empty">${esc(empty)}</div>`}</div>
+        <div class="pick-none" hidden>No match.</div>
+      </div>
+    </div>`
+  }
+  let openPick = null
+  /** The panel is fixed, so it is placed under its box and follows it while open. */
+  const placePick = () => {
+    if (!openPick) return
+    const box = openPick.querySelector('.pick-box')
+    const panel = openPick.querySelector('.pick-panel')
+    const r = box.getBoundingClientRect()
+    const h = panel.offsetHeight
+    panel.style.width = `${r.width}px`
+    panel.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - r.width - 8))}px`
+    panel.style.top = r.bottom + 4 + h > window.innerHeight - 8 && r.top - h - 4 > 8 ? `${r.top - h - 4}px` : `${r.bottom + 4}px`
+  }
+  const closePick = () => {
+    if (!openPick) return false
+    openPick.querySelector('.pick-panel').hidden = true
+    openPick.querySelector('.pick-box').setAttribute('aria-expanded', 'false')
+    openPick = null
+    window.removeEventListener('scroll', placePick, true)
+    window.removeEventListener('resize', placePick)
+    return true
+  }
+  ACT['pick.open'] = (el) => {
+    const wrap = el.closest('.multipick')
+    const wasOpen = openPick === wrap
+    closePick()
+    if (wasOpen) return
+    const panel = wrap.querySelector('.pick-panel')
+    panel.hidden = false
+    el.setAttribute('aria-expanded', 'true')
+    openPick = wrap
+    placePick()
+    window.addEventListener('scroll', placePick, true)
+    window.addEventListener('resize', placePick)
+    const q = panel.querySelector('input[type="search"]')
+    if (q) setTimeout(() => q.focus(), 10)
+  }
+  ACT['pick.filter'] = (el) => {
+    const panel = el.closest('.pick-panel')
+    const q = el.value.trim().toLowerCase()
+    let shown = 0
+    U.qsa('.pick-row', panel).forEach((row) => {
+      const hit = !q || row.textContent.toLowerCase().includes(q)
+      row.hidden = !hit
+      if (hit) shown += 1
+    })
+    panel.querySelector('.pick-none').hidden = !!shown || !U.qsa('.pick-row', panel).length
+  }
+  ACT['pick.tick'] = (el) => pickSummary(el.closest('.pick-panel'))
+  ACT['pick.remove'] = (el, ev) => {
+    ev.stopPropagation()
+    const wrap = el.closest('.multipick')
+    const box = wrap.querySelector(`[${el.dataset.attr}="${el.dataset.value}"]`)
+    if (box) box.checked = false
+    pickSummary(wrap.querySelector('.pick-panel'))
+  }
+
   let openMenuEl = null
   const closeMenu = () => {
     if (!openMenuEl) return false
@@ -518,6 +612,7 @@ const UI = (() => {
   }
   document.addEventListener('mousedown', (ev) => {
     if (openMenuEl && !openMenuEl.contains(ev.target)) closeMenu()
+    if (openPick && !openPick.contains(ev.target)) closePick()
   })
 
   // ------------------------------------------------------------------ toasts
@@ -632,7 +727,7 @@ const UI = (() => {
   return {
     VISIT_TONE, VISIT_LABEL, CLAIM_TONE, visitChip, claimChip, claimLabel, codesText,
     chip, status, tag, btn, iconBtn, empty, notice, fig, kv, sectionHead, tabs, pills, seg, qsearch, filtersBtn, avatar,
-    table, form, readValues, submitForm, setFieldError, formOf, syncRequired, modal, drawer, confirm, topLayer, closeTop,
+    table, form, multipick, closePick, readValues, submitForm, setFieldError, formOf, syncRequired, modal, drawer, confirm, topLayer, closeTop,
     closeAll, menu, closeMenu, toast, workItemView, historyView, ownerCell, dueCell, skeletonRows, pulse, PRIORITY_TONE, esc,
   }
 })()
