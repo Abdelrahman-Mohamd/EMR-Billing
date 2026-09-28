@@ -1,7 +1,7 @@
 # PROJECT_MEMORY — Billing System (EMR Billing / RCM)
 
 > Long-term development memory. Read this before any significant architectural or implementation decision.
-> **Primary source: `Billing System PRD v2.docx`** (25 pages; title block *Version 2.0 · Draft*). `Billing System PRD v1.docx` is kept only for comparison — see `PRD_V1_TO_V2_CHANGELOG.md`.
+> **Primary source: `docs/Billing System PRD v2.docx`** (25 pages; title block *Version 2.0 · Draft*). `docs/Billing System PRD v1.docx` is kept only for comparison — see `docs/PRD_V1_TO_V2_CHANGELOG.md`.
 > PRD sections are cited `§x.y`, pages `pN` (PRD V2 as Word paginates it). Change IDs `CH-xx` point into the change log.
 
 **Source-of-truth hierarchy** (highest wins):
@@ -11,15 +11,56 @@
 4. This file
 5. AI assumptions
 
-**Maintenance rules:** update on every important decision, feature-status change, requirement change or resolved question. If code contradicts this file, inspect the code and fix the file. Remove obsolete content; do not paste PRD text or source code here. Never resolve an ambiguity silently — log it as a question in `PRD_CLARIFICATION_QUESTIONS.md` and reference it here, or record an assumption in §21.
+**Maintenance rules:** update on every important decision, feature-status change, requirement change or resolved question. If code contradicts this file, inspect the code and fix the file. Remove obsolete content; do not paste PRD text or source code here. Never resolve an ambiguity silently — log it as a question in `docs/PRD_CLARIFICATION_QUESTIONS.md` and reference it here, or record an assumption in §21.
 
 **Legend**
 - ✅ **Confirmed** — explicitly stated in PRD V2
 - 🔎 **Inferred** — reasonably inferred from PRD V2, not stated outright
 - ⚠ **Assumption** — not specified; temporarily assumed (see §21)
-- ❓ **Needs Clarification** — requires client confirmation; IDs `Q-###` / `C-###` are entries in `PRD_CLARIFICATION_QUESTIONS.md`
+- ❓ **Needs Clarification** — requires client confirmation; IDs `Q-###` / `C-###` are entries in `docs/PRD_CLARIFICATION_QUESTIONS.md`
 
 **ID conventions:** M = module, F = feature, BR = business rule, W = workflow, KI = known issue, A = assumption. IDs are stable: change content in place, retire rather than renumber. Since 2026-09-16 open questions use the client register's IDs only (the old internal `Q01…Q57` list is retired).
+
+---
+
+## 0. Where to look
+
+This file is the product memory: requirements, decisions, business rules, history. It is long on purpose —
+**read the section you need, not the file.** For anything else, start in the table below.
+
+| I need to know…                                   | Go to                                                        |
+|---------------------------------------------------|--------------------------------------------------------------|
+| What the product must do                          | §1–§9 of this file, then `docs/Billing System PRD v2.docx`        |
+| What a screen should do, concretely               | `prototype/` (reviewed with the client) and `docs/PROTOTYPE_COVERAGE.md` |
+| Whether something is confirmed, assumed or open   | `docs/PRD_CLARIFICATION_QUESTIONS.md` (Q-/C-/A- ids)              |
+| What changed between PRD versions                 | `docs/PRD_V1_TO_V2_CHANGELOG.md`                                  |
+| A plain-language explanation of a billing concept | `docs/BILLING_SYSTEM_GUIDE.html`                                  |
+| **How the real frontend is built**                | `frontend/CLAUDE.md`, then `frontend/docs/`                            |
+| Why a frontend decision was taken                 | `frontend/docs/decisions/`                                        |
+| What was decided when                             | §22 Change log (bottom of this file)                         |
+
+**Two codebases, two roles.** `prototype/` is a vanilla-JS prototype used to validate the product with the
+client — it is the authority on *behaviour* and wording, and is not the implementation architecture.
+`frontend/` is the real frontend. Never copy prototype code into `frontend/`; copy what the screen does.
+
+---
+
+## 0.1 Frontend codebase (`frontend/`)
+
+Started 2026-09-25. Built so far: the UI kit, the sign-in page, Admin → Organizations and Admin → Practices & locations (see §24).
+
+| | |
+|---|---|
+| **Responsibility** | Every user-facing screen of the Billing System. Presentation, workflow, client-side validation, UX-level permission gating. It is **not** a security or business-rule boundary — the backend is (`frontend/docs/SECURITY.md`). |
+| **Stack** | React 19 · TypeScript (strict+) · Vite · TanStack Router · TanStack Query · Zustand · Zod · Tailwind v4 · Vitest + React Testing Library |
+| **Why this stack** | Identical to the sibling EMR frontend, same team and shared design tokens — `frontend/docs/decisions/0001-frontend-stack.md` |
+| **Architecture** | Feature-oriented: `routes → features → shared`, enforced by ESLint. Server state in TanStack Query only; client state in Zustand; URL holds filters/paging/selection |
+| **Data layer** | **No backend exists.** Features call their own `api/` functions, which resolve to mocks behind the same signatures until endpoints exist (ADR 0006). `fetch` lives in one file |
+| **Verified** | `npm run verify` (typecheck + lint + test + build) passes; 152 tests |
+| **Deliberately not built** | Session, route guard, permissions — each waits for the backend (`frontend/docs/FRONTEND_ARCHITECTURE.md` § Open decisions) |
+
+Frontend decisions are recorded in `frontend/docs/`, not here. Add to this file only when a **project** decision
+changes — scope, a business rule, a client answer, or a technology choice.
 
 ---
 
@@ -32,7 +73,7 @@
 | **Specialty** | Physical Therapy first; multi-specialty in scope ✅ |
 | **Owner** | Business Development ✅ |
 | **PRD version** | V2 (2.0 Draft). V2 changed §6.2 (manual release) and chapter 10 (data model) only; everything else is identical to V1 ✅ |
-| **Repo state** | Pre-implementation. The repo holds both PRDs, `logo.png`, this file, `PRD_V1_TO_V2_CHANGELOG.md`, `PRD_CLARIFICATION_QUESTIONS.md`, `BILLING_SYSTEM_GUIDE.html`, `PROTOTYPE_COVERAGE.md` and `prototype/` (a clickable HTML/JS prototype for client validation — not the product). No git. |
+| **Repo state** | Requirements, the client-facing prototype (`prototype/`, published to GitHub Pages) and the real frontend foundation (`frontend/`, started 2026-09-25 — architecture and tooling only, no features). Git repo `Abdelrahman-Mohamd/EMR-Billing`. |
 
 **Scope ✅**
 - **Specified (PRD ch. 1–10):** setup, access control, EMR integration, reference data (incl. insurance classes and release buckets), patients and cases, ingestion and exceptions, queues, coding rules and scrubbing, claim lifecycle, CMS-1500 mapping, basic payments and A/R, data model.
@@ -120,7 +161,7 @@ Permission module names (§10.6): Dashboard, Patient, Charges, Billing, Payments
 
 ## 6. Feature Inventory
 
-**Statuses:** `Planned` · `Needs Clarification` · `Blocked` · `Retired`. Nothing in the production system is implemented. (Prototype coverage: `PROTOTYPE_COVERAGE.md`.)
+**Statuses:** `Planned` · `Needs Clarification` · `Blocked` · `Retired`. Nothing in the production system is implemented. (Prototype coverage: `docs/PROTOTYPE_COVERAGE.md`.)
 
 | ID | Module | Feature | Description (V2) | Role | Status |
 |---|---|---|---|---|---|
@@ -453,14 +494,14 @@ KI-02: these vocabularies are not mapped to each other.
 
 **Clickable prototype (`prototype/`) — not the product.** 🛠
 - Client validation artifact: plain HTML/CSS/JS, in-memory data, no backend. Migrated to PRD V2 on 2026-09-16.
-- **Two environments in one prototype (2026-09-17):** *Demo Data* (the seeded practices) and *Fresh System* (day one: only the two V2-seeded roles, one System Admin account, standard code lists). Chosen at `#/welcome`; switching or resetting rebuilds that environment from scratch, so data never crosses between them. Details: `PROTOTYPE_COVERAGE.md` §8–9.
-- **Product plus review notes (2026-09-17):** the **Billing System** screens contain only product content. A thin **Review Notes** layer (`js/prototype/review-notes.js`) attaches assumptions, client questions and short notes to the screen they belong to: one small control, numbered markers, a small popover, three note types. It also holds the simulators and environment actions (Alt + Shift + S). Off with Alt + Shift + N. Details: `PROTOTYPE_COVERAGE.md` §10.
+- **Two environments in one prototype (2026-09-17):** *Demo Data* (the seeded practices) and *Fresh System* (day one: only the two V2-seeded roles, one System Admin account, standard code lists). Chosen at `#/welcome`; switching or resetting rebuilds that environment from scratch, so data never crosses between them. Details: `docs/PROTOTYPE_COVERAGE.md` §8–9.
+- **Product plus review notes (2026-09-17):** the **Billing System** screens contain only product content. A thin **Review Notes** layer (`js/prototype/review-notes.js`) attaches assumptions, client questions and short notes to the screen they belong to: one small control, numbered markers, a small popover, three note types. It also holds the simulators and environment actions (Alt + Shift + S). Off with Alt + Shift + N. Details: `docs/PROTOTYPE_COVERAGE.md` §10.
 - **Rule for future prototype work:** never put PRD citations, question/assumption IDs, "prototype"/"simulate"/"not specified" wording or environment controls into application screens — add a review note in `js/prototype/review-notes.js` instead.
-- Coverage, prototype-only assumptions (A-P##) and QA record: `PROTOTYPE_COVERAGE.md`. Launch notes: `prototype/README.md`.
+- Coverage, prototype-only assumptions (A-P##) and QA record: `docs/PROTOTYPE_COVERAGE.md`. Launch notes: `prototype/README.md`.
 - `js/engine.js` is a readable executable sketch of the rules (intake, scrubbing with effective class rules, holds and buckets, ERA posting, secondary claims) — input for design, not code to port.
 - Visual source: EMR-V.2 live `src/index.css` tokens ("instrument" direction) and component anatomy.
 
-**Visual learning guide (`BILLING_SYSTEM_GUIDE.html`)** — standalone page teaching the business process from zero; migrated to V2.
+**Visual learning guide (`docs/BILLING_SYSTEM_GUIDE.html`)** — standalone page teaching the business process from zero; migrated to V2.
 
 ### Technical decisions (prototype only; no production ADRs yet)
 
@@ -478,7 +519,7 @@ KI-02: these vocabularies are not mapped to each other.
 
 **Decision: The prototype is the product plus a review-note layer** — the application must be demonstrable as the real product, so it knows nothing about being a prototype; review information is attached to it as annotations, the way design-review comments are. The application exposes only two neutral router hooks (`R.hooks.gate`, `R.hooks.afterRender`); the layer renders outside `#app` and reads the route only. Alternatives tried and rejected by the user: inline notices in the screens (contaminates the product), and a full companion "Prototype Guide" with panel, walkthroughs and library (a second application; the user asked for something far simpler). 2026-09-17.
 
-**Decision: One open-question numbering scheme** — this file references `PRD_CLARIFICATION_QUESTIONS.md` IDs directly; internal `Q01…Q57` retired. Reason: traceability across memory, guide, prototype and coverage. 2026-09-16.
+**Decision: One open-question numbering scheme** — this file references `docs/PRD_CLARIFICATION_QUESTIONS.md` IDs directly; internal `Q01…Q57` retired. Reason: traceability across memory, guide, prototype and coverage. 2026-09-16.
 
 ---
 
@@ -535,7 +576,7 @@ M13 Dashboard/Reports/Month End/Eligibility [Not specified]
 
 ## 20. Open Questions
 
-**Register:** `PRD_CLARIFICATION_QUESTIONS.md` — re-audited against V2 on 2026-09-16.
+**Register:** `docs/PRD_CLARIFICATION_QUESTIONS.md` — re-audited against V2 on 2026-09-16.
 
 | | Count |
 |---|---|
@@ -560,7 +601,7 @@ M13 Dashboard/Reports/Month End/Eligibility [Not specified]
 7. External contracts — Q-004, Q-015.
 8. Non-functional requirements — Q-025, Q-026, Q-073.
 
-When an answer arrives: update the register, the affected BR in §8, the assumption in §21, and any prototype assumption in `PROTOTYPE_COVERAGE.md`.
+When an answer arrives: update the register, the affected BR in §8, the assumption in §21, and any prototype assumption in `docs/PROTOTYPE_COVERAGE.md`.
 
 ---
 
@@ -581,7 +622,7 @@ None confirmed. Don't build on an assumption without flagging it.
 | A09 | Effective rule values are evaluated when a claim is scrubbed | V2 gives COALESCE but no timing | M4, M8 | Q-081 | No |
 | A10 | The allowed amount is known only from remittances; no underpayment detection | V2 removed stored allowed amount | M10 | Q-075 | No |
 
-Register-level assumptions `A-001…A-020` (in `PRD_CLARIFICATION_QUESTIONS.md` §9) show the client what a developer would otherwise decide. Prototype-only assumptions `A-P##` are in `PROTOTYPE_COVERAGE.md`; they make the demo work and are **not** product decisions.
+Register-level assumptions `A-001…A-020` (in `docs/PRD_CLARIFICATION_QUESTIONS.md` §9) show the client what a developer would otherwise decide. Prototype-only assumptions `A-P##` are in `docs/PROTOTYPE_COVERAGE.md`; they make the demo work and are **not** product decisions.
 
 ---
 
@@ -614,7 +655,7 @@ PRD terms are used loosely (❓ Q-003 context, C-010).
 
 ## 23. V1 → V2 Changes
 
-Full detail with page references: **`PRD_V1_TO_V2_CHANGELOG.md`**.
+Full detail with page references: **`docs/PRD_V1_TO_V2_CHANGELOG.md`**.
 
 | ID | Change | Impact on this file |
 |---|---|---|
@@ -641,39 +682,39 @@ Full detail with page references: **`PRD_V1_TO_V2_CHANGELOG.md`**.
 
 ### 2026-09-15
 - Full analysis of PRD V1 (2.0 Draft content). Created this file (13 modules, 56 features, 39 rules, 22 entities).
-- Built the client-facing clickable prototype and `PROTOTYPE_COVERAGE.md` (123 automated checks). Recorded four prototype-only ADRs.
+- Built the client-facing clickable prototype and `docs/PROTOTYPE_COVERAGE.md` (123 automated checks). Recorded four prototype-only ADRs.
 
 ### 2026-09-16 (morning)
-- Requirements gap audit → `PRD_CLARIFICATION_QUESTIONS.md` (74 questions, 12 contradictions, 14 assumptions; all quotes verified).
-- Built `BILLING_SYSTEM_GUIDE.html` (visual learning guide; 126 terms, 10 workflows).
+- Requirements gap audit → `docs/PRD_CLARIFICATION_QUESTIONS.md` (74 questions, 12 contradictions, 14 assumptions; all quotes verified).
+- Built `docs/BILLING_SYSTEM_GUIDE.html` (visual learning guide; 126 terms, 10 workflows).
 
 ### 2026-09-16 (PRD V2 migration)
-- `Billing System PRD v2.docx` received and adopted as primary source. Compared line by line with V1 → `PRD_V1_TO_V2_CHANGELOG.md` (CH-01…CH-17; all page references verified).
+- `docs/Billing System PRD v2.docx` received and adopted as primary source. Compared line by line with V1 → `docs/PRD_V1_TO_V2_CHANGELOG.md` (CH-01…CH-17; all page references verified).
 - Rewrote this file against V2: 24-section structure; 23 entities; BR40–BR48 added; F57–F60 added; F14–F23, F29, F34, F46 modified; KI-07 added; obsolete V1 content removed; open-question IDs unified with the client register; A02 redefined, A03 retired, A09–A10 added.
 - Re-audited the clarification register: 82 open questions, 14 contradictions, 18 assumptions; Q-023 and Q-039 retired; 336 excerpt fragments verified against V2 pages.
-- Migrated the visual guide, the prototype and `PROTOTYPE_COVERAGE.md` to V2 (see those files).
+- Migrated the visual guide, the prototype and `docs/PROTOTYPE_COVERAGE.md` to V2 (see those files).
 - No client answers received; no production decisions made.
 
 ### 2026-09-17 (Fresh System environment)
 - Prototype now opens on an environment chooser: **Demo Data** (unchanged) or **Fresh System** (empty V2 installation). Added Getting started checklist (13 required / 5 optional steps, labelled a suggested exploration order), dependency explanations at 12 entry points, what/why/next empty states, dashboard Day 1 card, environment indicator, switch and reset with confirmation, full data isolation.
 - V2 check of what exists on day one: only the two seeded roles (§10.2 p14); primary location created with the practice (§1.2); Default case with each patient (§10.4). Not stated → register Q-085, Q-086 and assumptions A-019, A-020; prototype assumptions A-P47 (standard code lists), A-P48 (installation System Admin), A-P49 (current month opened for a new practice).
 - QA: Fresh walkthrough 57 checks (empty system → paid claim, month close, EMR link and push, switch, isolation, reset), 51-route crawl, existing Demo suites 51 + 73 + 48 — all passing, zero console errors. Register re-verified (346 excerpt fragments, 0 problems).
-- `PROTOTYPE_COVERAGE.md` §8 Prototype environments and §9 Fresh System workflows; guide Chapter 12 "Starting from zero" (dependency diagram, Demo vs Fresh); later chapters renumbered 13–15.
+- `docs/PROTOTYPE_COVERAGE.md` §8 Prototype environments and §9 Fresh System workflows; guide Chapter 12 "Starting from zero" (dependency diagram, Demo vs Fresh); later chapters renumbered 13–15.
 
 ### 2026-09-17 (Prototype Guide — product and explanation separated) · *superseded the same day, see below*
 - Audited the whole prototype for analysis content in the product UI: 138 PRD citations, open-question / contradiction / assumption IDs and wording, "not yet specified" notices, sand "Simulate …" buttons, eligibility / claim-status placeholder buttons, dashboard Eligibility / Referral placeholders, the Fresh "Day 1" card, the Getting started screen, the demo-guide button, the environment indicator and menu items, prototype wording on sign-in, toasts and audit entries. All removed from the application and moved into the Prototype Guide; legitimate product help kept.
 - Built the Prototype Guide: launcher and docked panel with its own visual identity; context per screen (54 contexts) with explanation, why, next step, relationships, terms, assumptions, client questions, prototype notes, PRD references; Follow along (Demo 14 steps, Fresh 13 + 5); Simulate (5 external systems); Library; settings for Guide mode and environment; Guide off control; Presentation mode with keyboard shortcuts; CMS-1500 source overlay.
 - Code split: application (`js/*.js`, `js/screens/`) vs prototype layer (`js/prototype/`: environment, simulators, generated guide reference, guide content, walkthroughs, guide, boot). `simulator.js`, `demo.js` and `environment.js` retired from the application folder.
 - QA: new Guide suite 54 checks (Presentation mode scan of 57 routes and 162 dialogs/menus finds no analysis or prototype text; Guide off Fresh scan; Guide on context, navigation, overlay, library; Follow along Demo and Fresh; environment switch; phone). Application suites 51 + 73 + 48 and Fresh 55 pass in Presentation mode; context sweep of all routes in both environments without errors.
-- `PROTOTYPE_COVERAGE.md` §10 added and matrix wording updated; `prototype/README.md` rewritten; guide Chapter 12 wording updated.
+- `docs/PROTOTYPE_COVERAGE.md` §10 added and matrix wording updated; `prototype/README.md` rewritten; guide Chapter 12 wording updated.
 
 ### 2026-09-17 (Review Notes — the Guide replaced by a minimal annotation layer)
 - The Prototype Guide built earlier the same day was removed at the user's request: no guide panel, walkthroughs, library, categories, modes or onboarding. Deleted `guide.js`, `guide-content.js`, `guide-reference.js`, `walkthroughs.js` and the reference generator.
-- Replaced by **Review Notes** (`js/prototype/review-notes.js`, ~56 notes): one `Review notes · n` control, numbered markers positioned over the annotated element in their own overlay, a small popover with a list and a one-note detail (type, two sentences, register ID linking to `PRD_CLARIFICATION_QUESTIONS.md`, PRD section and page). Three types only: Assumption, Client question, Note. No emoji, no cards, no second navigation.
+- Replaced by **Review Notes** (`js/prototype/review-notes.js`, ~56 notes): one `Review notes · n` control, numbered markers positioned over the annotated element in their own overlay, a small popover with a list and a one-note detail (type, two sentences, register ID linking to `docs/PRD_CLARIFICATION_QUESTIONS.md`, PRD section and page). Three types only: Assumption, Client question, Note. No emoji, no cards, no second navigation.
 - The popover footer (and Alt + Shift + S) holds the simulators and the environment actions; Alt + Shift + N or "Hide notes" switches the layer off, and the start screen has the same checkbox.
 - The application layer was unchanged by this refactor: it already contained product content only.
 - QA: new Review Notes suite, 33 checks (notes-off scan of 57 routes and 162 dialogs/menus, contextual counts, markers, detail, dialog-level marker, prototype controls, toggles, content sanity, phone). Application suites 51 + 73 + 48 and Fresh 55 pass with notes off; Fresh route crawl clean.
-- `PROTOTYPE_COVERAGE.md` §10 rewritten; `prototype/README.md` rewritten; guide chapter 12 wording updated.
+- `docs/PROTOTYPE_COVERAGE.md` §10 rewritten; `prototype/README.md` rewritten; guide chapter 12 wording updated.
 
 ### 2026-09-23 (meeting notes reviewed and partly built)
 - 16 comments from a client meeting were validated against PRD V2 and the prototype before any code changed. **Built 8**, **held 8** (plus 2 sub-items) pending answers; nothing was implemented merely because a note existed.
@@ -684,7 +725,7 @@ Full detail with page references: **`PRD_V1_TO_V2_CHANGELOG.md`**.
 - Provenance is explicit in the docs: *Confirmed by V2*, *Confirmed by meeting*, *Assumption*, *Needs clarification*.
 
 ### 2026-09-23 (client answers — three held items built)
-- The client answered three of the held meeting items. All three were built, and each goes against PRD V2, so the divergence is recorded in `PROTOTYPE_COVERAGE.md` rather than as a review note in the product (the client asked for no trace in the UI).
+- The client answered three of the held meeting items. All three were built, and each goes against PRD V2, so the divergence is recorded in `docs/PROTOTYPE_COVERAGE.md` rather than as a review note in the product (the client asked for no trace in the UI).
 - **Q-091 — Billing preferences removed.** The section is gone from the patient form and the chart; no patient record carries a statement preference. Internal notes stay. V2's `no_statements` (§10.4 p18) is not implemented; Q-047 (are statements in scope at all) stays open.
 - **Q-092 — "Other" removed from Related cause.** The field offers employment and auto only and may be left empty. An empty cause prints NO in Boxes 10a, 10b and 10c, keeps the injury date optional unless the payer's class requires it (Box 14), and closes the accident state. Seeded cases that were "Other" are now empty. (A-P54.)
 - **Q-096 — Referring-physician code removed.** Neither code nor taxonomy is captured; the Code column is gone from the directory. A physician is identified by name and NPI; V2 keys the table by `code` (UQ per practice), so matching imported records is left to the build. (A-P55.)
@@ -706,4 +747,108 @@ Full detail with page references: **`PRD_V1_TO_V2_CHANGELOG.md`**.
 - The panel is `position: fixed` and placed on open (`placePick`), so the dialog's scroll area cannot clip it; it follows the box on scroll and resize, flips above when there is no room below, and closes on Escape, on an outside click and whenever a layer closes (`UI.closePick`).
 - Used by Admin → Organizations for "Practices in this organization" (client request, 2026-09-24). The provider-hold scope lists still use plain tick lists.
 - QA: the round-2 suite gained 11 checks for the picker (chips, filtering, no-match, untick, chip removal, Escape, what is saved, nothing left behind); phone width checked.
+
+### 2026-09-25 (real frontend codebase started — foundation only)
+- **`frontend/` is the production frontend**; `prototype/` stays as the client-validated behaviour reference. Nothing was implemented as a feature: this was architecture, standards and tooling.
+- Stack matches the sibling EMR frontend (`d:\emr`) — React 19, TypeScript strict (+ `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), Vite, TanStack Router (file-based, auto code splitting), TanStack Query, Zustand, Zod, Tailwind v4 with the EMR's design tokens — plus the two things that app lacks: **Vitest + React Testing Library from day one** and **ESLint carrying the architecture rules**.
+- Architecture: feature-oriented, `routes → features → shared`, enforced by lint (shared may not import features; a feature reaches another only through its `index.ts`; relative imports inside a feature). Server state belongs to TanStack Query and never to Zustand or `useState`; URL holds filters, paging and selection.
+- Boundaries built: one `fetch` (`lib/api/http-client.ts`) with timeout, abort signal, Zod response validation and a normalized `ApiError` taxonomy; Zod-validated environment; query-client defaults (30 s stale, no mutation retry, no refetch-on-focus).
+- Security position recorded in `frontend/docs/SECURITY.md`: the frontend is **not** a security boundary; lint blocks `fetch` outside the API layer, browser storage of PHI, and `dangerouslySetInnerHTML`; the list of controls the backend and infrastructure must own is written down.
+- No backend exists, so auth, permissions, forms, tables and every feature are **deliberately not built**; the mock-first data layer sits behind the feature API boundary (ADR 0006) and open decisions are listed in `frontend/docs/FRONTEND_ARCHITECTURE.md`.
+- Docs: `frontend/CLAUDE.md` (how to work here, what to read for which task), `frontend/docs/{FRONTEND_ARCHITECTURE, FRONTEND_ENGINEERING_STANDARDS, SECURITY, TESTING_STRATEGY, PERFORMANCE}.md`, eight ADRs in `frontend/docs/decisions/`, and a CI workflow running typecheck + lint + test + build on `frontend/**`.
+- Verified: `npm run verify` passes (11 tests). Baseline bundle 103 kB gzip entry + 21 kB route chunk — the number the performance budgets are measured against.
+
+### 2026-09-25 (core UI system built — still no business feature)
+- **Design tokens now come from the reviewed prototype**, not from the EMR app: Archivo (self-hosted, 4 weights), the white-canvas/hairline "instrument" direction, the ink ladder n50–n800, one brand blue for anything pressable, the status family (critical/warning/sand-attention/success/info), 13–24px type scale, 4/6/8px radii, 38px control height, 72/216px rail. They live in `frontend/src/styles/index.css` as Tailwind v4 `@theme` tokens — a look change is a token change.
+- **UI kit built** (`frontend/src/components/ui`, inventory in `frontend/docs/UI_KIT.md`): Button, Field/FormGrid/FormSection, Input/SearchInput/Textarea, Select, SearchSelect + MultiSelect, Checkbox/RadioGroup, DateInput/DateRangeInput, Form/FormField/applyServerErrors, DataTable, Pagination, Badge/StatusDot/Tag, EmptyState/ErrorState/Skeleton, Notice, Toaster, Dialog/ConfirmDialog, Drawer, Menu, TabNav, Card/Section, KeyValue, Spinner.
+- **Shell**: `AppShell` (collapsible brand rail + content + one toast region) and `navigation.tsx`, which lists only routes that exist. Page patterns (`PageContainer`, `PageHeader`, `FilterBar`) are building blocks — there is deliberately no `ListPage`/`DetailPage` component, since the four screen shapes are compositions, documented in the kit.
+- **Deliberate technology choices:** Radix only for floating surfaces (dialog, dropdown, popover); select/checkbox/radio/date stay native for keyboard, mobile and screen-reader behaviour. Tabs are links (each tab is a URL), not ARIA tabs. React Hook Form + Zod for forms, with server field errors mapped back onto fields.
+- **No business logic in the kit:** a Badge takes a tone, never a claim status; `DataTable` reports sort/selection and never sorts data itself (the server does that, docs/PERFORMANCE.md §5).
+- **Development showcase** at `/dev/ui` (`frontend/src/dev/ShowcasePage.tsx`) shows every primitive with its states. Its import sits behind `import.meta.env.DEV`, so a production build drops the branch and never emits the chunk.
+- QA: `npm run verify` green — 58 tests across 13 files (buttons, field wiring/a11y, choice controls, combobox keyboard + multi-select, table states/sort/selection, dialog focus trap and restore, form validation and server errors, toasts, pagination, shell and routes). Bundle: **116 kB gzip entry**, 7 kB CSS, 58 kB fonts.
+- Not built, deliberately: any feature module, authentication, permissions, mock data layer, in-page tab panels, virtualization.
+
+### 2026-09-25 (accessibility findings in the approved design — fixed)
+- **Contrast.** `n400 #8891a0` measures 3.18:1 on white, under WCAG AA's 4.5:1 for 13–15px text, and the prototype used it for every field label, table header and sub-line. Text roles moved to `n500 #6b7484` (4.71:1, verified in a real browser); `n400` is now icons and dividers only. The palette itself is unchanged.
+- **Clickable rows.** The prototype's rows respond only to a mouse. `DataTable` lost `onRowClick` and gained `rowLink` / `rowAction`, which turn the primary cell into one real link or button covering the row — mouse-clickable anywhere, tabbable for everyone else. A cell with its own controls sets `interactive: true`.
+- **Empty values.** `KeyValue` renders the dash as decoration and says "None" to a screen reader.
+- **Combobox.** The trigger became a `div role="combobox"` (with its own Enter/Space/ArrowDown handling), so the clear control and each chip's remove control are real buttons: keyboard-reachable, and no button nested inside a button.
+- **Collapsed rail labels** use the prototype's own CSS approach (`.nav-tip`), after a Radix tooltip proved to cost ~18 kB gzip in the entry chunk for a hint. The nav list stops being a scroll container when collapsed, because a scroll container clips those labels.
+- Decisions recorded in `frontend/docs/UI_KIT.md` § Deliberately absent: no `Switch`, no general `Tooltip`, no ARIA `Tabs`, no virtualization — each with the condition that would trigger it.
+- QA: 62 tests (new: keyboard-reachable clear control, row opened by a named control, "None" for empty values). Entry bundle unchanged at 116 kB gzip.
+
+### 2026-09-25 (UI refinements requested after review)
+- **Custom dropdowns.** `Select` is no longer a native `<select>`: it is a styled listbox sharing one engine (`Combobox.tsx`) with `SearchSelect` and `MultiSelect`, so all three behave identically. The keyboard behaviour a native control gives free is written there and tested — Enter/Space/ArrowDown open, arrows and Home/End move, type-ahead jumps, Enter picks, Escape closes, and the panel opens on the current selection. Checkbox and radio stay native elements.
+- **Custom date picker.** `DateInput` is a typed MM/DD/YYYY box plus our own calendar (Popover + a `role="grid"` month): arrow keys by day, PageUp/PageDown by month (Shift for a year), Home/End across a week, Enter to pick, plus Today and Clear. The value stays ISO `YYYY-MM-DD`; ISO parsing is local-time by hand, because `new Date('2026-09-30')` is UTC midnight — the day before, west of Greenwich. No new dependency.
+- A control that is not a native form element cannot be named by `<label for>`, so `Field` now publishes a `labelId` and those controls use `aria-labelledby`.
+- **Rail**: the prototype's logo is the sidebar mark and the favicon, and the collapse control is the prototype's circular handle on the rail's edge, vertically centred.
+- **Pointer restored** on everything pressable (Tailwind's reset gives buttons `cursor: default`).
+- QA: 77 tests. New suites cover the calendar (typed entry, ISO/local parsing, keyboard navigation, min/max, Today/Clear) and the styled select (naming, keyboard, type-ahead, opening on the selection, disabled options). Entry bundle 116 kB gzip — unchanged, since the calendar added no dependency.
+- **`cn` had to be taught the type scale.** tailwind-merge resolves `text-*` by shape: a known t-shirt size is a font size, anything else is a colour. Our scale is named, so `cn('text-meta', 'text-ink')` was dropping the *size*, and the rail's `text-white/85` was dropped by `text-lede` — which is why the product word rendered black. `lib/utils/cn.ts` now extends tailwind-merge with the seven size names, with a test. Any component that merges a caller's className was exposed to this.
+- Follow-ups the same day: the rail lockup reads **EMR Billing** (mark plus the product word, start-aligned in both rail states, so logo, icons and labels share one left edge), and the calendar caption is a **button that jumps to a month, then to a year** — twelve months in a grid, twelve years a page, so a date years away is three clicks instead of dozens of month steps. Escape inside a chooser returns to the calendar instead of closing the picker; months and years that no allowed day could satisfy are disabled. 82 tests.
+
+### 2026-09-28 (first feature: the sign-in page)
+- **Built at `/login`** (`frontend/src/features/auth`): the prototype's composition — photograph with the product line on the left (≥ 1024px), logo, "Sign in to Billing", form, 50px primary button — with a **username + password** form in place of the prototype's demo account picker.
+- **Why username:** PRD V2 §10.2 gives `app_user` a `username` column for "a person or system account that logs in", and the register's forced assumption for the still-open **Q-025** is standard username/password sign-in. If the client chooses SSO, this form is replaced, not extended.
+- **No backend, no invented contract.** `features/auth/api/sign-in.ts` is the single integration point; until a contract exists it rejects as `unavailable` (a new `ApiError` kind, also used for 503 and for "no server configured"), which the form shows as "This service is not available right now" on submit. No banner warns about it in advance (removed at the client's request). There is deliberately no mock that succeeds. No route guard and no session store yet — the guard's place is `routes/_app.tsx`.
+- **Security choices:** one message for a wrong username *or* password (no account enumeration); the server's own wording never reaches the page; the password is cleared after a failed attempt; sign-in does **not** go through `useMutation`, because TanStack Query would keep the password in its cache and devtools; the whole query cache is cleared on success; `?redirect=` is limited to paths inside the app (`safeRedirect`, open-redirect guard).
+- **Production fixes over the prototype:** form vertically centred with a scroll fallback (the prototype's box was top-aligned for a long account list); form before art in the document so a screen reader meets the heading and fields first; the art's line is a paragraph, not an `h2` above the `h1`; `min-h-dvh`; phones never download the 200 kB photograph; page title set; show/hide password added (a toggle with `aria-pressed`).
+- **Routing:** the root became bare; signed-in screens moved under a pathless `_app` layout that renders the rail; `/login` sits outside it. Configuration is now validated at boot (`main.tsx`).
+- **Two more `cn` traps fixed:** tailwind-merge did not know our spacing tokens either, so `cn('h-control', 'h-[50px]')` kept both and the button stayed 38px. `cn` now knows the spacing and type-scale names; tests pin both.
+- **Bundle:** entry 136 kB gzip (was 116). Zod (~20 kB) joined the entry because route search validation and boot-time config validation both need it — the expected steady state. The sign-in page itself is a 17 kB lazy chunk.
+- QA: 113 tests. Verified in a browser at 1920, 1440, 1280, 1024, 820, 375, 320 and 200% zoom: no horizontal overflow, 50px button, photograph fetched only at ≥ 1024px.
+
+### 2026-09-28 (Admin → Organizations — first mock-backed feature)
+- **Built at `/admin/organizations`** (`frontend/src/features/admin-organizations`); `/admin` opens it. The rail gains **Admin**; the Admin area has the prototype's section list (a 248px column, pills below 1024px) holding only the sections that exist. List sorted by name with status and a count; create/edit dialog with name + Active, as in the prototype.
+- **Scope held:** the prototype's **Practices** and **Count** columns and the dialog's practice picker are **not built** — they need Practices & Locations (the next task) and an API for the link. V2 §10.2 gives `company` only a unique name and `is_active`; nothing else was added (no delete, no details page, no search — none are in the prototype).
+- **No backend, no invented contract.** `api/organizations-api.ts` is the integration point; in the dev server and tests it answers from an in-memory mock (the prototype's fictional "Harborline Rehab Group"; duplicate names rejected as a field error), in any other build it rejects as `unavailable`. Not gated to System Admin yet: there is no permission model; the server must enforce it anyway.
+- **Mock switch changed to a build-time constant** (`__MOCK_DATA__`, `vite.config.ts`): the earlier "chosen by `env.dataSource`" idea could not keep mocks out of the bundle — a shared helper variable left the mock file in `dist/` (unreachable, but shipped). Tested inside each api file, the production build now emits no mock at all. ADR 0006 and the architecture doc updated.
+- **Shared kit fixes found here:** a loading table now says "Loading…" to screen readers (the skeleton was silent); a server field error focuses its field; `PageHeader` wraps its button below the title on narrow screens instead of squeezing the description to one word per line.
+- **Open:** what an inactive organization does — added to Q-032 (no question covered it). The flag is stored and shown; it has no other effect.
+- QA: 127 tests. Verified in a browser at 1920–320 and 200% zoom with a 100-character name: no overflow, real Enter-to-submit, dialog as a bottom sheet on phones, focus back on the row after closing.
+
+### 2026-09-28 (Admin → Practices & locations — first backend payloads)
+- **Backend payloads received** for organization (`name`, `is_active`), practice (`organization_id`, `code`, `name`, `dba_name`, `npi`, `tax_id`, `taxonomy_code`, `address{line1,line2,city,state,zip}`, `is_active`, `locations[]`) and location (`practice_id`, `code`, `name`, `npi`, `address`, `place_of_service`, `is_active`). They define the **fields**, not business rules; endpoints and response bodies are still unknown. Ids are numbers.
+- **Built at `/admin/practices`** (`frontend/src/features/admin-practices`), the prototype's layout: practices table → selected practice (organization card, billing constants, locations table). Selection lives in the URL (`?practice=<id>`). New practice = practice + **first location** in one request (`locations[]`), because PRD V2 §1.2 / BR01 requires one; more are added from the practice. Organization is an optional select of active organizations. Location's practice is the selected one — no move between practices (not defined anywhere).
+- **Left out because the payloads lack them:** the prototype's legal name, Tax ID type, primary-location flag and EMR-integration column. Noted under Q-022. Place of service uses the prototype's five-code list, defaulting to 11 (PRD §10.2); the allowed set is Q-079. Validation is only the prototype's formats (NPI 10 digits, ZIP 5, state 2 letters, taxonomy, EIN/SSN); no uniqueness in the browser — the mock enforces the one V2 rule (location code unique within a practice).
+- **Data layer pattern set:** snake_case wire ↔ camelCase screens, mapped in each feature's api layer; `api/payloads.ts` is tested against the example payloads verbatim; the dev mock plays the server (receives the real payload, answers in wire format). Organizations moved to the same pattern (numeric ids, `is_active`); its screen did not change.
+- **Shared kit fixes found in the browser:** select lists, date pickers and menus opened *behind* dialogs (z-index 50 vs 60) — now 70, order recorded in UI_KIT.md; an `sr-only` table header escaped the table's scroll box and widened the page at 640–700px — the scroll box is now positioned.
+- QA: 152 tests. Browser-checked 1920–320 and 200% zoom with long names: no page overflow (the practices table scrolls inside itself between 640 and ~760px), keyboard and mouse selection in dialogs, Enter submits, server field error focuses its field.
+
+### 2026-09-28 (UI convention: `is_active` is a Switch)
+- **Decided by the user, applies to every current and future entity:** a boolean active flag is edited with a **Switch** labelled "Active" (on = `true` = Active), never a checkbox. It sets the boolean only — it implies no business behaviour (no cascade, no billing stop, no access change). Lists show the state as the Active/Inactive status dot; a list changes status in place only where the prototype does. No extra statuses unless the requirements define them. Recorded in `frontend/docs/UI_KIT.md` § Conventions.
+- **Built:** one shared `Switch` in the UI kit (`button role=switch`, Space/Enter, clickable label, on shown by colour + position + check mark), replacing the Active checkbox in the Organization, Practice and Location dialogs. The prototype's **Deactivate / Reactivate** row action on locations is now built too, behind a confirmation, changing `is_active` only — without the prototype's "primary / last active location" guard (no primary flag in the payload) or its claim about what an inactive location can no longer do (Q-068). 159 tests.
+
+### 2026-09-28 (UI conventions: field notes are tooltips; page descriptions say what the user can do)
+- **Decided by the user, app-wide:** optional context about a field goes behind a small info icon beside its label (hover, focus or tap), never as loose text under the input; errors, required marks and essential instructions stay visible. Page descriptions are one short, action-first sentence ("Create and manage…") describing only what the page really offers — no data-model or PRD wording. Both recorded in `frontend/docs/UI_KIT.md` § Conventions.
+- **Built:** one shared `InfoTip` (UI kit), exposed as `info` on `Field` / `FormField`; on the existing Radix popover, no new dependency; portalled, flips to stay on screen, sits above dialogs (stacking 80). Converted: Tax ID's format note and the Organization field's note. Added info only where the meaning is confirmed (location code unique per practice — V2 §10.2; default place of service feeds charge lines — BR47; taxonomy format; group NPI on claims; DBA meaning). The Tax ID format now also appears in its error message.
+- **Copy rewritten:** Organizations, Practices & locations and Home page descriptions; their dialogs' descriptions and empty states; the organization card. No behaviour, validation rule, payload or API changed. 166 tests.
+- Follow-up the same day: the info tooltip now wears the approved design's only tooltip style (the collapsed rail's label — brand-hover fill, white 14px medium, square pointer, fade).
+
+### 2026-09-28 (authentication flows — payloads received)
+- **Backend payloads received** for sign in `{ email, password }`, change password `{ current_password, new_password, new_password_confirmation }`, and forgot password in three calls — send code `{ email }`, verify `{ email, otp }`, reset `{ email, otp, password, password_confirmation }`. Q-025 partly answered: email + password held by this system, code-by-email reset. **Sign-in now uses the email** (it used the username).
+- **Built** (`frontend/src/features/auth`): sign-in on email, with a "Forgot your password?" link; `/forgot-password` — one screen, three steps plus a done step, on the sign-in page's frame (extracted as `AuthLayout`), focus moved to each step's heading, "Send a new code", "Use a different email", "Start over"; `/account/password` inside the app, reached from a key icon pinned to the bottom of the rail. Not in the prototype — designed in the product's direction by request.
+- **Not known, so not built or used:** endpoint paths, response bodies, how the session is carried, whether verifying returns a token or resetting signs in, code length/expiry/resend limits, password rules, the error body shape. Every auth call resolves with nothing; the live build answers `unavailable`; a dev-only mock accepts the payloads (it refuses password `incorrect`, current password `incorrect`, code `000000` so failures can be demonstrated). No route guard or session store yet.
+- **Choices:** payloads pinned by tests against the given field names; backend field errors renamed to the form's fields so they land on the right input; passwords and codes never pass through `useMutation`, a URL, a log or storage; wording never confirms that an account exists; the code is one text field (`autocomplete=one-time-code`), since its format is not specified. The `_confirmation` naming suggests a Laravel backend, whose error body (`{ message, errors }`) the http client does not parse yet — to confirm before going live; meanwhile an unparsed validation error now reads "Some fields need attention." instead of "Request failed (422)."
+- QA: 190 tests. Browser-checked at 1440 and 375.
+- Follow-ups the same day: the forgot-password steps' secondary actions were regrouped (the email as a row with **Change**, "Didn't get a code? Send a new code" under the button, one centred "Back to sign in"), all small actions share one text style, and hover no longer underlines (the user's preference).
+
+### 2026-09-28 (Admin → Referring physicians)
+- **Payload received:** `{ practice_id, code, name, type, npi }`. **Code is kept** although the client's Q-096 answer removed it — the newer backend payload has it; the conflict is recorded under Q-096. Taxonomy, phone, fax and the prototype's free-text practice name are **not** built (not in the payload).
+- **Built at `/admin/referring-physicians`** (`frontend/src/features/admin-referring-physicians`), under a new "Setup" group in the Admin list: the prototype's list (physician, type tag "DN · Referring" / "DQ · Supervising", NPI with an **Invalid NPI** mark for bad or dummy numbers) plus code and practice columns, sorted by name; a practice filter in the URL (`?practice=`) stands in for the prototype's practice switcher. Add / edit dialog: Practice, Name, Code, Type (DN/DQ — defined by PRD V2, default DN as in the prototype), NPI; info tips on Code (unique per practice), Type (Box 17 qualifier) and NPI (Box 17b). No delete (the prototype has none).
+- **Practice relationship:** a shared `PracticeSelect` now lives in the Practices feature (fed by the practices list, never hard-coded ids) for every practice-scoped screen. The practice is chosen when a physician is added and shown fixed when editing — moving a physician between practices is not defined.
+- **Validation:** all five fields required; NPI ten digits and not a dummy (PRD BR20, as the prototype's form refuses them); code uniqueness is the server's (the dev mock enforces it per practice). No endpoints yet — dev mock only, `unavailable` otherwise. 207 tests; browser-checked 1440–320.
+
+### 2026-09-28 (Admin → Users)
+- **Payload received:** `{ name, email, password, is_active }`. Built at `/admin/users` (`frontend/src/features/admin-users`), in the Admin list's "Organization" group as in the prototype: name (sorted), email, Active/Inactive, the row to edit, **Deactivate / Reactivate** on the row behind a confirmation (the prototype's action; it changes `is_active` only). The prototype's roles, practice/location grants, username, default practice and service-account flag are **not** built — the payload has none of them. No delete, no search (the prototype has neither).
+- **Passwords:** asked for only when creating (shared `PasswordInput`, masked, `autocomplete=new-password`); the edit form has **no password field** — a stored password is never fetched, shown or pre-filled, and an admin reset is not defined. Creating a user bypasses `useMutation` so the password never sits in the query cache; the response schema has no password field, so one sent back would be dropped on parsing.
+- **Assumed, to confirm with the backend:** update body = the payload without `password`; responses = payload (no password) + numeric `id`; no separate status endpoint. Unknown: roles/permissions, email uniqueness, what an inactive user can do, whether deactivation ends sessions, paging.
+- **Shared along the way:** `PasswordInput` moved to the UI kit (second user); one email rule in `lib/validation/email.ts` for sign-in and Users. 221 tests; browser-checked 1440–320.
+
+### 2026-09-28 (account menu; Change password becomes a dialog)
+- **Built:** the prototype's account button at the bottom of the rail — the signed-in user's avatar (initials; the name and email beside it when the rail is open) opening a menu: who is signed in, **Change password**, **Sign out**. Change password is now a **dialog** from that menu; the `/account/password` page and its rail link were removed (their only entry point). Sign out asks first ("Sign out? You will return to the sign-in screen."), as the prototype does — the prototype's wording "Sign out" is kept, matching "Sign in".
+- **Current user:** one query, `useCurrentUser`, is the only source; **assumed** to return `{ name, email }` (the user payload's own fields) — no "who am I" endpoint or response is known, so the dev mock answers with a fictional person and the live build shows a plain person icon and still offers both actions.
+- **Sign out:** no endpoint or payload is known. It calls the integration point, then always clears the query cache and goes to `/login`; if the server did not confirm, the toast says only this browser was signed out. Changing a password does **not** sign out (not required anywhere).
+- **Kit:** new `Avatar`; `Menu` gained a header and a side placement; `Dialog` / `ConfirmDialog` gained `returnFocusTo` so focus returns to the account button after a dialog opened from a menu item. 231 tests; browser-checked 1440 and 375.
+- Follow-up the same day: **confirmation dialogs redesigned** (user feedback — they showed an empty body between two rules). `ConfirmDialog` is now its own compact alert dialog: a tone-coloured icon (Sign out, Deactivate, Reactivate each pass theirs), the question, one line of context, an outlined Cancel that takes focus first, and the action; no close button; buttons stack full width on phones. 233 tests.
 

@@ -1,0 +1,34 @@
+name: frontend
+
+# The four checks that must pass before code lands. Same command a developer
+# runs locally (`npm run verify`), so CI never disagrees with a clean machine.
+on:
+  push:
+    branches: [main]
+    paths: ['frontend/**', '.github/workflows/frontend-ci.yml']
+  pull_request:
+    paths: ['frontend/**', '.github/workflows/frontend-ci.yml']
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      # Advisory for now: a known vulnerability should be seen, not silently
+      # block a release, until someone owns the triage.
+      - run: npm audit --audit-level=high
+        continue-on-error: true

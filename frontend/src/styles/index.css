@@ -1,0 +1,354 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens — the approved direction, taken from the reviewed prototype
+ * (`prototype/css/tokens.css`), not invented here. House rules that come with
+ * them: a white page, structure from hairlines and space, one brand blue that
+ * only ever means "this responds", status as its own family, no letter-spacing
+ * on text, nothing below 13px, weights no heavier than semibold.
+ *
+ * Use a token. A raw hex or an arbitrary value in a component is a review block:
+ * a palette change has to stay a one-file change.
+ */
+
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/archivo-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/archivo-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/archivo-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Archivo';
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: url('../assets/fonts/archivo-latin-700-normal.woff2') format('woff2');
+}
+
+@theme {
+  --font-sans: 'Archivo', 'Segoe UI', Arial, sans-serif;
+
+  /* ---- Surfaces */
+  --color-canvas: #ffffff;
+  --color-paper: #f7f8fb;
+
+  /* ---- Ink ladder */
+  --color-ink: #12151f;
+  --color-n50: #f7f8fb;
+  --color-n100: #eef0f5;
+  --color-n200: #dce0e8;
+  --color-n300: #c2c8d3;
+  --color-n400: #8891a0;
+  --color-n500: #6b7484;
+  --color-n600: #565f70;
+  --color-n700: #3f4756;
+  --color-n800: #2c313d;
+
+  /* ---- Action. One colour, only on something you can press. */
+  --color-brand: #0072a2;
+  --color-brand-hover: #005a80;
+  --color-brand-deep: #005a80;
+  --color-brand-wash: #e6f1f6;
+  --color-brand-line: #a8cfe0;
+
+  /* ---- Status family. Colour carries meaning; never decoration. */
+  --color-critical: #b3261e;
+  --color-critical-bg: #fbe6e4;
+  --color-critical-line: #e3b0a8;
+  --color-critical-deep: #93201a;
+  --color-warning: #a15206;
+  --color-warning-bg: #fbeed7;
+  --color-warning-deep: #7c3f04;
+  --color-success: #147a42;
+  --color-success-bg: #e0f3e7;
+  --color-info: #375d78;
+  --color-info-bg: #e6edf3;
+  --color-info-line: #b3c2ce;
+
+  /* ---- Sand: attention that is not danger. */
+  --color-sand: #f2e7ab;
+  --color-sand-hover: #e9dc95;
+  --color-sand-deep: #8a6f24;
+  --color-sand-wash: #fbf6e2;
+  --color-sand-line: #ddd0a0;
+
+  /* ---- Rules — the only structure there is */
+  --color-rule-section: #c2c8d3;
+  --color-rule-structural: #dce0e8;
+  --color-rule-row: #eef0f5;
+
+  /* ---- Type scale (nothing below 13px) */
+  --text-eyebrow: 13px;
+  --text-micro: 14px;
+  --text-meta: 15px;
+  --text-body: 16px;
+  --text-row: 17px;
+  --text-lede: 20px;
+  --text-section: 24px;
+
+  /* ---- Radii — an instrument has edges; only controls are softened */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-card: 8px;
+
+  /* ---- The only things that float */
+  --shadow-popover: 0 12px 32px -8px rgb(18 21 31 / 0.24), 0 2px 8px rgb(18 21 31 / 0.1);
+  --shadow-dialog: 0 18px 60px rgba(0, 32, 46, 0.28);
+  --shadow-drawer: -18px 0 60px rgba(18, 21, 31, 0.18);
+
+  /* ---- Component dimensions. Controls and buttons share one height. */
+  --spacing-control: 38px;
+  --spacing-control-sm: 32px;
+  --spacing-control-xs: 28px;
+  --spacing-rail: 72px;
+  --spacing-rail-open: 216px;
+
+  /* ---- Motion */
+  --animate-spin-fast: spin 800ms linear infinite;
+  --animate-pulse-soft: pulse-soft 1.4s ease-in-out infinite;
+  --animate-layer-in: layer-in 180ms ease-out;
+  --animate-dialog-in: dialog-in 180ms ease-out;
+  --animate-drawer-in: slide-in-right 220ms ease-out;
+  --animate-pop-in: pop-in 140ms ease-out;
+  --animate-toast-in: toast-in 180ms ease-out;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes layer-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer base {
+  html {
+    overflow-x: clip;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    color: var(--color-ink);
+    background: var(--color-canvas);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
+  }
+
+  /*
+   * Tailwind's reset gives buttons `cursor: default`. Anything you can press
+   * should say so, so the pointer comes back — except when it is disabled,
+   * where the components set `not-allowed` themselves.
+   */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary,
+  label:has(> input[type='checkbox']:not(:disabled)),
+  label:has(> input[type='radio']:not(:disabled)) {
+    cursor: pointer;
+  }
+
+  /* Keyboard users must always be able to see where they are. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  /* One thin scrollbar everywhere. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-n300) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--color-n300);
+    border-radius: 999px;
+  }
+
+  /*
+   * Checkboxes and radios are styled on the element itself rather than
+   * replaced with a div: the native control keeps its keyboard behaviour,
+   * its announcement and its indeterminate state for free.
+   */
+  input[type='checkbox'],
+  input[type='radio'] {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-grid;
+    place-content: center;
+    flex: none;
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    border: 1.5px solid var(--color-n300);
+    background-color: var(--color-canvas);
+    background-repeat: no-repeat;
+    background-position: center;
+    cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease;
+  }
+  input[type='checkbox'] {
+    border-radius: var(--radius-sm);
+  }
+  input[type='radio'] {
+    border-radius: 999px;
+  }
+  input[type='checkbox']:hover:not(:disabled),
+  input[type='radio']:hover:not(:disabled) {
+    border-color: var(--color-brand);
+  }
+  input[type='checkbox']:checked,
+  input[type='checkbox']:indeterminate {
+    border-color: var(--color-brand);
+    background-color: var(--color-brand);
+  }
+  input[type='checkbox']:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffff' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-6'/%3E%3C/svg%3E");
+    background-size: 78%;
+  }
+  input[type='checkbox']:indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffff' stroke-width='2.75' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E");
+    background-size: 78%;
+  }
+  input[type='radio']:checked {
+    border-color: var(--color-brand);
+    background-image: radial-gradient(circle, var(--color-brand) 100%, transparent 100%);
+    background-size: 55% 55%;
+  }
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled {
+    cursor: not-allowed;
+    border-color: var(--color-n200);
+    background-color: var(--color-n50);
+  }
+  input[type='checkbox']:disabled:checked {
+    border-color: var(--color-n300);
+    background-color: var(--color-n300);
+  }
+}
+
+@layer components {
+  /*
+   * The collapsed rail's label. The approved prototype does this in CSS, and so
+   * do we: a floating-element library in the entry chunk costs every user ~18 kB
+   * gzip for a hint. The link keeps its own `aria-label`, so a screen reader is
+   * told the name; this is only the visible half, shown on hover and on keyboard
+   * focus (a `title` attribute appears for neither reliably).
+   */
+  .nav-tip {
+    position: relative;
+  }
+  .nav-tip::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    z-index: 90;
+    transform: translateY(-50%);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    background: var(--color-brand-hover);
+    color: #fff;
+    font-size: var(--text-micro);
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+  .nav-tip:hover::after,
+  .nav-tip:focus-visible::after {
+    opacity: 1;
+  }
+
+  /*
+   * The page gutter. One rule, because every screen shares it and a screen
+   * that invents its own padding is immediately visible as wrong.
+   */
+  .page-x {
+    padding-inline: 20px;
+  }
+  @media (min-width: 640px) {
+    .page-x {
+      padding-inline: 32px;
+    }
+  }
+  @media (min-width: 1024px) {
+    .page-x {
+      padding-inline: 44px;
+    }
+  }
+}
