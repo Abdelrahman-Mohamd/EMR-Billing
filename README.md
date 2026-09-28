@@ -13,10 +13,11 @@ No install, no sign-up: pick an environment, choose an account, and use it like 
 | | |
 |---|---|
 | [`prototype/`](prototype/) | The clickable prototype: plain HTML, CSS and JavaScript, in-memory data, no backend. See [`prototype/README.md`](prototype/README.md). |
-| [`BILLING_SYSTEM_GUIDE.html`](BILLING_SYSTEM_GUIDE.html) | A standalone visual guide to the whole business cycle: diagrams, workflows, roles, records, statuses, glossary and a worked billing example. Download it and open it in a browser. |
-| [`PROTOTYPE_COVERAGE.md`](PROTOTYPE_COVERAGE.md) | Every PRD V2 requirement mapped to the screen that demonstrates it, with status, workflow and the assumptions the prototype had to make. |
-| [`PRD_CLARIFICATION_QUESTIONS.md`](PRD_CLARIFICATION_QUESTIONS.md) | The open questions: 84 questions, 14 contradictions and 20 forced assumptions, each quoting the PRD passage it comes from. |
-| [`PRD_V1_TO_V2_CHANGELOG.md`](PRD_V1_TO_V2_CHANGELOG.md) | What changed between PRD v1 and v2, and what each change meant for the prototype. |
+| [`frontend/`](frontend/) | The **real frontend** (React, TypeScript, Vite). Architecture, standards and tooling are in place; no feature is built yet. See [`frontend/README.md`](frontend/README.md). |
+| [`BILLING_SYSTEM_GUIDE.html`](docs/BILLING_SYSTEM_GUIDE.html) | A standalone visual guide to the whole business cycle: diagrams, workflows, roles, records, statuses, glossary and a worked billing example. Download it and open it in a browser. |
+| [`PROTOTYPE_COVERAGE.md`](docs/PROTOTYPE_COVERAGE.md) | Every PRD V2 requirement mapped to the screen that demonstrates it, with status, workflow and the assumptions the prototype had to make. |
+| [`PRD_CLARIFICATION_QUESTIONS.md`](docs/PRD_CLARIFICATION_QUESTIONS.md) | The open questions: 89 open questions, 14 contradictions and 21 forced assumptions, each quoting the PRD passage it comes from. |
+| [`PRD_V1_TO_V2_CHANGELOG.md`](docs/PRD_V1_TO_V2_CHANGELOG.md) | What changed between PRD v1 and v2, and what each change meant for the prototype. |
 | [`PROJECT_MEMORY.md`](PROJECT_MEMORY.md) | Working notes: modules, features, business rules, entities, workflows, decisions and progress. |
 
 ## How to read the prototype

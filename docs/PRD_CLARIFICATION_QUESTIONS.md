@@ -366,6 +366,8 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 
 ### Q-022 — Practice setup: taxonomy, DBA and the Tax ID type.
 
+**Partly answered (backend payloads, 2026-09-28):** the practice payload stores `dba_name` and `taxonomy_code`, so both are kept on the practice. It has **no Tax ID type** (EIN or SSN) and no separate legal name — only `name` — so Box 25's EIN/SSN distinction still has no source; the frontend accepts either format in one field. The location payload also has **no primary flag**, although PRD §1.2 speaks of a primary location; the frontend requires a first location when a practice is created and marks none as primary. Who may create a practice is still open.
+
 **Question ID:** Q-022 · **Category:** Data · **Priority:** Critical · **V2 audit:** Kept
 
 **Question:** Onboarding collects a taxonomy code, a DBA name and a Tax ID that may be an EIN or an SSN, and Box 33b prints a group taxonomy. Should all three be stored against the practice? For the Tax ID, how should the system know whether it is an EIN or an SSN, given that Box 25 requires that distinction? Who is allowed to create a practice?
@@ -394,6 +396,8 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 ---
 
 ### Q-025 — How do users sign in?
+
+**Partly answered (backend payloads, 2026-09-28):** users sign in with **email and password** held by this system; a signed-in user can change their password; a forgotten password is reset with a one-time code sent to the email (send, verify, reset). Still open: MFA, password rules, session lifetime and idle timeout, lockout, code length and expiry, and who can reset someone else's password. Note that V2's `app_user` has a `username` column, but the login payload uses the email.
 
 **Question ID:** Q-025 · **Category:** Other · **Priority:** Critical · **V2 audit:** Kept
 
@@ -543,7 +547,7 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 
 **Question ID:** Q-032 · **Category:** Functional · **Priority:** Important · **V2 audit:** Kept
 
-**Question:** The company record exists only for cross-practice reporting and is optional. Will the client use it in practice? Should a user be granted access to an entire company, so that new practices are included automatically, or must access always be granted practice by practice?
+**Question:** The company record exists only for cross-practice reporting and is optional. Will the client use it in practice? Should a user be granted access to an entire company, so that new practices are included automatically, or must access always be granted practice by practice? And the organization carries an active flag: what does marking an organization inactive change — does it drop out of cross-practice reports, stop new practices from joining it, or affect its practices at all? *(Added 2026-09-28, while building Admin → Organizations: the flag is stored and shown, and does nothing else until this is answered. The same question for practices and locations is Q-068.)*
 
 **Why clarification is needed:** It decides whether access to new practices is granted automatically, which is both a convenience and a security question.
 
@@ -1209,6 +1213,8 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 ---
 
 ### Q-096 — Should the referring-physician code be removed?
+
+**Conflict noted (backend payload, 2026-09-28):** the client's answer removed the code, but the current backend payload for a referring physician — `{ practice_id, code, name, type, npi }` — carries it. The production frontend follows the payload and keeps Code (required, unique within a practice on the server); taxonomy stays out. Needs one decision between client and backend.
 
 **Question ID:** Q-096 · **Category:** Data · **Priority:** Important · **V2 audit:** New — raised by meeting notes (2026-09-23).
 

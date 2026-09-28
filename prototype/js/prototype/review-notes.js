@@ -246,7 +246,7 @@ const Review = (() => {
     return i < 0 ? null : NUM[i] || String(i + 1)
   }
 
-  const qLink = (id) => `<a class="rn-q" href="https://github.com/Abdelrahman-Mohamd/EMR-Billing/blob/main/PRD_CLARIFICATION_QUESTIONS.md" target="_blank" rel="noopener" title="Open the clarification register">${esc(id)}</a>`
+  const qLink = (id) => `<a class="rn-q" href="https://github.com/Abdelrahman-Mohamd/EMR-Billing/blob/main/docs/PRD_CLARIFICATION_QUESTIONS.md" target="_blank" rel="noopener" title="Open the clarification register">${esc(id)}</a>`
   const detailHtml = (n, i) => `<div class="rn-detail">
       <button type="button" class="rn-back" data-act="rn.list">← All notes</button>
       <div class="rn-type rn-${n.type}">${TYPE[n.type]}</div>

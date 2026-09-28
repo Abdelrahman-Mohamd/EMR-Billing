@@ -1,7 +1,7 @@
 /* The business rules of the PRD, simulated in memory.
    Each function names the PRD section it implements. Where the PRD is silent
    the behaviour is the simplest reasonable one and is listed as an
-   assumption in PROTOTYPE_COVERAGE.md. */
+   assumption in docs/PROTOTYPE_COVERAGE.md. */
 
 const E = (() => {
   const f = (c, id) => S.find(c, id)

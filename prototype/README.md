@@ -1,6 +1,6 @@
 # Billing System — clickable prototype
 
-A client-facing prototype of the Billing System described in `../Billing System PRD v2.docx` (migrated from V1 on 2026-09-16 — see `../PRD_V1_TO_V2_CHANGELOG.md`). It is built to validate requirements, workflows and UX before development starts. **It is not the application:**
+A client-facing prototype of the Billing System described in `../docs/Billing System PRD v2.docx` (migrated from V1 on 2026-09-16 — see `../docs/PRD_V1_TO_V2_CHANGELOG.md`). It is built to validate requirements, workflows and UX before development starts. **It is not the application:**
 - plain HTML/CSS/JavaScript
 - in-memory data
 - no backend, no persistence, no real authentication or integrations
@@ -63,9 +63,9 @@ Which of these roles V2 defines and which are assumptions is a review note on th
 |---|---|
 | How does the Billing System behave? | The prototype itself |
 | What is assumed or unresolved on this screen? | Review notes |
-| How does the whole business cycle work? | `../BILLING_SYSTEM_GUIDE.html` |
-| What exactly is unresolved, in full? | `../PRD_CLARIFICATION_QUESTIONS.md` |
-| What does the prototype cover of PRD V2? | `../PROTOTYPE_COVERAGE.md` |
+| How does the whole business cycle work? | `../docs/BILLING_SYSTEM_GUIDE.html` |
+| What exactly is unresolved, in full? | `../docs/PRD_CLARIFICATION_QUESTIONS.md` |
+| What does the prototype cover of PRD V2? | `../docs/PROTOTYPE_COVERAGE.md` |
 
 ## Files
 
@@ -109,4 +109,4 @@ The application files never refer to anything in `js/prototype/`.
 - **Procedure codes** have a type and an active flag; inactive codes are not offered on new lines.
 - **Patients**: emergency contact removed, SSN optional.
 
-Coverage against PRD V2, the assumptions made, the open questions and the review-note architecture are in `../PROTOTYPE_COVERAGE.md` (section 10 for the notes).
+Coverage against PRD V2, the assumptions made, the open questions and the review-note architecture are in `../docs/PROTOTYPE_COVERAGE.md` (section 10 for the notes).
