@@ -374,7 +374,7 @@ const VisitDetail = {
     const exs = DB.exceptions.filter((x) => x.visitId === v.id && x.status === 'Open')
     const notices = []
     if (v.status === 'Pended') notices.push(UI.notice('warning', 'Pended:', `${U.esc(v.pendReason)}.${v.pendReason === 'No authorization available' ? ` <a href="#/patients/${p.id}/authorizations?case=${c.id}">Add an authorization on the case</a> — the visit returns to review automatically.` : ''}`, 'flag'))
-    if (v.status === 'Delayed') notices.push(UI.notice('sand', 'Delayed:', `${U.esc(v.delayReason)}. It is released automatically when the hold ends or is cleared${S.can('ADMIN', 'r') ? ` in <a href="#/admin/providers">Admin → Providers</a>` : ''}.`, 'pause'))
+    if (v.status === 'Delayed') notices.push(UI.notice('sand', 'Delayed:', `${U.esc(v.delayReason)}. It is released automatically when the hold ends or is cleared${S.can('ADMIN', 'r') ? ` in <a href="#/setup/providers">Setup → Providers</a>` : ''}.`, 'pause'))
     if (v.status === 'Exception') notices.push(UI.notice('critical', 'Billing exception:', exs.map((x) => `${U.esc(x.level)} — ${U.esc(x.trigger)}: ${U.esc(x.detail)}`).join(' ') + ' <a href="#/exceptions">Resolve in Exceptions</a>', 'alert'))
     if (v.status === 'Incomplete') notices.push(UI.notice('critical', 'Quarantined:', `${U.esc(v.incompleteReason)}. <a href="#/exceptions/incomplete">Complete the profile</a> to release it.`, 'alert'))
     if (v.status === 'Inactive') notices.push(UI.notice('info', 'Inactive record:', `${U.esc(v.inactiveReason)} on ${U.date(v.inactiveOn)}.${v.supersededBy ? ` <a href="#/charges/visit/${v.supersededBy}">Open the replacement</a>.` : ''}`, 'history'))
@@ -436,7 +436,7 @@ ACT['vd.line'] = (el) => {
   d.draft[Number(el.dataset.i)][el.dataset.f] = el.value
   if (el.dataset.f === 'procedureCodeId') {
     const code = E.pc(el.value)
-    d.draft[Number(el.dataset.i)].modifiers = code.defaultModifier || ''
+    d.draft[Number(el.dataset.i)].modifiers = E.overrideModifiers(code, String(d.draft[Number(el.dataset.i)].modifiers).split(',').map((x) => x.trim()).filter(Boolean)).join(',')
   }
   R.refresh()
 }
@@ -573,11 +573,11 @@ const ManualCharge = {
       { ok: patients.length > 0, label: 'A patient', why: 'Each patient comes with a Default case.', action: { label: 'Add a patient', hash: '#/patients' } },
       { ok: DB.cases.some((x) => x.isActive && x.dx.length && patients.some((p) => p.id === x.patientId)), label: 'A case with at least one diagnosis', why: 'Each charge line points at the case’s ICD-10 diagnoses.', action: patients.length ? { label: 'Open the patient', hash: `#/patients/${patients[0].id}/diagnoses` } : null },
       { ok: locChoices.length > 0, label: 'An active location', why: 'The visit records where treatment happened.', action: { label: 'Open Practices & locations', hash: '#/admin/practices' } },
-      { ok: provChoices.length > 0, label: 'A provider', why: 'The visit records its billing and rendering provider.', action: { label: 'Add a provider', hash: '#/admin/providers' } },
-      { ok: activeCodes.length > 0, label: 'An active procedure code', why: 'A charge line is one CPT / HCPCS procedure.', action: { label: 'Add a procedure code', hash: '#/admin/codes' } },
+      { ok: provChoices.length > 0, label: 'A provider', why: 'The visit records its billing and rendering provider.', action: { label: 'Add a provider', hash: '#/setup/providers' } },
+      { ok: activeCodes.length > 0, label: 'An active procedure code', why: 'A charge line is one CPT / HCPCS procedure.', action: { label: 'Add a procedure code', hash: '#/setup/codes' } },
     ]
     // A line may still point at a code that does not exist in this environment (e.g. the default 97110 on day one)
-    st.lines.forEach((l) => { if (!activeCodes.some((x) => x.id === l.procedureCodeId) && activeCodes[0]) { l.procedureCodeId = activeCodes[0].id; l.modifiers = activeCodes[0].defaultModifier || '' } })
+    st.lines.forEach((l) => { if (!activeCodes.some((x) => x.id === l.procedureCodeId) && activeCodes[0]) { l.procedureCodeId = activeCodes[0].id; l.modifiers = E.overrideModifiers(activeCodes[0], String(l.modifiers).split(',').map((x) => x.trim()).filter(Boolean)).join(',') } })
     const depHtml = needs.every((n) => n.ok) ? '' : `<div class="mb-16">${Dep.panel({ title: 'Before a charge can be entered', text: 'A charge (a visit and its charge lines) connects several records. These are still missing:', needs })}</div>`
     const err = (k) => (st.errors[k] ? `<div class="field-error">${U.esc(st.errors[k])}</div>` : '')
     const selCtl = (name, opts, value, placeholder, change = 'mc.field') => `<div class="control ${st.errors[name] ? 'invalid' : ''}"><select id="mc-${name}" data-change="${change}" data-f="${name}" aria-required="true">${placeholder ? `<option value="">${placeholder}</option>` : ''}${opts.map((o) => `<option value="${o.value}" ${o.value === value ? 'selected' : ''}>${U.esc(o.label)}</option>`).join('')}</select><span class="chev">${I('chevronDown', 'icon-14')}</span></div>`
@@ -641,7 +641,7 @@ ACT['mc.field'] = (el) => {
 ACT['mc.line'] = (el) => {
   const l = mc().lines[Number(el.dataset.i)]
   l[el.dataset.f] = el.value
-  if (el.dataset.f === 'procedureCodeId') l.modifiers = E.pc(el.value).defaultModifier || ''
+  if (el.dataset.f === 'procedureCodeId') l.modifiers = E.overrideModifiers(E.pc(el.value), String(l.modifiers).split(',').map((x) => x.trim()).filter(Boolean)).join(',')
   R.refresh()
 }
 ACT['mc.addLine'] = () => {

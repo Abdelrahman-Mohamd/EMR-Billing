@@ -16,6 +16,8 @@ const NAV = [
   { sep: true },
   { key: 'reports', label: 'Reports', icon: 'chart', module: 'REPORTS' },
   { key: 'month-end', label: 'Month end', icon: 'calendarCheck', module: 'MONTHEND' },
+  // Setup stands beside Admin, not under it (client 2026-09-30)
+  { key: 'setup', label: 'Setup', icon: 'sliders', module: 'ADMIN' },
   { key: 'admin', label: 'Admin', icon: 'settings', module: 'ADMIN', alt: 'INTEGRATION' },
 ]
 const countVisits = (statuses) => DB.visits.filter((v) => statuses.includes(v.status) && S.inScopeVisit(v)).length
@@ -287,13 +289,18 @@ const R = (() => {
       location.replace('#/' + firstAllowed())
       return
     }
+    // Setup sections used to live under Admin; old links still land on them
+    if (parts[0] === 'admin' && SETUP_KEYS.includes(parts[1])) {
+      location.replace('#/setup/' + location.hash.slice('#/admin/'.length))
+      return
+    }
     const key = parts[0]
     const item = NAV.find((n) => n.key === key)
     const screen = Screens[key]
     let main
     if (!screen) main = noAccess(null)
     else if (item && !navAllowed(item)) main = noAccess(item)
-    else if (!S.practice() && key !== 'admin') main = noPractice(item ? item.label : 'This page')
+    else if (!S.practice() && key !== 'admin' && key !== 'setup') main = noPractice(item ? item.label : 'This page')
     else {
       try {
         main = screen.render(parts.slice(1), q)

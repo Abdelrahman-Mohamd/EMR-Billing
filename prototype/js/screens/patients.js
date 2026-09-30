@@ -1,5 +1,8 @@
 /* Patients — roster, and the chart in the EMR-V.2 two-tier grammar:
-   PATIENT group · scoping boundary · case switcher · CASE group. */
+   PATIENT group · scoping boundary · case switcher · CASE view.
+   Coverage belongs to the patient; each case picks its Primary and optional
+   Secondary insurance from that list. The case is one view with a section per
+   topic, not tabs (client 2026-09-30). */
 
 const Pt = {
   cases: (pid) => DB.cases.filter((c) => c.patientId === pid),
@@ -141,7 +144,7 @@ const patientSpecs = (isNew) => [
   ...(isNew
     ? [
         { type: 'section', label: 'First case' },
-        { type: 'note', label: 'A “Default” case is created with the patient. Add the referring physician, diagnoses and coverage to it before billing.' },
+        { type: 'note', label: 'A “Default” case is created with the patient. Add the patient’s insurance, then give the case its referring physician, primary insurance and diagnoses before billing.' },
       ]
     : []),
 ]
@@ -178,20 +181,30 @@ ACT['pt.create'] = (el) => {
   const p = { id: U.id('p'), practiceId: S.session.practiceId, billingId: 10412 + DB.patients.length + 40, emrId: null, ssn: '', isActive: true }
   applyPatient(p, vals)
   DB.patients.unshift(p)
-  const c = { id: U.id('c'), patientId: p.id, name: 'Default', referrerId: null, injuryType: '', injuryDate: null, startOfCare: DB.today, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, dx: [] }
+  const c = { id: U.id('c'), patientId: p.id, name: 'Default', primaryCoverageId: null, secondaryCoverageId: null, referrerId: null, injuryType: '', injuryDate: null, startOfCare: DB.today, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, dx: [] }
   DB.cases.push(c)
   S.log('Patient created', { module: 'PATIENT', entityType: 'patient', entityId: p.id, detail: `${S.pfull(p)} · Default case created` })
   UI.closeTop()
-  UI.toast('success', 'Patient created', 'A “Default” case was added. Add insurance coverage and diagnoses before the first charge.')
+  UI.toast('success', 'Patient created', 'A “Default” case was added. Add the patient’s insurance, then choose it on the case with its diagnoses before the first charge.')
   R.go(`#/patients/${p.id}/coverage?case=${c.id}`)
 }
 
 // ================================================================= chart
+/** Former case tabs: their links now open the Case view scrolled to that section. */
+const CASE_SECTIONS = ['case', 'diagnoses', 'authorizations', 'visits']
+let chartScrolled = ''
+Screens.patients.after = (parts) => {
+  const target = CASE_SECTIONS.includes(parts[1]) && parts[1] !== 'case' ? document.getElementById(`case-${parts[1]}`) : null
+  if (!target || chartScrolled === location.hash) return
+  chartScrolled = location.hash
+  target.scrollIntoView({ block: 'start' })
+}
 const Chart = {
   render(parts, q) {
     const p = S.find('patients', parts[0])
     if (!p || !S.inScopePatient(p)) return `<div class="screen"><div class="page-x screen-head"><h1 class="screen-title">Patient not found</h1></div><div class="page-x">${UI.empty({ icon: 'users', title: 'This patient is not in the current practice', text: 'Switch company or go back to the roster.', action: UI.btn({ label: 'Back to patients', act: 'go', data: { hash: '#/patients' } }) })}</div></div>`
-    const tab = parts[1] || 'profile'
+    // The case used to be split into tabs; their old links open the one Case view at that section
+    const tab = CASE_SECTIONS.includes(parts[1]) ? 'case' : parts[1] || 'profile'
     const cases = Pt.cases(p.id)
     const st = S.view(`chart-${p.id}`, { caseId: (cases.find((c) => c.isActive) || cases[0] || {}).id })
     if (q.case && cases.some((c) => c.id === q.case)) st.caseId = q.case
@@ -200,21 +213,19 @@ const Chart = {
     const phone = p.phoneCell || p.phoneHome
     const canEdit = S.can('PATIENT', 'u')
     const covs = c ? E.coverages(c.id) : []
-    const auths = DB.authorizations.filter((a) => covs.some((cv) => cv.id === a.coverageId))
+    const patientCovs = E.coveragesOfPatient(p.id)
+    const auths = c ? DB.authorizations.filter((a) => a.caseId === c.id) : []
     const visits = c ? DB.visits.filter((v) => v.caseId === c.id && v.status !== 'Inactive') : []
     const link = (key, label, icon, n) => `<a class="subnav-link ${tab === key ? 'active' : ''}" href="#/patients/${p.id}/${key}${c ? `?case=${c.id}` : ''}">${I(icon)}<span>${label}</span>${n !== undefined ? `<span class="n">${n}</span>` : ''}</a>`
-    const side = `<aside class="subnav"><span class="eyebrow">Patient</span>${link('profile', 'Profile', 'user')}${link('ledger', 'Ledger', 'receipt')}
+    const side = `<aside class="subnav"><span class="eyebrow">Patient</span>${link('profile', 'Profile', 'user')}${link('coverage', 'Insurance', 'landmark', patientCovs.length)}${link('ledger', 'Ledger', 'receipt')}
       <div class="subnav-rule"></div>
       ${c ? `<button type="button" class="case-switch" data-act="chart.caseMenu" data-id="${p.id}"><span class="row"><span class="eyebrow" style="margin:0;padding:0">Case</span><span class="ml-auto muted">${I('chevronDown', 'icon-14')}</span></span><span class="cs-name">${U.esc(c.name)}</span><span class="cs-sub">${cases.length > 1 ? `${cases.length} cases · ` : ''}${c.startOfCare ? 'Since ' + U.date(c.startOfCare) : 'No start of care'}${c.isActive ? '' : ' · Closed'}</span></button>` : ''}
-      <span class="eyebrow">Case</span>${c ? link('case', 'Case details', 'file') + link('diagnoses', 'Diagnoses', 'hash', c.dx.length) + link('coverage', 'Insurance', 'landmark', covs.length) + link('authorizations', 'Authorizations', 'fileCheck', auths.length) + link('visits', 'Visits & claims', 'send', visits.length) : ''}</aside>`
+      ${c ? link('case', 'Case overview', 'file') : ''}</aside>`
     const body = {
       profile: () => Chart.profile(p),
       ledger: () => Chart.ledger(p),
-      case: () => Chart.caseTab(p, c),
-      diagnoses: () => Chart.dxTab(p, c),
-      coverage: () => Chart.covTab(p, c, covs),
-      authorizations: () => Chart.authTab(p, c, covs, auths),
-      visits: () => Chart.visitsTab(p, c, visits),
+      case: () => Chart.caseView(p, c, covs, auths, visits),
+      coverage: () => Chart.covTab(p, patientCovs),
     }[tab]
     const flag = Pt.flag(p.id)
     return `<div class="screen-split">${side}<div class="subnav-content">
@@ -264,15 +275,20 @@ const Chart = {
       })}</div>`
   },
 
-  caseTab(p, c) {
+  /** One view, a section per topic: details, insurance, diagnoses, authorizations, visits. */
+  caseView(p, c, covs, auths, visits) {
     if (!c) return UI.empty({ title: 'No case', text: 'Create a case first.' })
+    return `<div class="case-view">${Chart.caseDetails(p, c)}${Chart.caseInsurance(p, c, covs)}${Chart.dxTab(p, c)}${Chart.authTab(p, c, covs, auths)}${Chart.visitsTab(p, c, visits)}${Chart.otherCases(p, c)}</div>`
+  },
+
+  caseDetails(p, c) {
     const ins = E.primaryIns(c.id)
     const ref = S.find('referrers', c.referrerId)
     const seen = U.uniq(DB.visits.filter((v) => v.caseId === c.id && v.status !== 'Inactive').map((v) => S.find('locations', v.locationId)?.name).filter(Boolean))
     const ex = DB.exceptions.filter((x) => x.status === 'Open' && x.level === 'Case' && x.fix && (x.fix.caseId === c.id || S.find('visits', x.visitId)?.caseId === c.id))
     const need = (val) => (val ? '' : ' <span class="chip tone-critical nodot">Required for billing</span>')
     return `${ex.length ? `<div class="mt-16">${UI.notice('critical', 'Case-level billing exception.', ex.map((x) => U.esc(x.detail)).join(' '), 'alert')}</div>` : ''}
-      <div class="section">${UI.sectionHead('Case details', 'Every visit inherits the referring physician, diagnoses, injury type and onset date', S.can('PATIENT', 'u') ? UI.btn({ label: 'Edit case', icon: 'pencil', size: 'sm', act: 'chart.editCase', data: { id: c.id } }) : '')}
+      <div class="section" id="case-details">${UI.sectionHead('Case details', 'Every visit inherits the referring physician, diagnoses, injury type and onset date', S.can('PATIENT', 'u') ? UI.btn({ label: 'Edit case', icon: 'pencil', size: 'sm', act: 'chart.editCase', data: { id: c.id } }) : '')}
       ${UI.kv([
         ['Case name', c.name], ['Status', c.isActive ? 'Open' : 'Closed'],
         ['Referring physician', (ref ? `${U.esc(ref.name)} · ${ref.type === 'DQ' ? 'Supervising (DQ)' : 'Referring (DN)'} · NPI ${U.esc(ref.npi)}` : '') + need(ref), true],
@@ -281,33 +297,54 @@ const Chart = {
         ['Visit locations', seen.length ? U.esc(seen.join(', ')) + ' <span class="muted t-micro">· set on each visit</span>' : '<span class="muted">Set on each visit</span>', true],
         ['Accident state', c.accidentState], ['Employment status', c.employmentStatus],
         ['Start of care', c.startOfCare ? U.date(c.startOfCare) : ''], ['Discharge date', c.dischargeDate ? U.date(c.dischargeDate) : ''],
-      ])}</div>
-      <div class="section">${UI.sectionHead('Other cases for this patient', '', S.can('PATIENT', 'c') ? UI.btn({ label: 'New case', icon: 'plus', size: 'sm', act: 'chart.newCase', data: { id: p.id } }) : '')}
+      ])}</div>`
+  },
+
+  /** The case's Primary and optional Secondary, chosen from the patient's coverage list. */
+  caseInsurance(p, c, covs) {
+    const can = S.can('PATIENT', 'u')
+    const card = (rank) => {
+      const cv = covs.find((x) => x.rank === rank)
+      const label = rank === 1 ? 'Primary insurance' : 'Secondary insurance'
+      if (!cv) return `<div class="cov-card cov-empty"><div class="rank">${label}</div><div class="t-meta muted mt-4">${rank === 1 ? 'Not chosen — visits on this case are pended until it is.' : 'None. Optional.'}</div></div>`
+      const ins = E.insOf(cv)
+      return `<div class="cov-card"><div class="rank">${label}</div><div class="t-row fw-500 ink mt-4">${U.esc(S.insLabel(ins))}</div><div class="t-micro muted">Member ${U.esc(cv.memberId || '—')} · Group ${U.esc(cv.groupNumber || '—')}${E.eff(ins, 'authRequired') ? ' · Authorization required' : ''}</div></div>`
+    }
+    const action = !can
+      ? ''
+      : E.coveragesOfPatient(p.id).length
+        ? UI.btn({ label: covs.length ? 'Change' : 'Choose insurance', icon: 'pencil', size: 'sm', act: 'chart.editCase', data: { id: c.id } })
+        : UI.btn({ label: 'Add the patient’s insurance', icon: 'plus', size: 'sm', variant: 'primary', act: 'go', data: { hash: `#/patients/${p.id}/coverage?case=${c.id}` } })
+    return `<div class="section" id="case-insurance">${UI.sectionHead('Insurance', 'Chosen from the patient’s insurance list · claims go to the primary first', action)}<div class="cov-pair mt-12">${card(1)}${card(2)}</div></div>`
+  },
+
+  otherCases(p, c) {
+    return `<div class="section" id="case-others">${UI.sectionHead('Other cases for this patient', '', S.can('PATIENT', 'c') ? UI.btn({ label: 'New case', icon: 'plus', size: 'sm', act: 'chart.newCase', data: { id: p.id } }) : '')}
       <ul class="dx-list">${Pt.cases(p.id).map((x) => `<li><span class="dx-ptr" style="background:${x.id === c.id ? 'var(--brand)' : 'var(--brand-wash)'};color:${x.id === c.id ? '#fff' : 'var(--brand-deep)'}">${I('file', 'icon-14')}</span><div class="grow"><div class="ink fw-500">${U.esc(x.name)}</div><div class="t-micro muted">${x.startOfCare ? 'Since ' + U.date(x.startOfCare) : ''} · ${U.esc(E.primaryIns(x.id)?.name || 'No insurance')} · ${x.isActive ? 'Open' : 'Closed'}</div></div>${x.id === c.id ? UI.tag('Selected', 'brand') : UI.btn({ label: 'Switch', size: 'sm', act: 'go', data: { hash: `#/patients/${p.id}/case?case=${x.id}` } })}</li>`).join('')}</ul></div>`
   },
 
   dxTab(p, c) {
     if (!c) return ''
     const can = S.can('PATIENT', 'u')
-    return `<div class="section">${UI.sectionHead('Diagnoses (ICD-10)', `${c.dx.length} of 12 · the position is the diagnosis pointer on the claim (Box 21 / 24E)`, can ? UI.btn({ label: 'Add diagnosis', icon: 'plus', size: 'sm', variant: 'primary', act: 'dx.add', data: { id: c.id } }) : '')}
+    return `<div class="section" id="case-diagnoses">${UI.sectionHead('Diagnoses (ICD-10)', `${c.dx.length} of 12 · the position is the diagnosis pointer on the claim (Box 21 / 24E)`, can ? UI.btn({ label: 'Add diagnosis', icon: 'plus', size: 'sm', variant: 'primary', act: 'dx.add', data: { id: c.id } }) : '')}
       ${c.dx.length ? `<ul class="dx-list">${c.dx.map((d, i) => `<li><span class="dx-ptr">${i + 1}</span><div class="grow"><span class="code">${U.esc(d.code)}</span> <span class="muted-2">${U.esc(d.desc)}</span>${i === 0 ? ' ' + UI.tag('Primary', 'brand') : ''}</div>${can ? `<div class="row-actions">${UI.iconBtn({ icon: 'arrowUp', label: 'Move up', act: 'dx.move', data: { id: c.id, i, d: -1 }, disabled: i === 0 })}${UI.iconBtn({ icon: 'arrowDown', label: 'Move down', act: 'dx.move', data: { id: c.id, i, d: 1 }, disabled: i === c.dx.length - 1 })}${UI.iconBtn({ icon: 'trash', label: 'Remove', act: 'dx.remove', data: { id: c.id, i }, danger: true })}</div>` : ''}</li>`).join('')}</ul>` : UI.empty({ icon: 'hash', title: 'No diagnoses on this case', text: 'At least one ICD-10 code is needed before a claim can point to it.' })}
       <div class="mt-16">${UI.notice('info', 'Visits keep a snapshot.', 'Each visit copies these codes when it arrives, so later edits here never change a claim that was already billed.')}</div></div>`
   },
 
-  covTab(p, c, covs) {
-    if (!c) return ''
+  /** The patient's insurance list. Cases choose their Primary and Secondary from it. */
+  covTab(p, covs) {
     const can = S.can('PATIENT', 'u')
-    const RANK = { 1: 'Primary', 2: 'Secondary', 3: 'Tertiary' }
     const cards = covs
       .map((cv) => {
         const ins = E.insOf(cv)
         const sub = cv.subscriber
-        return `<div class="cov-card"><div class="row"><span class="rank">${RANK[cv.rank]}</span>${ins.draft ? UI.chip('critical', 'Draft insurance profile') : ''}<span class="ml-auto row-wrap">${can ? UI.btn({ label: 'Edit', icon: 'pencil', size: 'sm', act: 'cov.edit', data: { id: cv.id } }) + UI.iconBtn({ icon: 'trash', label: 'Remove coverage', act: 'cov.remove', data: { id: cv.id }, danger: true }) : ''}</span></div>
-          <div class="t-row fw-500 ink mt-4">${U.esc(S.insLabel(ins))}</div><div class="t-micro muted">${U.esc((E.classOf(ins) || {}).name || '—')} · ${U.esc(ins.type || '—')} · Payer ID ${U.esc(ins.payerId || '—')}${E.eff(ins, 'authRequired') ? ' · Authorization required' : ''}${ins.insuranceHold ? ' · Insurance hold (manual release)' : ''}</div>
+        const used = E.casesUsingCoverage(cv.id).map((x) => UI.tag(`${x.primaryCoverageId === cv.id ? 'Primary' : 'Secondary'} · ${x.name}`, 'brand')).join(' ')
+        return `<div class="cov-card"><div class="row"><span class="t-row fw-500 ink">${U.esc(S.insLabel(ins))}</span>${ins.draft ? UI.chip('critical', 'Draft insurance profile') : ''}<span class="ml-auto row-wrap">${can ? UI.btn({ label: 'Edit', icon: 'pencil', size: 'sm', act: 'cov.edit', data: { id: cv.id } }) + UI.iconBtn({ icon: 'trash', label: 'Remove coverage', act: 'cov.remove', data: { id: cv.id }, danger: true }) : ''}</span></div>
+          <div class="row-wrap mt-4">${used || '<span class="t-micro muted">Not used on a case yet</span>'}</div><div class="t-micro muted">${U.esc((E.classOf(ins) || {}).name || '—')} · ${U.esc(ins.type || '—')} · Payer ID ${U.esc(ins.payerId || '—')}${E.eff(ins, 'authRequired') ? ' · Authorization required' : ''}${ins.insuranceHold ? ' · Insurance hold (manual release)' : ''}</div>
           ${UI.kv([['Member ID', cv.memberId], ['Group number', cv.groupNumber || '<span class="chip tone-critical nodot">Missing — required for billing</span>', !cv.groupNumber], ['Claim number', cv.claimNumber], ['Subscriber', sub ? `${sub.name || '(name missing)'} · ${sub.relationship || ''}${sub.dob ? ' · ' + U.date(sub.dob) : ''}` : 'The patient (self)'], cv.employer ? ['Employer (WC)', `${cv.employer.name} — ${cv.employer.address}`] : null])}</div>`
       })
       .join('')
-    return `<div class="section">${UI.sectionHead('Coverage', 'Claims are addressed to a coverage rank, in payment order', can && covs.length < 3 ? UI.btn({ label: 'Add coverage', icon: 'plus', size: 'sm', variant: 'primary', act: 'cov.add', data: { id: c.id } }) : '')}<div class="mt-12">${cards || UI.empty({ icon: 'landmark', title: 'No insurance on this case', text: 'Visits on a case without primary coverage are pended.' })}</div></div>`
+    return `<div class="section">${UI.sectionHead('Insurance coverage', 'The patient’s policies · each case chooses its primary and secondary from this list', can ? UI.btn({ label: 'Add coverage', icon: 'plus', size: 'sm', variant: 'primary', act: 'cov.add', data: { id: p.id } }) : '')}<div class="mt-12">${cards || UI.empty({ icon: 'landmark', title: 'No insurance for this patient', text: 'Add the patient’s coverage here, then choose it as a case’s primary insurance. Visits on a case without a primary insurance are pended.' })}</div></div>`
   },
 
   authTab(p, c, covs, auths) {
@@ -315,7 +352,7 @@ const Chart = {
     const v = S.view(`auth-${c.id}`, { sort: 'start', dir: 'desc', page: 1 })
     const needs = covs.some((cv) => E.eff(E.insOf(cv), 'authRequired'))
     const rows = auths.map((a) => ({ id: a.id, a, number: a.number, start: a.start, end: a.end, remaining: E.authRemaining(a), payer: E.insOf(S.find('coverages', a.coverageId)).name }))
-    return `<div class="section">${UI.sectionHead('Authorizations', needs ? 'The primary insurance requires authorization — visits without one are pended' : 'Not required by the primary insurance', S.can('PATIENT', 'c') && covs.length ? UI.btn({ label: 'Add authorization', icon: 'plus', size: 'sm', variant: 'primary', act: 'auth.add', data: { id: c.id }, demo: 'auth-add' }) : '')}
+    return `<div class="section" id="case-authorizations">${UI.sectionHead('Authorizations', needs ? 'The primary insurance requires authorization — visits without one are pended' : 'Not required by the primary insurance', S.can('PATIENT', 'c') && covs.length ? UI.btn({ label: 'Add authorization', icon: 'plus', size: 'sm', variant: 'primary', act: 'auth.add', data: { id: c.id }, demo: 'auth-add' }) : '')}
       ${UI.table({
         cols: [
           { key: 'number', label: 'Authorization #', sort: true, render: (r) => `<span class="code">${U.esc(r.number)}</span>` },
@@ -335,7 +372,7 @@ const Chart = {
   visitsTab(p, c, visits) {
     const v = S.view(`visits-${c.id}`, { sort: 'dos', dir: 'desc', page: 1 })
     const rows = visits.map((x) => ({ id: x.id, x, dos: x.dos, prov: S.provName(S.find('providers', x.treatingProviderId), false), amount: E.visitTotal(x) }))
-    return `<div class="section">${UI.sectionHead('Visits & claims', 'One visit per date of service; one claim per coverage rank')}
+    return `<div class="section" id="case-visits">${UI.sectionHead('Visits & claims', 'One visit per date of service; a primary claim, then a secondary one when the case has it')}
       ${UI.table({
         cols: [
           { key: 'dos', label: 'DOS', sort: true, render: (r) => `<span class="ink fw-500">${U.date(r.dos)}</span>` },
@@ -393,8 +430,7 @@ ACT['chart.delete'] = async (el) => {
   const p = S.find('patients', el.dataset.id)
   const ok = await UI.confirm({ title: `Delete ${S.pfull(p)}?`, message: 'The patient and their cases are removed. This cannot be undone.', confirmLabel: 'Delete patient', tone: 'critical' })
   if (!ok) return
-  const caseIds = Pt.cases(p.id).map((c) => c.id)
-  DB.coverages = DB.coverages.filter((cv) => !caseIds.includes(cv.caseId))
+  DB.coverages = DB.coverages.filter((cv) => cv.patientId !== p.id)
   DB.cases = DB.cases.filter((c) => c.patientId !== p.id)
   DB.patients = DB.patients.filter((x) => x.id !== p.id)
   S.log('Patient deleted', { module: 'PATIENT', entityType: 'patient', entityId: p.id, detail: S.pfull(p) })
@@ -425,12 +461,17 @@ ACT['chart.savePatient'] = (el) => {
 }
 
 // ---- case form
-const caseSpecs = (c) => {
+const caseSpecs = (c, pid) => {
   const ins = c ? E.primaryIns(c.id) : null
+  const covOpts = E.coveragesOfPatient(pid).map((cv) => ({ value: cv.id, label: `${S.insLabel(E.insOf(cv))} · member ${cv.memberId || '—'}` }))
   return [
     { name: 'name', label: 'Case name', required: true, span: 6, placeholder: 'e.g. R shoulder 2026' },
-    ...(DB.referrers.some((r) => r.practiceId === S.session.practiceId) ? [] : [{ type: 'note', html: `<strong>No referring physicians yet.</strong> A case needs one for billing — the name and NPI print in Box 17. ${UI.btn({ label: 'Add a referring physician', size: 'sm', icon: 'arrowRight', act: 'go', data: { hash: '#/admin/referrers' } })}` }]),
+    ...(DB.referrers.some((r) => r.practiceId === S.session.practiceId) ? [] : [{ type: 'note', html: `<strong>No referring physicians yet.</strong> A case needs one for billing — the name and NPI print in Box 17. ${UI.btn({ label: 'Add a referring physician', size: 'sm', icon: 'arrowRight', act: 'go', data: { hash: '#/setup/referrers' } })}` }]),
     { name: 'referrerId', label: 'Referring physician', type: 'select', required: true, span: 12, help: 'Name and NPI go on the claim (Box 17). Required for billing.', options: DB.referrers.filter((r) => r.practiceId === S.session.practiceId).map((r) => ({ value: r.id, label: `${r.name} · NPI ${r.npi}${E.npiValid(r.npi) ? '' : ' (invalid)'}` })) },
+    { type: 'section', label: 'Insurance' },
+    ...(covOpts.length ? [] : [{ type: 'note', html: `<strong>This patient has no insurance yet.</strong> Add it to the patient’s insurance list, then choose it here. ${UI.btn({ label: 'Open the patient’s insurance', size: 'sm', icon: 'arrowRight', act: 'go', data: { hash: `#/patients/${pid}/coverage${c ? `?case=${c.id}` : ''}` } })}` }]),
+    { name: 'primaryCoverageId', label: 'Primary insurance', type: 'select', required: true, span: 6, options: covOpts, help: 'From the patient’s insurance list. Claims go here first.' },
+    { name: 'secondaryCoverageId', label: 'Secondary insurance', type: 'select', span: 6, options: covOpts, placeholder: 'None', help: 'Optional. Billed after the primary’s remittance posts.', validate: (v, all) => (v && v === all.primaryCoverageId ? 'Choose a different insurance from the primary.' : '') },
     { type: 'section', label: 'Injury & dates' },
     { name: 'injuryType', label: 'Related cause', type: 'select', options: ['Employment Related', 'Auto'], placeholder: 'Not related to an injury', span: 4, help: 'Drives Box 10a–c. Leave it empty and all three answer NO; the injury date and accident state follow from it.' },
     { name: 'injuryDate', label: 'Injury / onset date', type: 'date', span: 4, requiredIf: (v) => ['Employment Related', 'Auto'].includes(v.injuryType) || (ins && E.eff(ins, 'injuryDateRequired')), help: ins && E.eff(ins, 'injuryDateRequired') ? `${ins.name} requires it (Box 14).` : 'Box 14.' },
@@ -458,30 +499,32 @@ const syncInjury = (ins) => (vals, formEl) => {
 }
 ACT['chart.editCase'] = (el) => {
   const c = S.find('cases', el.dataset.id)
-  const h = UI.modal({ title: 'Edit case', desc: 'Visits inherit these values. Saving re-checks pended visits and held claims.', size: 'lg', body: UI.form(caseSpecs(c), { ...c, isActive: c.isActive }, { onChange: syncInjury(E.primaryIns(c.id)) }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save case', variant: 'primary', act: 'chart.saveCase' }) })
+  const h = UI.modal({ title: 'Edit case', desc: 'Visits inherit these values. Saving re-checks pended visits and held claims.', size: 'lg', body: UI.form(caseSpecs(c, c.patientId), { ...c, isActive: c.isActive }, { onChange: syncInjury(E.primaryIns(c.id)) }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save case', variant: 'primary', act: 'chart.saveCase' }) })
   h.el.dataset.id = c.id
 }
 ACT['chart.newCase'] = (el) => {
   UI.closeMenu()
-  const h = UI.modal({ title: 'New case', desc: 'A case is one episode of care. Diagnoses and coverage are added to it next.', size: 'lg', body: UI.form(caseSpecs(null), { injuryType: '', isActive: true, startOfCare: DB.today }, { onChange: syncInjury(null) }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Create case', variant: 'primary', act: 'chart.saveCase' }) })
+  const h = UI.modal({ title: 'New case', desc: 'A case is one episode of care, billed to the insurance you choose from the patient’s list. Diagnoses are added to it next.', size: 'lg', body: UI.form(caseSpecs(null, el.dataset.id), { injuryType: '', isActive: true, startOfCare: DB.today }, { onChange: syncInjury(null) }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Create case', variant: 'primary', act: 'chart.saveCase' }) })
   h.el.dataset.pid = el.dataset.id
 }
 ACT['chart.saveCase'] = (el) => {
   const layer = el.closest('.layer')
   const vals = UI.submitForm(UI.formOf(layer))
   if (!vals) return
+  const cov = { primaryCoverageId: vals.primaryCoverageId || null, secondaryCoverageId: vals.secondaryCoverageId || null }
   let c
   if (layer.dataset.id) {
     c = S.find('cases', layer.dataset.id)
-    Object.assign(c, { ...vals, injuryDate: vals.injuryDate || null, startOfCare: vals.startOfCare || null, dischargeDate: vals.dischargeDate || null })
+    Object.assign(c, { ...vals, ...cov, injuryDate: vals.injuryDate || null, startOfCare: vals.startOfCare || null, dischargeDate: vals.dischargeDate || null })
     S.log('Case updated', { module: 'PATIENT', entityType: 'case', entityId: c.id, detail: c.name })
   } else {
-    c = { id: U.id('c'), patientId: layer.dataset.pid, dx: [], ...vals, injuryDate: vals.injuryDate || null, startOfCare: vals.startOfCare || null, dischargeDate: vals.dischargeDate || null }
+    c = { id: U.id('c'), patientId: layer.dataset.pid, dx: [], ...vals, ...cov, injuryDate: vals.injuryDate || null, startOfCare: vals.startOfCare || null, dischargeDate: vals.dischargeDate || null }
     DB.cases.push(c)
     S.log('Case created', { module: 'PATIENT', entityType: 'case', entityId: c.id, detail: c.name })
     S.view(`chart-${c.patientId}`, {}).caseId = c.id
   }
   UI.closeTop()
+  DB.visits.filter((v) => v.caseId === c.id && ['Review', 'Pended', 'Exception', 'Incomplete'].includes(v.status)).forEach((v) => E.repriceVisit(v))
   const sum = E.cascadeSummary(E.cascade())
   UI.toast('success', layer.dataset.id ? 'Case saved' : 'Case created', sum ? `Re-evaluated: ${sum}.` : '')
   R.go(`#/patients/${c.patientId}/case?case=${c.id}`)
@@ -533,13 +576,11 @@ ACT['dx.remove'] = async (el) => {
 }
 
 // ---- coverage
-const coverageSpecs = (c, cv) => {
-  const taken = E.coverages(c.id).filter((x) => !cv || x.id !== cv.id).map((x) => x.rank)
+const coverageSpecs = () => {
   const insList = DB.insurances.filter((i) => i.practiceId === S.session.practiceId && i.isActive && !i.draft)
   const typeOf = (id) => (DB.insurances.find((i) => i.id === id) || {}).type
   return [
-    { name: 'insuranceId', label: 'Insurance', type: 'select', required: true, span: 8, options: insList.map((i) => ({ value: i.id, label: S.insLabel(i) })) },
-    { name: 'rank', label: 'Rank', type: 'select', required: true, span: 4, placeholder: false, options: [1, 2, 3].filter((r) => !taken.includes(r)).map((r) => ({ value: String(r), label: { 1: 'Primary', 2: 'Secondary', 3: 'Tertiary' }[r] })) },
+    { name: 'insuranceId', label: 'Insurance', type: 'select', required: true, span: 12, options: insList.map((i) => ({ value: i.id, label: S.insLabel(i) })) },
     { name: 'memberId', label: 'Member ID', required: true, span: 4, placeholder: 'As on the card' },
     { name: 'groupNumber', label: 'Group number', required: true, span: 4, placeholder: 'NONE if the plan has none', help: 'Required for billing.' },
     { name: 'claimNumber', label: 'Claim number', span: 4, placeholder: 'WC / auto claim #', requiredIf: (v) => ['PIP', 'Workers Comp'].includes(typeOf(v.insuranceId)), help: 'Box 11b for PIP and Workers’ Comp.' },
@@ -553,27 +594,26 @@ const coverageSpecs = (c, cv) => {
   ]
 }
 ACT['cov.add'] = (el) => {
-  const c = S.find('cases', el.dataset.id)
+  const p = S.find('patients', el.dataset.id)
   const hasClass = DB.insuranceClasses.some((x) => x.practiceId === S.session.practiceId && x.isActive)
   if (!DB.insurances.some((i) => i.practiceId === S.session.practiceId && i.isActive && !i.draft)) {
     Dep.modal({
       title: 'Cannot add coverage yet',
-      text: 'Coverage links this case to one of the practice’s insurances, with the member ID and group number for that policy. Claims are addressed to a coverage, never to an insurance directly. The practice has no insurances yet.',
+      text: 'Coverage links this patient to one of the practice’s insurances, with the member ID and group number for that policy. Claims are addressed to a coverage, never to an insurance directly. The practice has no insurances yet.',
       needs: [
-        { ok: hasClass, label: 'An insurance class', why: 'Every insurance belongs to exactly one class.', action: { label: 'Create an insurance class', hash: '#/admin/classes' } },
-        { ok: false, label: 'An insurance', why: 'The payer as the practice bills it.', action: hasClass ? { label: 'Add an insurance', hash: '#/admin/insurances' } : null },
+        { ok: hasClass, label: 'An insurance class', why: 'Every insurance belongs to exactly one class.', action: { label: 'Create an insurance class', hash: '#/setup/classes' } },
+        { ok: false, label: 'An insurance', why: 'The payer as the practice bills it.', action: hasClass ? { label: 'Add an insurance', hash: '#/setup/insurances' } : null },
       ],
     })
     return
   }
-  const h = UI.modal({ title: 'Add coverage', desc: 'Primary, secondary and tertiary, in payment order.', size: 'lg', body: UI.form(coverageSpecs(c, null), { subRel: 'Self', rank: String([1, 2, 3].find((r) => !E.coverage(c.id, r))) }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Add coverage', variant: 'primary', act: 'cov.save' }) })
-  h.el.dataset.case = c.id
+  const h = UI.modal({ title: 'Add coverage', desc: 'Adds an insurance policy to the patient’s list. Choose it on a case as the primary or secondary insurance.', size: 'lg', body: UI.form(coverageSpecs(), { subRel: 'Self' }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Add coverage', variant: 'primary', act: 'cov.save' }) })
+  h.el.dataset.patient = p.id
 }
 ACT['cov.edit'] = (el) => {
   const cv = S.find('coverages', el.dataset.id)
-  const c = S.find('cases', cv.caseId)
-  const h = UI.modal({ title: 'Edit coverage', size: 'lg', body: UI.form(coverageSpecs(c, cv), { ...cv, rank: String(cv.rank), subRel: cv.subscriber ? cv.subscriber.relationship || 'Other' : 'Self', subName: cv.subscriber?.name, subDob: cv.subscriber?.dob, empName: cv.employer?.name, empAddr: cv.employer?.address }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save coverage', variant: 'primary', act: 'cov.save' }) })
-  h.el.dataset.case = c.id
+  const h = UI.modal({ title: 'Edit coverage', size: 'lg', body: UI.form(coverageSpecs(), { ...cv, subRel: cv.subscriber ? cv.subscriber.relationship || 'Other' : 'Self', subName: cv.subscriber?.name, subDob: cv.subscriber?.dob, empName: cv.employer?.name, empAddr: cv.employer?.address }), foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save coverage', variant: 'primary', act: 'cov.save' }) })
+  h.el.dataset.patient = cv.patientId
   h.el.dataset.id = cv.id
 }
 ACT['cov.save'] = (el) => {
@@ -581,7 +621,7 @@ ACT['cov.save'] = (el) => {
   const vals = UI.submitForm(UI.formOf(layer))
   if (!vals) return
   const data = {
-    insuranceId: vals.insuranceId, rank: Number(vals.rank), memberId: vals.memberId, groupNumber: vals.groupNumber, claimNumber: vals.claimNumber,
+    insuranceId: vals.insuranceId, memberId: vals.memberId, groupNumber: vals.groupNumber, claimNumber: vals.claimNumber,
     subscriber: vals.subRel === 'Self' ? null : { name: vals.subName, dob: vals.subDob, relationship: vals.subRel },
     employer: vals.empName ? { name: vals.empName, address: vals.empAddr } : null,
   }
@@ -590,14 +630,15 @@ ACT['cov.save'] = (el) => {
     cv = S.find('coverages', layer.dataset.id)
     Object.assign(cv, data)
   } else {
-    cv = { id: U.id('cv'), caseId: layer.dataset.case, ...data }
+    cv = { id: U.id('cv'), patientId: layer.dataset.patient, ...data }
     DB.coverages.push(cv)
   }
-  S.log(layer.dataset.id ? 'Coverage updated' : 'Coverage added', { module: 'PATIENT', entityType: 'case', entityId: cv.caseId, detail: `${S.find('insurances', cv.insuranceId).name} · rank ${cv.rank}` })
+  S.log(layer.dataset.id ? 'Coverage updated' : 'Coverage added', { module: 'PATIENT', entityType: 'patient', entityId: cv.patientId, detail: S.find('insurances', cv.insuranceId).name })
   UI.closeTop()
-  DB.visits.filter((v) => v.caseId === cv.caseId && ['Review', 'Pended', 'Exception', 'Incomplete'].includes(v.status)).forEach((v) => E.repriceVisit(v))
+  const caseIds = E.casesUsingCoverage(cv.id).map((x) => x.id)
+  DB.visits.filter((v) => caseIds.includes(v.caseId) && ['Review', 'Pended', 'Exception', 'Incomplete'].includes(v.status)).forEach((v) => E.repriceVisit(v))
   const sum = E.cascadeSummary(E.cascade())
-  UI.toast('success', 'Coverage saved', sum ? `Re-evaluated: ${sum}.` : 'No waiting visits or held claims were affected.')
+  UI.toast('success', 'Coverage saved', sum ? `Re-evaluated: ${sum}.` : layer.dataset.id ? 'No waiting visits or held claims were affected.' : 'Choose it on a case as the primary or secondary insurance.')
   R.refresh()
 }
 ACT['cov.remove'] = async (el) => {
@@ -606,10 +647,15 @@ ACT['cov.remove'] = async (el) => {
     UI.toast('warning', 'This coverage has claims', 'Coverage that has been billed cannot be removed. Add a new coverage instead.')
     return
   }
-  const ok = await UI.confirm({ title: 'Remove this coverage?', message: `${S.find('insurances', cv.insuranceId).name} will no longer be billed for this case.`, confirmLabel: 'Remove coverage', tone: 'critical' })
+  const using = E.casesUsingCoverage(cv.id)
+  if (using.length) {
+    UI.toast('warning', 'This coverage is used on a case', `Choose another insurance on ${using.map((x) => `“${x.name}”`).join(', ')} first.`)
+    return
+  }
+  const ok = await UI.confirm({ title: 'Remove this coverage?', message: `${S.find('insurances', cv.insuranceId).name} is removed from the patient’s insurance list.`, confirmLabel: 'Remove coverage', tone: 'critical' })
   if (!ok) return
   DB.coverages = DB.coverages.filter((x) => x.id !== cv.id)
-  S.log('Coverage removed', { module: 'PATIENT', entityType: 'case', entityId: cv.caseId })
+  S.log('Coverage removed', { module: 'PATIENT', entityType: 'patient', entityId: cv.patientId })
   R.refresh()
 }
 
@@ -620,8 +666,8 @@ ACT['auth.add'] = (el) => {
     const p = S.patientOf(c)
     Dep.modal({
       title: 'Cannot add an authorization yet',
-      text: 'An authorization is a payer’s pre-approval, issued on one of the case’s coverages. This case has no coverage yet.',
-      needs: [{ ok: false, label: 'Coverage on this case', why: 'The insurance policy that issues the authorization.', action: { label: 'Add coverage', hash: `#/patients/${p.id}/coverage?case=${c.id}` } }],
+      text: 'An authorization is a payer’s pre-approval, issued by the case’s primary or secondary insurance. This case has no insurance chosen yet.',
+      needs: [{ ok: false, label: 'A primary insurance on this case', why: 'The insurance policy that issues the authorization.', action: { label: 'Open the case', hash: `#/patients/${p.id}/case?case=${c.id}` } }],
     })
     return
   }
@@ -631,7 +677,7 @@ ACT['auth.add'] = (el) => {
     size: 'md',
     body: UI.form(
       [
-        { name: 'coverageId', label: 'Issued by', type: 'select', required: true, placeholder: false, options: E.coverages(c.id).map((cv) => ({ value: cv.id, label: `${E.insOf(cv).name} (${{ 1: 'primary', 2: 'secondary', 3: 'tertiary' }[cv.rank]})` })) },
+        { name: 'coverageId', label: 'Issued by', type: 'select', required: true, placeholder: false, options: E.coverages(c.id).map((cv) => ({ value: cv.id, label: `${E.insOf(cv).name} (${cv.rank === 1 ? 'primary' : 'secondary'})` })) },
         { name: 'number', label: 'Authorization number', required: true, span: 12, placeholder: 'e.g. 0VJL671TT' },
         { name: 'start', label: 'Start date', type: 'date', required: true, span: 6 },
         { name: 'end', label: 'End date', type: 'date', required: true, span: 6, validate: (v, all) => (all.start && v < all.start ? 'Please enter a valid date.' : '') },
@@ -648,7 +694,7 @@ ACT['auth.save'] = (el) => {
   const layer = el.closest('.layer')
   const vals = UI.submitForm(UI.formOf(layer))
   if (!vals) return
-  const a = { id: U.id('a'), coverageId: vals.coverageId, number: vals.number, start: vals.start, end: vals.end, qty: Number(vals.qty), unit: vals.unit, used: 0 }
+  const a = { id: U.id('a'), caseId: layer.dataset.case, coverageId: vals.coverageId, number: vals.number, start: vals.start, end: vals.end, qty: Number(vals.qty), unit: vals.unit, used: 0 }
   DB.authorizations.push(a)
   S.log('Authorization added', { module: 'PATIENT', entityType: 'case', entityId: layer.dataset.case, detail: `${a.number} · ${U.date(a.start)}–${U.date(a.end)} · ${a.qty} ${a.unit.toLowerCase()}` })
   UI.closeTop()

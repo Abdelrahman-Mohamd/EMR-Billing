@@ -72,8 +72,7 @@ Screens.dashboard = {
     const delayed = claims.filter((c) => c.ar === 'Delayed' && c.status === 'Submitted')
     const awaiting = claims.filter((c) => c.status === 'Submitted')
     const auths = DB.authorizations.filter((a) => {
-      const cov = S.find('coverages', a.coverageId)
-      const c = cov && S.find('cases', cov.caseId)
+      const c = S.find('cases', a.caseId)
       return c && S.patientOf(c).practiceId === S.session.practiceId
     })
     const activeAuths = auths.filter((a) => E.authStatus(a).label === 'Active' || E.authStatus(a).label === 'Last visit').length

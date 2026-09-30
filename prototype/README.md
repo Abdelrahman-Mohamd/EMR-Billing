@@ -49,7 +49,7 @@ The Billing System has no simulate buttons and no environment controls. They liv
 | Account | Role | What it shows |
 |---|---|---|
 | Tomás Herrera | Practice Admin | The main account: billing for Harborline Physical Therapy |
-| Dana Whitfield | System Admin | Everything, every practice, unmasked SSN and portal passwords |
+| Dana Whitfield | System Admin | Everything, every practice, unmasked SSN |
 | Renee Castillo | Organization Admin | Both practices of Harborline Rehab Group, cross-practice reports |
 | Ivy Bennett | Domain Admin | EMR integration requests and billing election |
 | Owen Park | Billing Viewer (custom role) | View-only, Admin hidden, Bay Ridge location only |
@@ -100,13 +100,22 @@ The application files never refer to anything in `js/prototype/`.
 
 ## What changed for PRD V2
 
-- **Admin → Insurance classes** (new): rule defaults per class. **Admin → Insurances**: class required, each rule Inherit / Yes / No with the effective value shown, insurance hold + release bucket.
-- **Admin → Release buckets** (new) and **Claims → Release buckets** (new): claims for held insurances wait here until a user releases them.
+- **Setup → Insurance classes** (new): rule defaults per class. **Setup → Insurances**: class required, each rule Inherit / Yes / No with the effective value shown, insurance hold + release bucket.
+- **Setup → Release buckets** (new) and **Claims → Release buckets** (new): claims for held insurances wait here until a user releases them.
 - **Cases** no longer hold location, billing provider or discipline; **visits** get them from the EMR payload or manual entry.
 - **Charge lines** carry their own place of service (defaulting from the location) and an internal note.
 - **Claims** keep a snapshot of the referring physician (Box 17).
 - **Fee schedules** hold the billed price only; payer allowed amounts exist only inside the simulated payer.
 - **Procedure codes** have a type and an active flag; inactive codes are not offered on new lines.
 - **Patients**: emergency contact removed, SSN optional.
+
+## What changed after the client meeting of 2026-09-30
+
+- **Setup** is its own sidebar module beside Admin (providers, insurance classes, insurances, release buckets, procedure codes, fee schedules, referring physicians).
+- **Providers** have a Provider type — Rendering (claims held) or Billing (eligible for submission) — instead of payer enrollment; scrubbing checks it where credentialing was.
+- **Procedure codes** have a Modifier override switch with up to four modifiers instead of default modifiers.
+- **Insurances** carry the payer portal as a link in their form; the Payer portals view and portal credentials are gone.
+- **Submission & automation** has no AI section; scrubbing has no AI coding check.
+- **Coverage** belongs to the patient, without a rank; each case picks a Primary and an optional Secondary. The case is one view with headed sections instead of tabs.
 
 Coverage against PRD V2, the assumptions made, the open questions and the review-note architecture are in `../docs/PROTOTYPE_COVERAGE.md` (section 10 for the notes).

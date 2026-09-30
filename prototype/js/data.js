@@ -63,7 +63,7 @@ function buildSeed() {
     authorizations: [], visits: [], chargeLines: [], claims: [], payments: [], batches: [], eras: [],
     denials: [], exceptions: [], updates: [], runs: [], periods: [], codingRules: [], audit: [],
     emrLog: [], icd10: [], carc: [], rarc: [],
-    settings: { schedule: 'daily-18', scheduleOptions: [{ id: 'hourly', label: 'Every hour', kind: 'hours', hours: 1, time: null }, { id: '4h', label: 'Every 4 hours', kind: 'hours', hours: 4, time: null }, { id: 'daily-18', label: 'Every day at 18:00', kind: 'daily', hours: null, time: '18:00' }], aiCoding: true, slaSource: 'manual', lastScheduledRun: '2026-09-14T18:00' },
+    settings: { schedule: 'daily-18', scheduleOptions: [{ id: 'hourly', label: 'Every hour', kind: 'hours', hours: 1, time: null }, { id: '4h', label: 'Every 4 hours', kind: 'hours', hours: 4, time: null }, { id: 'daily-18', label: 'Every day at 18:00', kind: 'daily', hours: null, time: '18:00' }], slaSource: 'manual', lastScheduledRun: '2026-09-14T18:00' },
   }
   DB = db
   S.quiet = true
@@ -121,9 +121,10 @@ function buildSeed() {
     ['97014', 'Electrical stimulation, unattended', false, 'GP', 16], ['G0283', 'Electrical stimulation, unattended (Medicare)', false, 'GP', 16],
     ['97750', 'Physical performance test', true, 'GP', 45], ['97033', 'Iontophoresis', true, 'GP', 0],
     ['97039', 'Unlisted modality (retired locally)', false, 'GP', 20],
-  ].forEach(([code, description, isTimed, mod, fee]) =>
+  ].forEach(([code, description, isTimed, , fee]) =>
     db.procedureCodes.push({
-      id: `pc${code}`, code, description, isTimed, defaultModifier: mod, defaultModifier2: '', defaultFee: fee,
+      // Modifier Override (client 2026-09-30): off unless the code forces its own modifiers
+      id: `pc${code}`, code, description, isTimed, modifierOverride: code === '97140', modifiers: code === '97140' ? ['GP', '59'] : [], defaultFee: fee,
       // procedure_type and is_active are new in PRD V2 §10.3 (CH-13)
       procedureType: /^9716/.test(code) || code === '97750' ? 'Evaluation' : ['97010', '97014', 'G0283', '97035', '97033', '97039'].includes(code) ? 'Modality' : 'Therapeutic',
       isActive: code !== '97039', isNew: code === '97033', addedOn: code === '97033' ? '2026-09-14' : '2024-01-01',
@@ -152,7 +153,7 @@ function buildSeed() {
 
   // ------------------------------------------------------------ insurances (§10.3)
   // Billing rules are null = "inherit from the class"; a value overrides the class for this insurance only.
-  const insu = (o) => db.insurances.push({ auditRequired: false, phone: '800-555-0100', fax: '800-555-0199', icdVersion: null, acceptAssignment: null, specialtyModifiers: null, authRequired: null, injuryDateRequired: null, insuranceHold: false, releaseBucketId: null, maxUnits: 6, slaDays: 30, format: '837P', portalUrl: 'https://provider.example-payer.com', portalUser: 'harborline_billing', portalPassword: 'Tr1dent-Harbor-26', isActive: true, draft: false, practiceId: 'pr1', ...o })
+  const insu = (o) => db.insurances.push({ auditRequired: false, phone: '800-555-0100', fax: '800-555-0199', icdVersion: null, acceptAssignment: null, specialtyModifiers: null, authRequired: null, injuryDateRequired: null, insuranceHold: false, releaseBucketId: null, maxUnits: 6, slaDays: 30, format: '837P', portalUrl: 'https://provider.example-payer.com', isActive: true, draft: false, practiceId: 'pr1', ...o })
   insu({ id: 'i1', code: 1001, name: 'Medicare Part B', classId: 'ic1', type: 'Medicare', payerId: '13202', address: { line1: 'PO Box 6178', city: 'Indianapolis', state: 'IN', zip: '46206' }, maxUnits: 4, slaDays: 14, portalUrl: 'https://portal.example-medicare.gov' })
   insu({ id: 'i2', code: 1002, name: 'Empire BlueCross BlueShield', classId: 'ic2', type: 'Commercial', payerId: '803', address: { line1: 'PO Box 1407, Church Street Station', city: 'New York', state: 'NY', zip: '10008' } })
   insu({ id: 'i3', code: 1003, name: 'Aetna', classId: 'ic3', type: 'Commercial', payerId: '60054', address: { line1: 'PO Box 981106', city: 'El Paso', state: 'TX', zip: '79998' } })
@@ -161,7 +162,7 @@ function buildSeed() {
   insu({ id: 'i6', code: 1050, name: 'GEICO No-Fault', classId: 'ic5', type: 'PIP', payerId: 'GEICO', address: { line1: 'PO Box 9091', city: 'Macon', state: 'GA', zip: '31208' }, insuranceHold: true, releaseBucketId: 'rb1', format: 'CMS1500', slaDays: 45 })
   insu({ id: 'i7', code: 1006, name: 'Cigna', classId: 'ic3', type: 'Commercial', payerId: '62308', address: { line1: 'PO Box 188061', city: 'Chattanooga', state: 'TN', zip: '37422' } })
   insu({ id: 'i8', code: 1008, name: 'AARP Medicare Supplement', classId: 'ic6', type: 'Commercial', payerId: '36273', address: { line1: 'PO Box 740819', city: 'Atlanta', state: 'GA', zip: '30374' } })
-  insu({ id: 'i9', code: null, name: 'Oscar Health', classId: null, type: '', payerId: '', address: { line1: '', city: '', state: '', zip: '' }, draft: true, draftFrom: 'EMR session on 09/14/2026', portalUrl: '', portalUser: '', portalPassword: '' })
+  insu({ id: 'i9', code: null, name: 'Oscar Health', classId: null, type: '', payerId: '', address: { line1: '', city: '', state: '', zip: '' }, draft: true, draftFrom: 'EMR session on 09/14/2026', portalUrl: '' })
   insu({ id: 'i10', code: 2001, name: 'Medicare Part B', classId: 'ic7', type: 'Medicare', payerId: '13202', address: { line1: 'PO Box 6178', city: 'Indianapolis', state: 'IN', zip: '46206' }, maxUnits: 4, slaDays: 14, practiceId: 'pr2' })
   insu({ id: 'i11', code: 2002, name: 'Aetna', classId: 'ic8', type: 'Commercial', payerId: '60054', address: { line1: 'PO Box 981106', city: 'El Paso', state: 'TX', zip: '79998' }, practiceId: 'pr2' })
 
@@ -194,18 +195,17 @@ function buildSeed() {
   )
 
   // ------------------------------------------------------------ providers & referrers
-  const allActive = (ids, status = 'Active') => ids.map((insuranceId) => ({ insuranceId, status, effective: '2024-01-01' }))
-  const PR1_INS = ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8']
-  const prov = (o) => db.providers.push({ practiceId: 'pr1', taxonomy: '225100000X', specialty: 'PHYSICAL THERAPIST', claimHoldFrom: null, claimHoldUntil: null, claimHoldReason: '', claimHoldLocations: [], claimHoldInsurances: [], isActive: true, draft: false, enrollments: allActive(PR1_INS), ...o })
+  // Provider type (client 2026-09-30): a Rendering provider's claims are held, a Billing provider's go out
+  const prov = (o) => db.providers.push({ practiceId: 'pr1', taxonomy: '225100000X', specialty: 'PHYSICAL THERAPIST', claimHoldFrom: null, claimHoldUntil: null, claimHoldReason: '', claimHoldLocations: [], claimHoldInsurances: [], isActive: true, draft: false, providerType: 'Billing', ...o })
   prov({ id: 'P1', code: '297', firstName: 'Aisha', lastName: 'Rahman', credential: 'PT, DPT', npi: '1356482917', stateLicense: 'NY 041822' })
-  prov({ id: 'P2', code: '301', firstName: 'Marcus', lastName: 'Delaney', credential: 'PT', npi: '1467593028', stateLicense: 'NY 043517', enrollments: [...allActive(['i1', 'i2', 'i3', 'i5', 'i6', 'i7', 'i8']), { insuranceId: 'i4', status: 'Pending', effective: null }] })
+  prov({ id: 'P2', code: '301', firstName: 'Marcus', lastName: 'Delaney', credential: 'PT', npi: '1467593028', stateLicense: 'NY 043517' })
   prov({ id: 'P3', code: '305', firstName: 'Elena', lastName: 'Petrova', credential: 'PT, DPT', npi: '1578604139', stateLicense: 'NY 044902' })
-  prov({ id: 'P4', code: '318', firstName: 'Jordan', lastName: 'Okafor', credential: 'PT', npi: '1689715240', stateLicense: 'NY 047731', claimHoldFrom: '2026-09-01', claimHoldUntil: '2026-09-30', claimHoldReason: 'Pending Provider Credentialing', enrollments: allActive(PR1_INS, 'Pending').map((e) => ({ ...e, effective: null })) })
+  prov({ id: 'P4', code: '318', firstName: 'Jordan', lastName: 'Okafor', credential: 'PT', npi: '1689715240', stateLicense: 'NY 047731', claimHoldFrom: '2026-09-01', claimHoldUntil: '2026-09-30', claimHoldReason: 'Pending Provider Credentialing', providerType: 'Rendering' })
   prov({ id: 'P5', code: '322', firstName: 'Sofia', lastName: 'Marchetti', credential: 'OTR/L', npi: '1790826351', stateLicense: 'NY 012290', taxonomy: '225X00000X', specialty: 'OCCUPATIONAL THERAPIST' })
-  prov({ id: 'P6', code: 'EMR-7781', firstName: 'Liam', lastName: 'Chen', credential: '', npi: '', stateLicense: '', taxonomy: '', draft: true, draftFrom: 'First finalized EMR note on 09/14/2026', enrollments: [] })
+  prov({ id: 'P6', code: 'EMR-7781', firstName: 'Liam', lastName: 'Chen', credential: '', npi: '', stateLicense: '', taxonomy: '', draft: true, draftFrom: 'First finalized EMR note on 09/14/2026', providerType: '' })
   prov({ id: 'P9', code: '327', firstName: 'Caleb', lastName: 'Wright', credential: 'PT', npi: '', stateLicense: 'NY 048115' })
-  prov({ id: 'P7', practiceId: 'pr2', code: '110', firstName: 'Noah', lastName: 'Feldman', credential: 'PT, DPT', npi: '1801937462', stateLicense: 'NY 039981', enrollments: allActive(['i10', 'i11']) })
-  prov({ id: 'P8', practiceId: 'pr2', code: '112', firstName: 'Grace', lastName: 'Liu', credential: 'PT', npi: '1912048573', stateLicense: 'NY 040377', enrollments: allActive(['i10', 'i11']) })
+  prov({ id: 'P7', practiceId: 'pr2', code: '110', firstName: 'Noah', lastName: 'Feldman', credential: 'PT, DPT', npi: '1801937462', stateLicense: 'NY 039981' })
+  prov({ id: 'P8', practiceId: 'pr2', code: '112', firstName: 'Grace', lastName: 'Liu', credential: 'PT', npi: '1912048573', stateLicense: 'NY 040377' })
 
   const refr = (o) => db.referrers.push({ practiceId: 'pr1', type: 'DN', ...o })
   refr({ id: 'R1', name: 'Priya Natarajan, MD', npi: '1720394851', practiceName: 'Bay Orthopaedic Associates', phone: '718-555-0311', fax: '718-555-0312' })
@@ -233,13 +233,20 @@ function buildSeed() {
   const visitDefaults = {}
   const cs = (o) => {
     const { locationId, billingProviderId, ...rest } = o
-    const c = { name: 'Default', injuryType: '', injuryDate: null, startOfCare: null, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, ...rest }
+    const c = { name: 'Default', primaryCoverageId: null, secondaryCoverageId: null, injuryType: '', injuryDate: null, startOfCare: null, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, ...rest }
     c.dx = (o.dx || []).map((code) => ({ code, desc: db.icd10.find((d) => d.code === code).desc }))
     visitDefaults[c.id] = { locationId, billingProviderId }
     db.cases.push(c)
     return c
   }
-  const cov = (o) => db.coverages.push({ id: U.id('cv'), rank: 1, claimNumber: '', subscriber: null, employer: null, ...o })
+  // Coverage is the patient's; the case names it as its primary or secondary (client 2026-09-30)
+  const cov = (o) => {
+    const { caseId, rank = 1, ...rest } = o
+    const c = db.cases.find((x) => x.id === caseId)
+    const cv = { id: U.id('cv'), patientId: c.patientId, claimNumber: '', subscriber: null, employer: null, ...rest }
+    db.coverages.push(cv)
+    c[rank === 2 ? 'secondaryCoverageId' : 'primaryCoverageId'] = cv.id
+  }
   const auth = (o) => db.authorizations.push({ unit: 'Visits', ...o })
   const addr = (line1, city, state, zip) => ({ line1, line2: '', city, state, zip })
 
@@ -360,14 +367,14 @@ function buildSeed() {
   cov({ caseId: 'c32', insuranceId: 'i11', memberId: 'W881244190', groupNumber: '0210044' })
 
   // Authorizations
-  auth({ id: 'a1', coverageId: db.coverages.find((c) => c.caseId === 'c3').id, number: '0VJL671TT', start: '2026-07-10', end: '2026-09-07', qty: 6, used: 0 })
-  auth({ id: 'a2', coverageId: db.coverages.find((c) => c.caseId === 'c4').id, number: 'UHC-2026-55120', start: '2026-08-01', end: '2026-10-31', qty: 12, used: 5 })
-  auth({ id: 'a3', coverageId: db.coverages.find((c) => c.caseId === 'c11').id, number: 'BC-2026-88412', start: '2026-08-15', end: '2026-11-15', qty: 12, used: 3 })
-  auth({ id: 'a4', coverageId: db.coverages.find((c) => c.caseId === 'c13').id, number: 'UHC-2026-60177', start: '2026-09-01', end: '2026-12-01', qty: 10, used: 0 })
-  auth({ id: 'a5', coverageId: db.coverages.find((c) => c.caseId === 'c18').id, number: 'BC-2026-90155', start: '2026-08-01', end: '2026-10-31', qty: 20, used: 0 })
-  auth({ id: 'a6', coverageId: db.coverages.find((c) => c.caseId === 'c6').id, number: 'WC-AUTH-33871', start: '2026-07-15', end: '2026-10-15', qty: 24, used: 0 })
-  auth({ id: 'a7', coverageId: db.coverages.find((c) => c.caseId === 'c20').id, number: 'UHC-2026-77120', start: '2026-08-15', end: '2026-09-05', qty: 4, used: 0 })
-  auth({ id: 'a8', coverageId: db.coverages.find((c) => c.caseId === 'c23').id, number: 'BC-2026-81230', start: '2026-08-18', end: '2026-11-18', qty: 12, used: 2 })
+  auth({ id: 'a1', caseId: 'c3', coverageId: db.cases.find((c) => c.id === 'c3').primaryCoverageId, number: '0VJL671TT', start: '2026-07-10', end: '2026-09-07', qty: 6, used: 0 })
+  auth({ id: 'a2', caseId: 'c4', coverageId: db.cases.find((c) => c.id === 'c4').primaryCoverageId, number: 'UHC-2026-55120', start: '2026-08-01', end: '2026-10-31', qty: 12, used: 5 })
+  auth({ id: 'a3', caseId: 'c11', coverageId: db.cases.find((c) => c.id === 'c11').primaryCoverageId, number: 'BC-2026-88412', start: '2026-08-15', end: '2026-11-15', qty: 12, used: 3 })
+  auth({ id: 'a4', caseId: 'c13', coverageId: db.cases.find((c) => c.id === 'c13').primaryCoverageId, number: 'UHC-2026-60177', start: '2026-09-01', end: '2026-12-01', qty: 10, used: 0 })
+  auth({ id: 'a5', caseId: 'c18', coverageId: db.cases.find((c) => c.id === 'c18').primaryCoverageId, number: 'BC-2026-90155', start: '2026-08-01', end: '2026-10-31', qty: 20, used: 0 })
+  auth({ id: 'a6', caseId: 'c6', coverageId: db.cases.find((c) => c.id === 'c6').primaryCoverageId, number: 'WC-AUTH-33871', start: '2026-07-15', end: '2026-10-15', qty: 24, used: 0 })
+  auth({ id: 'a7', caseId: 'c20', coverageId: db.cases.find((c) => c.id === 'c20').primaryCoverageId, number: 'UHC-2026-77120', start: '2026-08-15', end: '2026-09-05', qty: 4, used: 0 })
+  auth({ id: 'a8', caseId: 'c23', coverageId: db.cases.find((c) => c.id === 'c23').primaryCoverageId, number: 'BC-2026-81230', start: '2026-08-18', end: '2026-11-18', qty: 12, used: 2 })
 
   // ------------------------------------------------------------ visits, claims, payments
   let rec = 5590100
@@ -388,7 +395,8 @@ function buildSeed() {
       const pcx = db.procedureCodes.find((x) => x.code === code)
       const line = {
         id: U.id('ln'), visitId: v.id, procedureCodeId: pcx.id, units,
-        modifiers: mods || (specMod ? [specMod] : pcx.defaultModifier ? [pcx.defaultModifier] : []),
+        // As the EMR sends them (GP / GO), unless the code's Modifier Override replaces them
+        modifiers: E.overrideModifiers(pcx, mods || [specMod || 'GP']),
         pointers: ptrs || (v.dx.length > 1 ? [1, 2] : [1]), pos: linePos, notes: '', amount: 0, balIns: 0, balPat: 0,
       }
       db.chargeLines.push(line)
@@ -605,7 +613,9 @@ function buildSeed() {
   }
   const hA = held('c3', '2026-09-08', 'P3', [['97110', 2], ['97140', 1], ['97530', 1]], '2026-09-09')
   const hM = held('c18', '2026-09-09', 'P2', [['97110', 2], ['97112', 1]], '2026-09-10')
-  const hC = held('c9', '2026-09-10', 'P1', [['97750', 1, [1]], ['97110', 2, [1, 2]]], '2026-09-11')
+  // Jordan Okafor is a Rendering provider: the claim stops in the Provider type hold (client 2026-09-30).
+  // The date of service is before their claim-hold window, so that check passes.
+  const hC = held('c9', '2026-08-28', 'P4', [['97110', 2], ['97140', 1]], '2026-09-11')
   const hP = held('c6', '2026-09-10', 'P3', [['97110', 7], ['97140', 2]], '2026-09-11')
   // a1 is exhausted by the six history visits; the 09/08 claim is therefore on Authorization Hold
   // GEICO has the insurance hold checked: this claim passed every check and waits in its release bucket

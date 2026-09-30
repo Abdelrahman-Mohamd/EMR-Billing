@@ -475,6 +475,18 @@
   font-size: var(--t-micro);
   color: var(--n400);
 }
+/* Phone: title and actions share the first row, the description runs below */
+@media (max-width: 639px) {
+  .section-head {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 4px;
+  }
+  .section-aside {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
 
 /* =================== BUTTONS =================== */
 .btn {
@@ -778,6 +790,36 @@
   font-size: var(--t-micro);
   color: var(--n500);
   margin-top: 2px;
+}
+/* An on/off setting drawn as a switch (Modifier Override) */
+.switch-row input[type='checkbox'][role='switch'] {
+  width: 34px;
+  height: 20px;
+  margin-top: 0;
+  border-radius: 999px;
+  background-color: var(--n300);
+  border-color: var(--n300);
+  background-image: radial-gradient(circle, #fff 60%, transparent 62%);
+  background-size: 20px 20px;
+  background-position: left -2px center;
+  transition:
+    background-color 120ms ease,
+    background-position 120ms ease;
+}
+.switch-row input[type='checkbox'][role='switch']:checked {
+  background-color: var(--brand);
+  border-color: var(--brand);
+  background-image: radial-gradient(circle, #fff 60%, transparent 62%);
+  background-size: 20px 20px;
+  background-position: right -2px center;
+}
+.switch-row input[type='checkbox'][role='switch']:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.switch-row input[type='checkbox'][role='switch']:disabled {
+  background-color: var(--n200);
+  border-color: var(--n200);
 }
 /* Searchable multi-select: chips in the box, search and tick rows in the panel */
 .multipick {

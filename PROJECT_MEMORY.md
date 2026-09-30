@@ -125,7 +125,7 @@ changes — scope, a business rule, a client answer, or a technology choice.
 
 | Role | Status | Modules (C R U D) | Limits |
 |---|---|---|---|
-| **System Admin** (`SYSTEM_ADMIN`, global) | ✅ seeded | All modules CRUD, every practice | Only role that sees decrypted `ssn_enc` / `portal_password_enc` ✅ |
+| **System Admin** (`SYSTEM_ADMIN`, global) | ✅ seeded | All modules CRUD, every practice | Only role that sees decrypted `ssn_enc` ✅ (portal credentials no longer captured *(client 2026-09-30)*) |
 | **Practice Admin** (`PRACTICE_ADMIN`) | ✅ seeded | Dashboard R · Patient CRUD · Charges CRUD · Billing CRU · Payments CRU · Denial Mgmt CRU · AR Follow-up CRU · Reports R · Month End CR · Admin CRU | Can't delete a sent claim; reversals posted, not deleted; reports for granted practices only; can't reopen a closed period; manages setup and users of granted practices; can't create practices or grant System Admin; sees masked encrypted fields ✅ · **Creates release buckets** ✅ (§10.3 p16) · ❓ C-008 (limits vs flags) |
 | **Organization Admin** | ✅ named only | Not defined | ❓ C-002, Q-032 |
 | **Domain Admin** | ✅ named only | Not defined | ❓ C-002, Q-029 |
@@ -146,12 +146,12 @@ Permission module names (§10.6): Dashboard, Patient, Charges, Billing, Payments
 | M1 | **Account Setup** [Admin] | Billing entity and sites | Practice onboarding, ≥1 location, optional company | — | BR01–02 |
 | M2 | **Identity & Access** [Admin] | Who may do what, where | Users, service accounts, roles (JSON CRUD), practice/location grants, encryption & masking | M1 | BR03–06 |
 | M3 | **EMR Integration** [Admin] | Receive clinical data per location | Domain Admin request, 1:1 Unique Location ID, integrated vs EMR-only | M1 | BR07–08 |
-| M4 | **Setup / Reference Data** [Admin] | Master data used to build claims | Providers (+ claim hold), **insurance classes (rule defaults)**, insurances (overrides, **insurance hold + bucket**, portal credentials), **release buckets**, procedure codes (**type, active**), fee schedules (billed price), referring physicians (**type DN/DQ**) | M1 | BR09–12, BR40–45 |
-| M5 | **Patient & Case** [Patient] | Clinical-financial container | Patient chart, cases (Default case), ordered ICD-10 list on the case (≤12), coverage ranks 1–3, authorizations | M1, M4 | BR13–17 |
+| M4 | **Setup / Reference Data** [Setup — its own module beside Admin *(client 2026-09-30)*] | Master data used to build claims | Providers (+ claim hold, **provider type Rendering / Billing**), **insurance classes (rule defaults)**, insurances (overrides, **insurance hold + bucket**, payer portal link), **release buckets**, procedure codes (**type, active**), fee schedules (billed price), referring physicians (**type DN/DQ**) | M1 | BR09–12, BR40–45 |
+| M5 | **Patient & Case** [Patient] | Clinical-financial container | Patient chart, cases (Default case), ordered ICD-10 list on the case (≤12), **coverage on the patient; each case picks a Primary and optional Secondary** *(client 2026-09-30)*, authorizations per case | M1, M4 | BR13–17 |
 | M6 | **Ingestion & Pre-Scrub** [Charges] | Accept and clean incoming charges | Trigger, reconciliation, Inactive Records, Incomplete bucket, Billing Exceptions, Charge Review, **visit-level location and providers**, line pricing and **line place of service** | M3, M4, M5 | BR18–24, BR46–47 |
 | M7 | **Queues & Submission** [Charges/Billing 🔎] | Move clean charges toward claims | Ingestion queue; single/bulk/scheduled submission; Updated-charges queue (3 actions) | M6 | BR25 |
 | M8 | **Coding & Scrubbing** [Billing 🔎] | Validate and transform | Replace/Drop rules; 6-check matrix; reason holds; auto-resubmit; AI check; **routing to release buckets** | M4, M5, M7 | BR26–28, BR41–42 |
-| M9 | **Claims & Clearinghouse** [Billing] | Produce, release and submit claims | Lifecycle, **release-bucket queues and release**, CMS-1500 mapping, **referrer snapshot**, 837P/PDF, Waystar, secondary/tertiary, daily batch, Rejections & Reasons | M8 | BR29–33, BR48 |
+| M9 | **Claims & Clearinghouse** [Billing] | Produce, release and submit claims | Lifecycle, **release-bucket queues and release**, CMS-1500 mapping, **referrer snapshot**, 837P/PDF, Waystar, secondary (no tertiary *(client 2026-09-30)*), daily batch, Rejections & Reasons | M8 | BR29–33, BR48 |
 | M10 | **Payment Posting** [Payments] | Apply money and adjustments | Manual posting, ERA 835, check-batch balancing, **computed line balances** | M9 | BR34–36 |
 | M11 | **Denial & A/R** [Denial Mgmt, AR Follow-up] | Chase unpaid and denied claims | Payer SLA engine, auto-escalation, Delayed/Denied, denial work queue | M9, M10 | BR37–38 |
 | M12 | **Cross-cutting** | Accountability | Work-item ownership, audit history, soft deactivation (`is_active`) | all | BR39 |
@@ -172,20 +172,20 @@ Permission module names (§10.6): Dashboard, Patient, Charges, Billing, Payments
 | F05 | M2 | Authentication | Not specified in PRD | All | Needs Clarification (Q-025) |
 | F06 | M2 | Roles & permissions | Per-role JSON CRUD by module; union of roles; seeded roles | Admins | Needs Clarification (C-001, C-002, C-008) |
 | F07 | M2 | Practice/location scoping & switcher | Row scoping by granted practices and optional locations | All | Needs Clarification (Q-031) |
-| F08 | M2 | Encrypted-field masking | SSN and portal password decrypted only for System Admin | System | Planned |
+| F08 | M2 | Encrypted-field masking | SSN decrypted only for System Admin (portal password no longer captured *(client 2026-09-30)*) | System | Planned |
 | F09 | M3 | Location linking request | Domain Admin request; 1:1 Unique Location ID | Domain Admin | Needs Clarification (Q-029) |
 | F10 | M3 | Billing election | Integrated vs EMR-only; block EMR-only payloads | Domain Admin | Needs Clarification (Q-030) |
 | F11 | M3 | Inbound entity sync | Sessions (with location and providers), charges, charts, cases, providers; patient match by `emr_id` | Service account | Blocked (Q-004, Q-080) |
-| F12 | M4 | Provider directory | Provider ID, name, credential (optional), specialty, NPI, taxonomy, license | Admins | Planned |
+| F12 | M4 | Provider directory | Provider ID, name, credential (optional), specialty, NPI, taxonomy, license, **provider type Rendering / Billing** (replaces payer enrollment *(client 2026-09-30)*) | Admins | Needs Clarification (Q-098) |
 | F13 | M4 | Provider claim hold | `claim_hold_until` + reason → visits Delayed | Admins | Needs Clarification (Q-062) |
-| F14 | M4 | Insurance master | Class (required), insurance type, payer ID, address, **rule overrides (nullable)**, **insurance hold + release bucket**, encrypted portal credentials | Admins | Needs Clarification (Q-011, Q-081) |
-| F15 | M4 | Procedure code catalog | Global CPT/HCPCS; timed flag; default modifier and fee; **procedure type; active flag** | Admins | Needs Clarification (Q-066, Q-083) |
+| F14 | M4 | Insurance master | Class (required), insurance type, payer ID, address, **rule overrides (nullable)**, **insurance hold + release bucket**, payer portal URL (link only, no credentials *(client 2026-09-30)*) | Admins | Needs Clarification (Q-011, Q-081) |
+| F15 | M4 | Procedure code catalog | Global CPT/HCPCS; timed flag; default fee; **procedure type; active flag**; **Modifier Override (off by default) with up to 4 modifiers** instead of default modifiers *(client 2026-09-30)* | Admins | Needs Clarification (Q-066, Q-083, Q-099) |
 | F16 | M4 | Fee schedule engine | **Billed price** per unit per payer, effective dates; else default fee | Admins | Needs Clarification (Q-020) |
 | F17 | M4 | Referring physician directory | Code, name, **type (Referring DN / Supervising DQ)**, NPI | Admins | Needs Clarification (C-006, Q-078) |
 | F18 | M5 | Patient chart | Demographics, guarantor, **SSN optional**, no-statements flag, notes (**emergency contact removed**) | Patient | Planned |
 | F19 | M5 | Case management | Default case; **referring physician, diagnoses, injury type/date, accident state**, start of care, discharge (**no location, providers or discipline**) | Patient | Needs Clarification (C-014) |
 | F20 | M5 | Case diagnoses | Ordered ICD-10 list on the case, ≤12, position = pointer | Patient | Planned |
-| F21 | M5 | Case coverage | Primary/secondary/tertiary; member/group/claim no.; subscriber; employer | Patient | Needs Clarification (C-007, Q-036) |
+| F21 | M5 | Coverage | On the patient, no rank; the case picks Primary (required in the form) and optional Secondary *(client 2026-09-30)*; member/group/claim no.; subscriber; employer | Patient | Needs Clarification (C-007, Q-036, Q-100) |
 | F22 | M5 | Authorizations | Number, dates, qty, unit, used; consumed by visits **when the payer requires it** | Patient | Needs Clarification (Q-009) |
 | F23 | M6 | Billing-cycle trigger & manual charge entry | EMR push or manual creation; **manual entry sets location and providers per visit** | Charges | Needs Clarification (Q-080) |
 | F24 | M6 | Record reconciliation | New / replace→Inactive / →Updated queue, by Internal Record ID | System | Needs Clarification (C-005, C-012) |
@@ -198,14 +198,14 @@ Permission module names (§10.6): Dashboard, Patient, Charges, Billing, Payments
 | F31 | M7 | Submission modes | Single, bulk, scheduled | Billing | Needs Clarification (Q-041) |
 | F32 | M7 | Updated-charges queue | Inactivate / Corrected (Box 22, freq. 7/8) / Submit anyway | Billing | Needs Clarification (Q-019, Q-044, C-004) |
 | F33 | M8 | Coding rules engine | Replace and Drop; payer overrides default | Admins | Needs Clarification (Q-013) |
-| F34 | M8 | Scrubbing validation matrix | Data, Auth, Credentialing, Payer rules, AI, **Insurance hold** | System | Needs Clarification (Q-010, Q-011) |
+| F34 | M8 | Scrubbing validation matrix | Data, Auth, **Provider type** (replaces Credentialing *(client 2026-09-30)*), Payer rules, **Insurance hold** | System | Needs Clarification (Q-011, Q-098) |
 | F35 | M8 | Hold queues & auto-resubmit | Holds grouped by reason; auto-resubmit when resolved | Billing | Needs Clarification (Q-012) |
-| F36 | M8 | AI coding quality (add-on) | ICD↔CPT consistency | System | Needs Clarification (Q-014) |
+| F36 | M8 | AI coding quality (add-on) | ICD↔CPT consistency | System | **Removed** *(client 2026-09-30)* (Q-014 answered) |
 | F37 | M9 | Claim lifecycle | Fresh/Updated → Scrubbing → Hold → Submitted (+ record statuses) | System | Needs Clarification (C-003, C-013) |
 | F38 | M9 | CMS-1500 generation | Box-by-box mapping (ch. 8) | System | Needs Clarification (Q-024, Q-057–Q-061, C-009, C-010) |
 | F39 | M9 | 837P / PDF print queue | Electronic and paper output | System | Needs Clarification (Q-015, Q-040) |
 | F40 | M9 | Waystar dispatch | Transmit; receive responses | System | Blocked (Q-015) |
-| F41 | M9 | Secondary/tertiary claims | After primary remit posts; Box 29 | System | Needs Clarification (Q-017, Q-024) |
+| F41 | M9 | Secondary claims | After primary remit posts; Box 29; no tertiary *(client 2026-09-30)* | System | Needs Clarification (Q-017, Q-024) |
 | F42 | M9 | Daily batch dashboard | Attempted, actual, held by code, live rejections | Billing | Needs Clarification (Q-042, C-013) |
 | F43 | M9 | Rejections & Reasons | Rejection workspace | Billing | Needs Clarification (Q-043) |
 | F44 | M10 | Manual payment posting | Insurance/patient/adjustment rows; check batch must balance | Payments | Needs Clarification (Q-045, C-011) |
@@ -249,7 +249,7 @@ Domain Admin request → map Location ↔ EMR location (1:1 Unique Location ID)
 **W3 · Patient & case ✅**
 ```
 Patient (demographics, guarantor) → Case (referring physician, ordered ICD-10 ≤12, injury type/date, accident state)
-  → Coverage rank 1–3 (member/group/claim no., subscriber, employer) → Authorizations (per coverage)
+  → Patient coverage, no rank (member/group/claim no., subscriber, employer) → case Primary + optional Secondary *(client 2026-09-30)* → Authorizations (per case)
 ```
 Location and providers are **not** on the case (CH-04) ✅ · ❓ C-014.
 
@@ -272,7 +272,7 @@ EMR note finalized | manual charge (visit gets location, billing + rendering pro
 
 **W5 · Updated note after submission ✅:** Updated queue → user picks **Inactivate** / **Corrected claim** (Box 22: original ref + 7 or 8) / **Submit anyway**.
 
-**W6 · Hold resolution ✅:** fix the data (auth, credentialing, case fields, coding) → auto-resubmit. **Release buckets are the exception:** only a user action moves those claims.
+**W6 · Hold resolution ✅:** fix the data (auth, provider type, case fields) → auto-resubmit. **Release buckets are the exception:** only a user action moves those claims.
 
 **W7 · Payment posting ✅**
 - Manual: check batch → per-line insurance/patient payments and CARC adjustments → batch must balance.
@@ -294,7 +294,7 @@ EMR note finalized | manual charge (visit gets location, billing + rendering pro
 | BR03 | Access = role permission ∧ practice grant | §10.6 | Every request | Deny unless both hold (global role skips grant) |
 | BR04 | Roles combine as a union | §10.2 | Several roles | OR of flags |
 | BR05 | Location narrowing | §10.2 | `location_ids` non-empty | Limit to those locations; empty = all · ❓ Q-031 (what non-visit records are visible) |
-| BR06 | Encrypted fields masked | §10.6 | `ssn_enc`, `portal_password_enc` | Decrypt only for System Admin |
+| BR06 | Encrypted fields masked | §10.6 | `ssn_enc` (portal credentials no longer captured *(client 2026-09-30)*) | Decrypt only for System Admin |
 | BR07 | Integration per location | §2.1 | Always | Never global |
 | BR08 | EMR-only locations blocked | §2.3 | Payload from non-integrated location | Reject from billing ingestion |
 | BR09 | Fee resolution | §3.4, §10.3 | Charge-line creation | Payer `fee_schedule` **billed** rate × units, else `procedure_code.default_fee` · ❓ Q-020 |
@@ -303,7 +303,7 @@ EMR note finalized | manual charge (visit gets location, billing + rendering pro
 | BR12 | Billing-required fields | §3.2, §10 | Before claim creation | Provider NPI; patient DOB, gender, address; **case referring physician**; member ID + group number; referring name, type, NPI. *(V1's case location and billing provider requirement removed — CH-04.)* ❓ C-006 |
 | BR13 | Default case | §10.4 | Every patient | ≥1 case, "Default" |
 | BR14 | Diagnoses ordered, ≤12 | §3.2, §10.4 | Case | `icd10_codes` array; position = pointer; line has ≤4 pointers |
-| BR15 | Coverage ranks 1–3 | §10.4 | Case | Unique rank per case; claims target `case_insurance` |
+| BR15 | Case Primary / Secondary | §10.4, changed *(client 2026-09-30)* | Case | Coverage belongs to the patient without a rank; the case names a Primary and an optional Secondary (different); no tertiary; claims target the coverage with the case's rank ❓ Q-100 |
 | BR16 | Authorization gating | §10.4, §10.5, §6.2 | **Effective** `authorization_required` | No usable auth → visit Pended; at scrub: valid number, active dates, remaining > 0. Visit authorization optional when not required. ❓ Q-009 |
 | BR17 | Injury date conditional | §10.4 | **Effective** `injury_date_required` | Injury date required on the case |
 | BR18 | Record reconciliation | §4.2 | Existing Internal Record ID | In pipeline/held → replace (old inactive). Submitted/scrubbing → Updated queue. ❓ C-005, C-012 |
@@ -315,7 +315,7 @@ EMR note finalized | manual charge (visit gets location, billing + rendering pro
 | BR24 | One visit per case per DOS | §10.5 | Visit creation | UQ (case, DOS) ❓ C-005 |
 | BR25 | Updated-queue actions | §5.2 | Update to submitted claim | Inactivate / Corrected (Box 22 ref + 7 or 8) / Submit anyway |
 | BR26 | Coding-rule precedence | §6.1 | Fresh, resubmitted, corrected | Payer-specific overrides default |
-| BR27 | Scrub failure → hold by reason | §6.2 | Checks 1–5 fail | Missing Data · Authorization · Credentialing · Payer Rule (units > cap; 10b/14/17) · Coding Issue |
+| BR27 | Scrub failure → hold by reason | §6.2 | A check fails | Missing Data · Provider hold · Authorization · **Provider type** (Rendering → hold *(client 2026-09-30)*) · Payer Rule (units > cap; 10b/14/17) · Audit · release bucket |
 | BR28 | Auto-resubmit | §7.1 | Hold reason resolved | Resubmit automatically — not release buckets (BR42) ❓ Q-012, C-013 |
 | BR29 | One claim per visit per rank | §10.5 | Claim creation | Secondary only after primary remit posts ❓ C-004 |
 | BR30 | Claim totals | ch. 8 | Always | Box 28 = sum of charges; Box 29 = paid when billing secondary, else 0 |
@@ -354,16 +354,16 @@ EMR note finalized | manual charge (visit gets location, billing + rendering pro
 | | `role` | Permission set | code, name, is_global, permissions jsonb `{MODULE:{c,r,u,d}}` |
 | | `user_practice` *(rel)* | Practice grant | PK(user, practice), location_ids[] |
 | | `user_role` *(rel)* | Role assignment | PK(user, role) |
-| Setup | `provider` | Clinician | code (Provider ID), first/last name, credential (optional), specialty, npi, taxonomy_code, state_license, claim_hold_until, claim_hold_reason, is_active |
+| Setup | `provider` | Clinician | code (Provider ID), first/last name, credential (optional), specialty, npi, taxonomy_code, state_license, claim_hold_until, claim_hold_reason, **provider_type Rendering / Billing** *(client 2026-09-30)*, is_active |
 | | **`insurance_class`** *(new)* | Rule defaults for a group of payers | code (UQ/practice), name, authorization_required, injury_date_required, apply_specialty_modifiers, accept_assignment, icd_version (default ICD10), is_active |
-| | `insurance` | Payer as billed | insurance_class_id (required), code (int, UQ/practice), name, insurance_type (claim filing indicator), payer_id, address/phone/fax, **rules nullable = inherit**, icd_version nullable, **insurance_hold**, **release_bucket_id** (required when held), portal_url/user/password_enc, is_active |
+| | `insurance` | Payer as billed | insurance_class_id (required), code (int, UQ/practice), name, insurance_type (claim filing indicator), payer_id, address/phone/fax, **rules nullable = inherit**, icd_version nullable, **insurance_hold**, **release_bucket_id** (required when held), portal_url (no user/password *(client 2026-09-30)*), is_active |
 | | **`release_bucket`** *(new)* | Manual-release queue | name (UQ/practice), description, is_active |
 | | `procedure_code` | CPT/HCPCS (**global**) | code, description, is_timed, default_modifier, default_fee, **procedure_type**, **is_active** |
 | | `fee_schedule` *(rel)* | Billed price | PK(insurance, procedure_code), billed_amount (per unit), effective_from/to *(allowed_amount removed — CH-08)* |
 | | `referring_physician` | Referring or supervising doctor | code, name, **type (DN/DQ)**, npi |
 | Patient | `patient` | Person in care | emr_id (UQ), names, date_of_birth, gender, ssn_enc (**optional**), address, phones, email, guarantor (null = self), no_statements, notes, is_active *(emergency_contact removed — CH-14a)* |
 | | `patient_case` | Episode of care | patient_id, name, referring_physician_id (required for billing), **icd10_codes[] (≤12)**, injury_type, injury_date, start_of_care, discharge_date, accident_state, is_active *(location_id, billing_provider_id, discipline removed — CH-04)* |
-| | `case_insurance` *(rel)* | Coverage | case, insurance, rank (UQ/case), member_id, group_number, claim_number, subscriber (null = self), employer (WC) |
+| | `case_insurance` *(rel)* | Coverage | V2: case, insurance, rank (UQ/case). **Client 2026-09-30:** belongs to the patient, no rank; the case holds primary and secondary coverage references (Q-100). member_id, group_number, claim_number, subscriber (null = self), employer (WC) |
 | | `authorization` | Payer pre-approval | case_insurance_id, number, start/end_date, authorized_qty, unit (Visits/Units), used_qty |
 | Billing | `visit` | Date of service ("Charge") | case_id, date_of_service (UQ with case), **location_id, billing_provider_id, treating_provider_id (set on visit)**, authorization_id (**optional**), diagnosis_codes[] (snapshot), status, pend_reason, source (EMR/Manual) |
 | | `charge_line` | Procedure billed | visit_id, procedure_code_id, units, amount, modifiers[], **place_of_service**, diagnosis_pointers[] (≤4), **notes** *(balances computed — CH-09)* |
@@ -376,7 +376,7 @@ EMR note finalized | manual charge (visit gets location, billing + rendering pro
 **Required by PRD chapters 1–9 but NOT in the V2 data model ❓** (don't invent columns — see register §7):
 - **Ingestion:** Internal Record ID on visit; inactive records; Updated-queue payloads; Incomplete-bucket entries; Billing Exception records (C-005, C-003, Q-071).
 - **Scrubbing/claims:** coding rules; hold records incl. who released a bucketed claim; scheduled jobs; daily batches; rejections; payer ICN and frequency code; Box 19 comment (Q-013, Q-076, Q-041, Q-043, Q-019, Q-063).
-- **Setup:** practice DBA/taxonomy/tax-ID type; location EMR link and integrated flag; provider × payer credentialing; payer unit caps, conditional boxes, SLA days, claim format; referring taxonomy/contact/referral orders (Q-022, Q-029, Q-010, Q-011, C-006).
+- **Setup:** practice DBA/taxonomy/tax-ID type; location EMR link and integrated flag; payer unit caps, conditional boxes, SLA days, claim format; referring taxonomy/contact/referral orders (Q-022, Q-029, Q-010, Q-011, C-006).
 - **Coverage:** effective/termination dates; employment status (C-007, Q-008).
 - **Money:** expected allowed amount; insurance-vs-patient split of computed balances; check-batch total; reversal representation; CARC list; Delayed A/R items; appeals (Q-075, Q-017, Q-045, C-011, Q-018, Q-028, Q-048).
 - **Cross-cutting:** work-item fields; audit history; month-end periods; field-level Hidden permissions (Q-003, Q-053, Q-049, C-001).
@@ -414,7 +414,7 @@ EMR note finalized | manual charge (visit gets location, billing + rendering pro
 |---|---|---|---|
 | Visit (§10.5 p20) | Review, Pended, Delayed, Released | Review → Pended (something missing, e.g. no auth when required) · Review → Delayed (provider hold) → Released | Return paths and who reverses 🔎 · Q-062 |
 | Claim lifecycle (§7.1 p8) | Fresh/Updated, Scrubbing, Hold, Submitted | Fresh → Scrubbing → Hold (checks fail) → auto-resubmit · Scrubbing → Submitted · **held insurance → release bucket → user release → Submitted** | C-003, C-013, Q-012 |
-| Hold queues (§6.2 p7) | Missing Data, Authorization Hold, Credentialing Hold, Payer Rule Hold, Coding Issue Hold, **one queue per release bucket** | Resolve → auto-resubmit; bucket → user release | Q-076, Q-077 |
+| Hold queues (§6.2 p7) | Missing Data, Provider Hold, Authorization Hold, **Provider Type Hold** (replaces Credentialing *(client 2026-09-30)*), Payer Rule Hold, Audit Hold, **one queue per release bucket** (Coding Issue Hold removed) | Resolve → auto-resubmit; bucket → user release | Q-076, Q-077 |
 | Claim record (§10.5 p21) | Scrubbed, Failed, Rejected, Sent, Paid, Denied | Not defined | C-003 |
 | Denial (§10.5 p22) | Open, Appealed, Resolved, Written off | Not defined | Q-048 |
 | A/R category (§9.2 p11) | Delayed, Denied | SLA breach → Delayed; 835 denial → Denied | Q-028 |
@@ -634,7 +634,7 @@ PRD terms are used loosely (❓ Q-003 context, C-010).
 |---|---|
 | Session / Encounter / Visit / "Charge" | One date of service for one case; table `visit`; "Charge" in Charge Review. Holds its own location and providers. |
 | Charge line | One CPT/HCPCS procedure on a visit, with its own place of service. Unit billed, paid, denied. |
-| Claim | A bill to one payer (coverage rank) for one visit; keeps a snapshot of the referring physician. |
+| Claim | A bill to one payer (the case's primary or secondary) for one visit; keeps a snapshot of the referring physician. |
 | Practice | The billing entity. **Shown as "Company" in the UI.** |
 | Company / Organization | Optional parent of practices; cross-practice reporting only. |
 | Location / Facility | Physical clinic; unit of EMR integration; supplies default POS. |
@@ -861,3 +861,9 @@ Full detail with page references: **`docs/PRD_V1_TO_V2_CHANGELOG.md`**.
 - **Audit** of every screen and dialog at 375, 390, 768, 1024, 1280, 1440 and in between (480, 600, 700, 900, 1150). Found: the desktop rail stayed on a phone (72 of 375px, its collapse handle over the content); the Admin pill row was cut off; header actions sat awkwardly; tables squeezed names and broke codes mid-word; row icon buttons, sort headers, text links and a select's clear button were under 32px to tap; dialog footers kept small side-by-side buttons.
 - **Now:** below 768px (the prototype's breakpoint) a brand **top bar** (menu, logo, account avatar) and the rail as a **left drawer** — same navigation config, Admin sections nested under Admin, closes on navigation / close button / Escape / scrim, focus trapped and returned. Tablet keeps the collapsed rail with the Admin pills; desktop unchanged. Page headers stack with full-width actions on a phone; dialogs are bottom sheets with stacked full-width buttons; tables use **priority columns** (secondary values on the main cell's sub-line; the row opens the record) with codes and NPIs never breaking; practices use tiles. Invisible hit boxes lift small controls to a comfortable size. Phone page padding 16px.
 - **Result:** no horizontal page overflow, no scrolling tables, no undersized targets, every dialog and menu inside the viewport, at all tested widths; desktop unchanged. Conventions in `frontend/docs/UI_KIT.md` § Conventions. 239 tests (6 for the phone navigation).
+
+### 2026-09-30 (client meeting — prototype updated as the backend's behavioural reference)
+- **Client decisions, built in `prototype/`** (the production frontend is unchanged): Provider Type **Rendering / Billing** replaces payer enrollment and the Credentialing check (Rendering → Provider type hold); procedure codes lose default modifiers and gain a **Modifier Override** switch (off by default, up to four optional modifiers, hint "These modifiers will override any modifiers provided from other sources."); **Setup** is a top-level module beside Admin (old `#/admin/<setup>` links redirect); the payer portal is a **link only, in the insurance form** (Payer portals view and credentials removed); the **AI section, AI coding check and AI SLA option are removed**; **coverage belongs to the patient without a rank**, and a case picks **Primary** (required in the form) and optional **Secondary** from it — no tertiary; the case is **one view** with headed sections instead of tabs.
+- **Against V2:** the Credentialing check (§6.2) and per-case `case_insurance` with rank (§10.4). Q-010, Q-014, Q-088 answered; new **Q-098** (which provider the type check reads), **Q-099** (where the override applies), **Q-100** (case insurance rules), **Q-101** (authorization per case). Assumptions A-P59 – A-P63; A-P08, A-P33, A-P52 retired. Details in `docs/PROTOTYPE_COVERAGE.md` §12.
+- **Follow-up for the production frontend (not done, not asked):** its Admin list still has a "Setup" group (Referring physicians) — per this decision Setup becomes its own navigation entry when the frontend reaches it.
+- Verified in Chromium: 91 routes × 7 demo accounts and the Fresh System render without errors; the engine cycle (EMR scenarios → submit → primary remit → secondary claim; corrected claim; provider-type hold released by switching to Billing; override on new EMR lines); no horizontal overflow at 375 / 768.

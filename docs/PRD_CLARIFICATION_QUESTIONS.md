@@ -13,10 +13,10 @@ This document asks questions only. It does not decide anything, and it does not 
 
 | | Count |
 |---|---|
-| Open questions | **89** |
-| Critical | **31** |
-| Important | **44** |
-| Nice to clarify | **14** |
+| Open questions | **90** |
+| Critical | **28** |
+| Important | **47** |
+| Nice to clarify | **15** |
 | Contradictions (separate section) | **14** |
 | Assumptions we would otherwise make | **21** |
 
@@ -30,6 +30,8 @@ This document asks questions only. It does not decide anything, and it does not 
 | New — raised while modelling a fresh installation (2026-09-17) | 2 | Q-085, Q-086 |
 | New — raised by meeting notes (2026-09-23) | 11 | Q-087 – Q-097 |
 | Answered — by the client (2026-09-23), kept in place for the record | 6 | Q-087, Q-089, Q-090, Q-091, Q-092, Q-096 |
+| New — raised by the client meeting (2026-09-30) | 4 | Q-098 – Q-101 |
+| Answered — by the client (2026-09-30), kept in place for the record | 3 | Q-010, Q-014, Q-088 |
 | Kept — still valid, references re-paginated to V2 | 66 | all others |
 
 IDs are never reused. Retired entries are listed in section 10 so earlier references still resolve.
@@ -39,9 +41,9 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 | Category | Questions |
 |---|---|
 | Data | 21 |
-| Business Rule | 22 |
-| Workflow | 12 |
-| Functional | 10 |
+| Business Rule | 23 |
+| Workflow | 13 |
+| Functional | 9 |
 | Calculation | 4 |
 | Validation | 3 |
 | Other | 4 |
@@ -58,7 +60,7 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 3. **Access control.** Chapter 1 describes per-user, three-tier permissions down to field level; chapter 10 stores per-role CRUD flags per module. Role names differ across chapters 1, 2 and 10, and V2 does not say who may release claims from a bucket.
 4. **Money rules.** The reconciliation equation does not balance, V2 removed the only stored allowed amount, and V2 no longer says how a balance splits between payer and patient.
 5. **Where billing data comes from after V2's restructuring.** Location and providers are now set per visit with no default; place of service is per line while Box 32 is per claim; one case holds one referring or supervising physician.
-6. **Scrubbing inputs.** Unit caps, conditional boxes, credentialing status and SLA still have no home in the data model; V2 gave a home only to the five class rules and the insurance hold.
+6. **Scrubbing inputs.** Unit caps, conditional boxes and SLA still have no home in the data model; V2 gave a home only to the five class rules and the insurance hold. (Credentialing was replaced by the provider type on 2026-09-30, and the AI coding check was removed.)
 7. **External systems.** The EMR payload contract is undefined and the Waystar specifics are explicitly deferred; both gate ingestion and submission.
 8. **Non-functional requirements.** The PRD states none: no security, retention, performance, availability, migration or localisation requirements.
 
@@ -205,6 +207,8 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 
 **Why clarification is needed:** The `provider` table has only a claim-hold date and reason; there is nothing that records enrolment per payer. Without this the Credentialing hold cannot be evaluated at all.
 
+**Answered (client, 2026-09-30):** enrolment is not tracked. The Payer Enrollment / Credentialing section is removed from the provider, and each provider gets a **Provider Type** — Rendering or Billing. A Rendering provider's claims are put on hold; a Billing provider's claims are eligible for submission. This replaces V2's Credentialing check (see Q-088; which provider the check reads is Q-098).
+
 **PRD V2 reference:**
 - **Section:** 6.2 Scrubbing validation matrix · **Page:** 7 · **Excerpt:** "Active credentialing status verified for payer and DOS." / Source: "Provider profile"
 - **Section:** 10.3 Setup · **Page:** 15 · **Excerpt:** `provider` columns: "claim_hold_until… claim_hold_reason"
@@ -260,6 +264,8 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 **Question:** The AI coding-quality check is marked as an "AI add-on". Is it included in the first release or sold separately? Which engine or vendor performs it, what does it receive, and what does it return? When it flags a claim, can a user override the flag and submit anyway, and is the decision recorded?
 
 **Why clarification is needed:** It is one of the six scrubbing checks and it puts claims on hold. It also implies sending clinical data to an external service, which has privacy consequences.
+
+**Answered (client, 2026-09-30):** no. The AI section is removed from Submission & automation without a placeholder, and scrubbing has no AI coding check. The AI-predicted SLA option was removed with it; SLAs stay configured per insurance.
 
 **PRD V2 reference:**
 - **Section:** 6.2 Scrubbing validation matrix · **Page:** 7 · **Excerpt:** "Diagnosis-to-CPT logical consistency verified by AI engine." / Source: "AI add-on"
@@ -1095,6 +1101,8 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 
 **Why clarification is needed:** Credentialing is one of the six scrubbing checks V2 requires. Removing its only data source would silently disable a required check, and "rule" has no definition yet.
 
+**Answered (client, 2026-09-30):** payer enrollment is removed and nothing named "rule" replaces it. The provider gets a Provider Type (Rendering / Billing, no other types); Rendering puts the provider's claims on hold, Billing makes them eligible for submission. **Against V2**, whose Credentialing check reads credentialing status per payer and date of service. Open follow-up: Q-098.
+
 **PRD V2 reference:**
 - **Section:** 6.2 Scrubbing validation matrix · **Page:** 7 · **Excerpt:** "Credentialing"
 - **Section:** 10.3 Setup · **Page:** 15 · **Excerpt:** `provider` — "A clinician who bills or treats: name, credentials, NPI, specialty."
@@ -1243,6 +1251,53 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 - **Section:** 10.3 Setup · **Page:** 16 · **Excerpt:** "Null = inherit from insurance_class. Effective value = COALESCE(insurance, class)."
 
 **Related:** Q-013 — how coding rules are defined and what they change.
+
+---
+
+### Q-098 — Which provider does the Provider Type check read?
+
+**Question ID:** Q-098 · **Category:** Business Rule · **Priority:** Important · **V2 audit:** New — raised by the client meeting (2026-09-30).
+
+**Question:** A Rendering provider's claims are put on hold and a Billing provider's are eligible for submission. A visit names two providers — the rendering (treating) provider on the line and the billing provider in Box 33. Which one does the check read? The prototype reads the rendering provider. Should the billing-provider picker on a visit offer only Billing-type providers? What releases a held claim — changing the provider's type only, or can a user release a single claim? And a provider arriving from the EMR as a draft has no type yet: should its claims be held until someone sets it (the prototype holds them)?
+
+**Why clarification is needed:** The type decides whether a claim leaves at all. Reading the wrong provider would hold every claim a Billing provider bills for a Rendering clinician, or none of them.
+
+**PRD V2 reference:**
+- **Section:** 6.2 Scrubbing validation matrix · **Page:** 7 · **Excerpt:** "Credentialing" / Source: "Provider profile"
+- **Section:** 10.3 Setup · **Page:** 15 · **Excerpt:** `provider` — "A clinician who bills or treats: name, credentials, NPI, specialty."
+
+**Related:** Q-088 — what replaced payer enrollment.
+
+---
+
+### Q-099 — When does a Modifier Override apply?
+
+**Question ID:** Q-099 · **Category:** Business Rule · **Priority:** Important · **V2 audit:** New — raised by the client meeting (2026-09-30).
+
+**Question:** A procedure code no longer has default modifiers. With Modifier Override on, up to four modifiers "override any modifiers provided from other sources". The prototype applies them when a charge line is created (EMR note, updated note, corrected claim) and when a coding rule swaps in the code; a line entered by hand gets them filled in but a biller can still change them. Please confirm: may a biller change an override on a single line? Do the override modifiers also replace the specialty modifiers (GP / GO / GN) an insurance class applies? When the override is switched on or changed, should lines already waiting in Charge review or on held claims be updated?
+
+**Why clarification is needed:** Modifiers change payment. An override that silently rewrites lines a biller already corrected, or that fails to reach lines already in the pipeline, both produce wrong claims.
+
+**PRD V2 reference:**
+- **Section:** 10.3 Setup · **Page:** 17 · **Excerpt:** `procedure_code` — "default_modifier | varchar(2) | | GP"
+
+**Related:** Q-054 — what decides the specialty modifier.
+
+---
+
+### Q-100 — What does a case require of its insurance?
+
+**Question ID:** Q-100 · **Category:** Workflow · **Priority:** Important · **V2 audit:** New — raised by the client meeting (2026-09-30).
+
+**Question:** Coverage is now added to the patient without a rank, and a case picks a Primary and an optional Secondary from the patient's list; there is no tertiary. Is a primary insurance required to save a case (the prototype requires it, so a patient needs coverage before a new case)? May two cases share the same coverage (the prototype allows it)? When a case's primary or secondary is changed after claims were sent, what happens to those claims and to a secondary claim not yet created? Can a coverage be removed while a case still uses it (the prototype refuses)?
+
+**Why clarification is needed:** V2 stores coverage per case with a rank (`case_insurance`, one claim per visit and coverage). Moving coverage to the patient changes the data model and what a claim points to.
+
+**PRD V2 reference:**
+- **Section:** 3.2 Case profile object · **Page:** 4 · **Excerpt:** "Insurances — primary, secondary and tertiary policies, including subscriber info, member ID, group number, effective and termination dates."
+- **Section:** 10.5 Billing · **Page:** 21 · **Excerpt:** `claim` — "visit_id | bigint | FK → visit | UQ (visit_id, case_insurance_id)."
+
+**Related:** C-007 — coverage dates.
 
 ---
 
@@ -1423,6 +1478,19 @@ IDs are never reused. Retired entries are listed in section 10 so earlier refere
 
 **PRD V2 reference:**
 - **Section:** 10.3 Setup · **Page:** 17 · **Excerpt:** `procedure_code` — "procedure_type | text | | Category of the code: Evaluation, Therapeutic, Modality, Supply / DME…"
+
+---
+
+### Q-101 — Does an authorization belong to the case or to the coverage?
+
+**Question ID:** Q-101 · **Category:** Data · **Priority:** Nice to Clarify · **V2 audit:** New — raised by the client meeting (2026-09-30).
+
+**Question:** With coverage on the patient, one policy can serve several cases. The prototype keeps an authorization on the case, issued by the case's primary or secondary insurance, so an approval for one episode is never used up by another. Is that right, or can one authorization cover visits on several cases?
+
+**Why clarification is needed:** Authorizations are consumed by visits. If they follow the policy instead of the case, one episode could use up another's approved visits.
+
+**PRD V2 reference:**
+- **Section:** 10.4 Patient · **Page:** 20 · **Excerpt:** `authorization` — "A payer's pre-approval for a number of visits or units within a date range. Visits consume it…"
 
 ---
 

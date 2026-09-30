@@ -55,7 +55,7 @@ ACT['den.open'] = (el) => {
   const ins = r.ins
   const canU = S.can('DENIALS', 'u')
   const active = ['Open', 'Appealed'].includes(d.status)
-  const portal = ins.portalUrl ? `${U.esc(ins.portalUrl)} · user ${U.esc(ins.portalUser)} · password ${S.canDecrypt() ? U.esc(ins.portalPassword) : '••••••••'}` : 'No portal on file'
+  const portal = ins.portalUrl ? `<a href="${U.esc(ins.portalUrl)}" target="_blank" rel="noopener">${U.esc(ins.portalUrl)}</a>` : 'No portal on file'
   UI.drawer({
     title: `Denial · ${claim.number}`,
     desc: `${U.esc(r.name)} · ${U.esc(ins.name)} · DOS ${U.date(r.dos)}`,

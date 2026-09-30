@@ -201,7 +201,7 @@ const UI = (() => {
     } else if (spec.type === 'textarea') {
       control = `<div class="control textarea"><textarea ${common} placeholder="${esc(spec.placeholder || '')}" rows="${spec.rows || 3}" ${spec.maxLength ? `maxlength="${spec.maxLength}"` : ''}>${esc(v)}</textarea></div>`
     } else if (spec.type === 'checkbox') {
-      return `<div class="field ${span}" data-field="${spec.name}"><label class="check-row"><input type="checkbox" ${common} ${v ? 'checked' : ''}><span>${esc(spec.label)}${spec.desc ? `<span class="desc">${esc(spec.desc)}</span>` : ''}</span></label></div>`
+      return `<div class="field ${span}" data-field="${spec.name}"><label class="check-row${spec.switch ? ' switch-row' : ''}"><input type="checkbox" ${spec.switch ? 'role="switch"' : ''} ${common} ${v ? 'checked' : ''}><span>${esc(spec.label)}${spec.desc ? `<span class="desc">${esc(spec.desc)}</span>` : ''}</span></label></div>`
     } else if (spec.type === 'radio') {
       const opts = optList(spec.options)
       control = `<div class="choice-list" role="radiogroup">${opts

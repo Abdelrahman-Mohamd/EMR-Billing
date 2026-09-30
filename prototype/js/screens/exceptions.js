@@ -341,9 +341,9 @@ ACT['exc.completeProvider'] = (el) => {
         { name: 'npi', label: 'Individual NPI', type: 'npi', required: true, span: 4, validate: (val) => (E.DUMMY_NPIS.includes(val) ? 'Please enter a valid NPI.' : '') },
         { name: 'taxonomy', label: 'Taxonomy code', required: true, span: 4, placeholder: '225100000X' },
         { name: 'stateLicense', label: 'State license', span: 4, placeholder: 'NY 000000' },
-        { name: 'enrollAll', label: 'Mark as actively enrolled with every payer of this practice', type: 'checkbox', span: 12, desc: 'Credentialing is checked per payer at scrubbing. Leave unticked to set enrollments later in Admin → Providers.' },
+        { name: 'providerType', label: 'Provider type', type: 'select', required: true, span: 12, options: E.PROVIDER_TYPES, help: 'Rendering: claims for this provider are put on hold. Billing: eligible for submission.' },
       ],
-      { ...p, specialty: 'PHYSICAL THERAPIST', taxonomy: '225100000X' },
+      { ...p, specialty: 'PHYSICAL THERAPIST', taxonomy: '225100000X', providerType: p.providerType || '' },
     ),
     foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Complete profile', variant: 'primary', act: 'exc.saveDraftProvider' }),
   })
@@ -354,8 +354,7 @@ ACT['exc.saveDraftProvider'] = (el) => {
   const vals = UI.submitForm(UI.formOf(layer))
   if (!vals) return
   const p = S.find('providers', layer.dataset.id)
-  Object.assign(p, { firstName: vals.firstName, lastName: vals.lastName, credential: vals.credential, specialty: vals.specialty, npi: vals.npi, taxonomy: vals.taxonomy, stateLicense: vals.stateLicense, draft: false, code: String(330 + DB.providers.length) })
-  if (vals.enrollAll) p.enrollments = DB.insurances.filter((i) => i.practiceId === p.practiceId && !i.draft).map((i) => ({ insuranceId: i.id, status: 'Active', effective: DB.today }))
+  Object.assign(p, { firstName: vals.firstName, lastName: vals.lastName, credential: vals.credential, specialty: vals.specialty, npi: vals.npi, taxonomy: vals.taxonomy, stateLicense: vals.stateLicense, providerType: vals.providerType, draft: false, code: String(330 + DB.providers.length) })
   S.log('Draft provider profile completed', { module: 'ADMIN', entityType: 'provider', entityId: p.id, detail: S.provName(p) })
   UI.closeTop()
   const out = E.cascade()
@@ -373,7 +372,7 @@ ACT['exc.completeIns'] = (el) => {
       [
         { name: 'name', label: 'Payer name', required: true, span: 8 },
         { name: 'code', label: 'Code', type: 'number', required: true, span: 4, placeholder: '1060', validate: (val) => (DB.insurances.some((i) => i.id !== ins.id && i.practiceId === ins.practiceId && String(i.code) === String(val)) ? 'This code is already used.' : '') },
-        { name: 'classId', label: 'Insurance class', type: 'select', required: true, span: 4, options: DB.insuranceClasses.filter((c) => c.practiceId === ins.practiceId && c.isActive).map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` })), help: 'Billing rules are inherited from the class; override them later in Admin → Insurances.' },
+        { name: 'classId', label: 'Insurance class', type: 'select', required: true, span: 4, options: DB.insuranceClasses.filter((c) => c.practiceId === ins.practiceId && c.isActive).map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` })), help: 'Billing rules are inherited from the class; override them later in Setup → Insurances.' },
         { name: 'type', label: 'Insurance type (filing indicator)', type: 'select', required: true, span: 4, options: ['Commercial', 'Medicare', 'Workers Comp', 'PIP'] },
         { name: 'payerId', label: 'Clearinghouse payer ID', required: true, span: 4, placeholder: 'e.g. OSCAR' },
         { name: 'line1', label: 'Claims address', required: true, span: 12 },
@@ -393,9 +392,6 @@ ACT['exc.saveDraftIns'] = (el) => {
   if (!vals) return
   const ins = S.find('insurances', layer.dataset.id)
   Object.assign(ins, { name: vals.name, code: Number(vals.code), classId: vals.classId, type: vals.type, payerId: vals.payerId, address: { line1: vals.line1, city: vals.city, state: vals.state, zip: vals.zip }, draft: false })
-  DB.providers.filter((p) => p.practiceId === ins.practiceId && !p.draft).forEach((p) => {
-    if (!p.enrollments.some((e) => e.insuranceId === ins.id)) p.enrollments.push({ insuranceId: ins.id, status: 'Active', effective: DB.today })
-  })
   DB.visits.filter((v) => v.status === 'Incomplete').forEach((v) => E.repriceVisit(v))
   S.log('Draft insurance profile completed', { module: 'ADMIN', entityType: 'insurance', entityId: ins.id, detail: ins.name })
   UI.closeTop()

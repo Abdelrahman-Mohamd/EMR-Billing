@@ -27,11 +27,10 @@ const Cl = {
     return {
       missing: { label: 'Complete claim data', hash: `#/patients/${p.id}/coverage?case=${cs.id}` },
       auth: { label: 'Add authorization', hash: `#/patients/${p.id}/authorizations?case=${cs.id}` },
-      cred: { label: 'Update enrollment', hash: `#/admin/providers?open=${v.treatingProviderId}` },
-      hold: { label: 'Open the provider', hash: `#/admin/providers?open=${v.treatingProviderId}` },
+      ptype: { label: 'Open the provider', hash: `#/setup/providers?open=${v.treatingProviderId}` },
+      hold: { label: 'Open the provider', hash: `#/setup/providers?open=${v.treatingProviderId}` },
       audit: null,
       payer: { label: 'Correct the charge', hash: `#/charges/visit/${v.id}` },
-      coding: { label: 'Review diagnosis pointers', hash: `#/charges/visit/${v.id}` },
       manual: null,
     }[c.holdReason]
   },
@@ -236,8 +235,8 @@ Cl.buckets = (scope) => {
       </div></div>`)
     .join('')
   return `<p class="t-micro muted-2" style="margin:0 0 12px">A release bucket is a named manual-release queue created by a Practice Admin. Claims for insurances with the insurance hold checked stop here after scrubbing and go out only when a user releases them. Releasing checks the claim again before sending it.</p>
-    ${cards || UI.empty({ icon: 'layers', title: 'No release buckets', text: 'Create one in Admin → Release buckets, then check the insurance hold on an insurance.' })}
-    ${S.can('ADMIN', 'r') ? `<div class="mt-8">${UI.btn({ label: 'Manage release buckets', icon: 'arrowRight', variant: 'quiet', act: 'go', data: { hash: '#/admin/buckets' } })}</div>` : ''}`
+    ${cards || UI.empty({ icon: 'layers', title: 'No release buckets', text: 'Create one in Setup → Release buckets, then check the insurance hold on an insurance.' })}
+    ${S.can('ADMIN', 'r') ? `<div class="mt-8">${UI.btn({ label: 'Manage release buckets', icon: 'arrowRight', variant: 'quiet', act: 'go', data: { hash: '#/setup/buckets' } })}</div>` : ''}`
 }
 ACT['cl.menu'] = (el) => {
   const c = S.find('claims', el.dataset.id)
@@ -267,7 +266,7 @@ ACT['cl.fixRejection'] = (el) => {
   const v = S.visitOf(c)
   const cs = S.caseOf(v)
   const p = S.patientOf(cs)
-  const hint = /Subscriber|member/i.test(c.rejection.reason) ? { label: 'Check coverage', hash: `#/patients/${p.id}/coverage?case=${cs.id}` } : /NPI/.test(c.rejection.reason) ? { label: 'Check providers', hash: '#/admin/providers' } : { label: 'Open the case', hash: `#/patients/${p.id}/case?case=${cs.id}` }
+  const hint = /Subscriber|member/i.test(c.rejection.reason) ? { label: 'Check coverage', hash: `#/patients/${p.id}/coverage?case=${cs.id}` } : /NPI/.test(c.rejection.reason) ? { label: 'Check providers', hash: '#/setup/providers' } : { label: 'Open the case', hash: `#/patients/${p.id}/case?case=${cs.id}` }
   const h = UI.modal({
     title: `Fix & resubmit ${c.number}`,
     desc: `Waystar rejected this claim on ${U.date(c.rejection.date)}.`,

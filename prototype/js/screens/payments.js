@@ -189,7 +189,7 @@ ACT['bt.new'] = () => {
       title: 'Nothing to post a check against yet',
       text: 'A check batch applies a payer’s check to the claims it pays, line by line, and must balance to the check amount. There are no submitted claims awaiting payment.',
       needs: [
-        { ok: DB.insurances.some((i) => i.practiceId === S.session.practiceId && !i.draft), label: 'An insurance (the payer)', action: { label: 'Add an insurance', hash: '#/admin/insurances' } },
+        { ok: DB.insurances.some((i) => i.practiceId === S.session.practiceId && !i.draft), label: 'An insurance (the payer)', action: { label: 'Add an insurance', hash: '#/setup/insurances' } },
         { ok: false, label: 'A submitted claim for that payer', why: 'Enter and release a charge, then submit it.', action: { label: 'Open Ready to submit', hash: '#/charges/ready' } },
       ],
     })

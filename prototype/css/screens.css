@@ -385,6 +385,25 @@ button.bar-row:hover .bar-label {
   text-transform: uppercase;
   color: var(--brand-deep);
 }
+/* The case's Primary and Secondary side by side; stacked on a phone */
+.cov-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.cov-pair .cov-card + .cov-card {
+  margin-top: 0;
+}
+.cov-card.cov-empty {
+  border-style: dashed;
+}
+.cov-card.cov-empty .rank {
+  color: var(--n500);
+}
+/* The case is one view: a little more air between its sections than inside them */
+.case-view > .section + .section {
+  margin-top: 36px;
+}
 .dx-list {
   list-style: none;
   margin: 0;

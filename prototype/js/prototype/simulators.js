@@ -12,7 +12,8 @@ const Sim = (() => {
   // Falls back to any active code, so scenarios also work in the Fresh System
   const line = (code, units, pointers = [1]) => {
     const pc = E.pcByCode(code) || DB.procedureCodes.find((x) => x.isActive)
-    return pc ? { procedureCodeId: pc.id, units, modifiers: [pc.defaultModifier, pc.defaultModifier2].filter(Boolean), pointers } : null
+    // The EMR sends its own modifier; a code's Modifier Override replaces it on arrival
+    return pc ? { procedureCodeId: pc.id, units, modifiers: ['GP'], pointers } : null
   }
   const lines = (...ls) => ls.filter(Boolean)
   const freshProvider = () => DB.providers.find((p) => p.practiceId === S.session.practiceId && !p.draft && p.isActive && E.npiValid(p.npi) && !p.claimHoldUntil)
@@ -132,9 +133,9 @@ const Sim = (() => {
           text: 'A finalized EMR note arrives for a location, names the providers and patient, and carries procedure codes (PRD V2 §2.3, §4.1, §10.5). The payload is only accepted into billing if its location is linked and elected Integrated.',
           needs: [
             { ok: !!primaryLoc(), label: 'A location', action: { label: 'Open Practices & locations', hash: '#/admin/practices' } },
-            { ok: !!freshProvider(), label: 'A provider with an NPI', action: { label: 'Add a provider', hash: '#/admin/providers' } },
-            { ok: !!freshInsurance(), label: 'An insurance', action: { label: 'Add an insurance', hash: '#/admin/insurances' } },
-            { ok: DB.procedureCodes.some((x) => x.isActive), label: 'An active procedure code', action: { label: 'Add a procedure code', hash: '#/admin/codes' } },
+            { ok: !!freshProvider(), label: 'A provider with an NPI', action: { label: 'Add a provider', hash: '#/setup/providers' } },
+            { ok: !!freshInsurance(), label: 'An insurance', action: { label: 'Add an insurance', hash: '#/setup/insurances' } },
+            { ok: DB.procedureCodes.some((x) => x.isActive), label: 'An active procedure code', action: { label: 'Add a procedure code', hash: '#/setup/codes' } },
             { ok: S.locationsOfPractice().some((l) => l.emr.link === 'Linked' && l.emr.election === 'Integrated'), label: 'A location linked to the EMR and elected Integrated', why: 'Without it every payload is blocked — which is itself a scenario worth sending once the rest exists.', action: { label: 'Open EMR integration', hash: '#/admin/integration' } },
           ],
         }),
@@ -199,7 +200,7 @@ const Sim = (() => {
       if (pv.newInsurance) {
         ins = DB.insurances.find((i) => i.draft && i.practiceId === S.session.practiceId && i.name === 'Healthfirst')
         if (!ins) {
-          ins = { id: U.id('i'), practiceId: S.session.practiceId, code: null, name: 'Healthfirst', classId: null, type: '', payerId: '', address: { line1: '', city: '', state: '', zip: '' }, phone: '', fax: '', icdVersion: null, acceptAssignment: null, specialtyModifiers: null, authRequired: null, injuryDateRequired: null, insuranceHold: false, releaseBucketId: null, maxUnits: 6, slaDays: 30, format: '837P', portalUrl: '', portalUser: '', portalPassword: '', isActive: true, draft: true, draftFrom: `EMR session on ${U.date(DB.today)}` }
+          ins = { id: U.id('i'), practiceId: S.session.practiceId, code: null, name: 'Healthfirst', classId: null, type: '', payerId: '', address: { line1: '', city: '', state: '', zip: '' }, phone: '', fax: '', icdVersion: null, acceptAssignment: null, specialtyModifiers: null, authRequired: null, injuryDateRequired: null, insuranceHold: false, releaseBucketId: null, maxUnits: 6, slaDays: 30, format: '837P', portalUrl: '', isActive: true, draft: true, draftFrom: `EMR session on ${U.date(DB.today)}` }
           DB.insurances.push(ins)
           S.log('Draft insurance profile created from EMR', { module: 'ADMIN', entityType: 'insurance', entityId: ins.id, detail: ins.name })
         }
@@ -208,9 +209,11 @@ const Sim = (() => {
       const p = { id: U.id('p'), practiceId: S.session.practiceId, billingId: 10412 + n + 40, emrId: 56370000 + n * 17, firstName: first, middleName: '', lastName: last, gender, dob: `19${70 + (n % 25)}-0${1 + (n % 8)}-1${n % 9}`, address: { line1: `${100 + n} Fourth Avenue`, line2: '', city: 'Brooklyn', state: 'NY', zip: '11217' }, phoneCell: `718-555-01${String(n % 90).padStart(2, '0')}`, phoneHome: '', email: '', ssn: '', guarantor: null, notes: '', isActive: true }
       DB.patients.unshift(p)
       const ref = DB.referrers.find((r) => r.practiceId === S.session.practiceId && E.npiValid(r.npi))
-      const c = { id: U.id('c'), patientId: p.id, name: 'Default', referrerId: ref ? ref.id : null, injuryType: '', injuryDate: null, startOfCare: dos, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, dx: [{ code: 'M25.561', desc: E.dxLabel('M25.561') }] }
+      const c = { id: U.id('c'), patientId: p.id, name: 'Default', primaryCoverageId: null, secondaryCoverageId: null, referrerId: ref ? ref.id : null, injuryType: '', injuryDate: null, startOfCare: dos, dischargeDate: null, accidentState: '', employmentStatus: '', isActive: true, dx: [{ code: 'M25.561', desc: E.dxLabel('M25.561') }] }
       DB.cases.push(c)
-      DB.coverages.push({ id: U.id('cv'), caseId: c.id, insuranceId: ins.id, rank: 1, memberId: `W${String(700000000 + n * 7919)}`, groupNumber: '0184421', claimNumber: '', subscriber: null, employer: null })
+      const cv = { id: U.id('cv'), patientId: p.id, insuranceId: ins.id, memberId: `W${String(700000000 + n * 7919)}`, groupNumber: '0184421', claimNumber: '', subscriber: null, employer: null }
+      DB.coverages.push(cv)
+      c.primaryCoverageId = cv.id
       S.log('Patient chart and case received from EMR', { module: 'PATIENT', entityType: 'patient', entityId: p.id, userId: 'u8', detail: `${S.pfull(p)} · Default case` })
       caseId = c.id
       patientLabel = S.pfull(p)
@@ -220,7 +223,7 @@ const Sim = (() => {
     if (pv.newProvider) {
       let draft = DB.providers.find((x) => x.draft && x.practiceId === S.session.practiceId && x.lastName === 'Raman')
       if (!draft) {
-        draft = { id: U.id('P'), practiceId: S.session.practiceId, code: `EMR-${7800 + DB.providers.length}`, firstName: 'Priya', lastName: 'Raman', credential: '', specialty: '', npi: '', taxonomy: '', stateLicense: '', claimHoldUntil: null, claimHoldReason: '', isActive: true, draft: true, draftFrom: `First finalized EMR note on ${U.date(DB.today)}`, enrollments: [] }
+        draft = { id: U.id('P'), practiceId: S.session.practiceId, code: `EMR-${7800 + DB.providers.length}`, firstName: 'Priya', lastName: 'Raman', credential: '', specialty: '', npi: '', taxonomy: '', stateLicense: '', claimHoldUntil: null, claimHoldReason: '', isActive: true, draft: true, draftFrom: `First finalized EMR note on ${U.date(DB.today)}`, providerType: '' }
         DB.providers.push(draft)
         S.log('Draft provider profile created from first finalized note', { module: 'ADMIN', entityType: 'provider', entityId: draft.id, userId: 'u8', detail: 'Priya Raman' })
       }

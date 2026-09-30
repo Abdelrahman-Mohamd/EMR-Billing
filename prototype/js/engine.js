@@ -22,13 +22,12 @@ const E = (() => {
     missing: { label: 'Missing data', check: 'Data integrity', source: 'System default' },
     hold: { label: 'Provider hold', check: 'Provider claim hold', source: 'Provider profile' },
     auth: { label: 'Authorization hold', check: 'Authorization', source: 'Insurance settings' },
-    cred: { label: 'Credentialing hold', check: 'Credentialing', source: 'Provider profile' },
+    ptype: { label: 'Provider type hold', check: 'Provider type', source: 'Provider profile' },
     payer: { label: 'Payer rule hold', check: 'Payer rules', source: 'Payer / insurance settings' },
-    coding: { label: 'Coding issue hold', check: 'AI coding quality', source: 'AI add-on' },
     audit: { label: 'Audit hold', check: 'Payer audit', source: 'Insurance settings' },
     manual: { label: 'Release bucket', check: 'Manual release required', source: 'Insurance settings' },
   }
-  const HOLD_ORDER = ['missing', 'hold', 'auth', 'cred', 'payer', 'coding', 'audit', 'manual']
+  const HOLD_ORDER = ['missing', 'hold', 'auth', 'ptype', 'payer', 'audit', 'manual']
 
   const REJECTIONS = [
     { code: 'A7:33', reason: 'Subscriber and subscriber ID not found' },
@@ -40,8 +39,21 @@ const E = (() => {
   // ---------------------------------------------------------------- lookups
   const pc = (id) => f('procedureCodes', id)
   const pcByCode = (code) => DB.procedureCodes.find((p) => p.code === code) || null
-  const coverages = (caseId) => DB.coverages.filter((c) => c.caseId === caseId).sort((a, b) => a.rank - b.rank)
-  const coverage = (caseId, rank) => DB.coverages.find((c) => c.caseId === caseId && c.rank === rank) || null
+  /** A code with Modifier Override on replaces whatever modifiers a line brought
+   *  from other sources — the EMR, a biller, a coding rule (client 2026-09-30). */
+  const overrideModifiers = (code, mods) => (code && code.modifierOverride && (code.modifiers || []).length ? [...code.modifiers] : [...(mods || [])])
+  // Coverage belongs to the patient; a case picks its primary and optional secondary
+  // from that list (client 2026-09-30). The rank is the case's choice, not the coverage's.
+  const RANK_KEY = { 1: 'primaryCoverageId', 2: 'secondaryCoverageId' }
+  const coverage = (caseId, rank) => {
+    const c = f('cases', caseId)
+    const cv = c && RANK_KEY[rank] ? f('coverages', c[RANK_KEY[rank]]) : null
+    return cv ? { ...cv, rank } : null
+  }
+  const coverages = (caseId) => [coverage(caseId, 1), coverage(caseId, 2)].filter(Boolean)
+  const coveragesOfPatient = (patientId) => DB.coverages.filter((cv) => cv.patientId === patientId)
+  /** Cases that name this coverage as primary or secondary. */
+  const casesUsingCoverage = (covId) => DB.cases.filter((c) => c.primaryCoverageId === covId || c.secondaryCoverageId === covId)
   const insOf = (cov) => (cov ? f('insurances', cov.insuranceId) : null)
   const primaryIns = (caseId) => insOf(coverage(caseId, 1))
 
@@ -138,7 +150,7 @@ const E = (() => {
     }
     return (
       DB.authorizations.find(
-        (a) => a.coverageId === cov.id && a.start <= visit.dos && a.end >= visit.dos && authRemaining(a) > 0,
+        (a) => a.caseId === visit.caseId && a.coverageId === cov.id && a.start <= visit.dos && a.end >= visit.dos && authRemaining(a) > 0,
       ) || null
     )
   }
@@ -177,7 +189,8 @@ const E = (() => {
     const cov = c ? coverage(c.id, 1) : null
     return holdCovers(prov, v.dos, v.locationId, cov ? cov.insuranceId : null)
   }
-  const enrollment = (prov, insId) => (prov ? (prov.enrollments || []).find((e) => e.insuranceId === insId) : null)
+  /** Rendering or Billing (client 2026-09-30): claims of a Rendering provider are held. */
+  const PROVIDER_TYPES = ['Rendering', 'Billing']
 
   // ---------------------------------------------------------------- billing exceptions (§4.4)
   const zipState = (zip) => {
@@ -336,9 +349,8 @@ const E = (() => {
         line.rate = p.rate
         line.priceSource = p.source
         line.balIns = p.amount
-        const toMods = [to.defaultModifier, to.defaultModifier2].filter(Boolean)
-        const fromMods = [code.defaultModifier, code.defaultModifier2].filter(Boolean)
-        if (toMods.length) line.modifiers = [...toMods, ...line.modifiers.filter((m) => !toMods.includes(m) && !fromMods.includes(m))]
+        // The replacement code's modifier override, when switched on, wins as it does at intake
+        line.modifiers = overrideModifiers(to, line.modifiers)
         applied.push({ type: 'Replace', text: `${code.code} → ${to.code}`, scope, ruleId: rule.id })
       } else if (rule.type === 'Drop') {
         line.dropped = true
@@ -398,10 +410,10 @@ const E = (() => {
       else res('auth', 'fail', 'No authorization with an active date range and remaining visits for this date of service.')
     }
 
-    // 5 · credentialing
-    const en = enrollment(prov, ins.id)
-    if (en && en.status === 'Active' && (!en.effective || en.effective <= v.dos)) res('cred', 'pass', `${S.provName(prov, false)} is actively enrolled with ${ins.name}.`)
-    else res('cred', 'fail', `${S.provName(prov, false)} is ${en ? en.status.toLowerCase() : 'not enrolled'} with ${ins.name} for this date of service.`)
+    // 5 · provider type — Rendering holds the claim, Billing lets it go (client 2026-09-30)
+    if (prov && prov.providerType === 'Billing') res('ptype', 'pass', `${S.provName(prov, false)} is a Billing provider — eligible for submission.`)
+    else if (prov && prov.providerType === 'Rendering') res('ptype', 'fail', `${S.provName(prov, false)} is a Rendering provider — their claims are put on hold.`)
+    else res('ptype', 'fail', `${prov ? S.provName(prov, false) : 'The rendering provider'} has no provider type yet.`)
 
     // 6 · payer rules — unit caps and conditional boxes
     const payerIssues = []
@@ -414,28 +426,13 @@ const E = (() => {
     if (['PIP', 'Workers Comp'].includes(ins.type) && !cov.claimNumber) payerIssues.push('Box 11b needs the claim number')
     res('payer', payerIssues.length ? 'fail' : 'pass', payerIssues.length ? payerIssues.join(' · ') + '.' : `Units within ${ins.name} limits; conditional boxes filled.`)
 
-    // 7 · AI coding quality (add-on, simulated)
-    if (!DB.settings.aiCoding) res('coding', 'skip', 'AI coding add-on is switched off.')
-    else {
-      const issues = []
-      const dx = v.dx || []
-      claimLines(claim).forEach((l) => {
-        const code = pc(l.procedureCodeId)
-        if (!l.pointers.length) issues.push(`${code.code} has no diagnosis pointer`)
-        const pointed = l.pointers.map((ptr) => dx[ptr - 1]).filter(Boolean)
-        if (code.code === '97750' && pointed.length && pointed.every((d) => /^[RZ]/.test(d)))
-          issues.push(`97750 is not supported by ${pointed.join(', ')} alone — link a musculoskeletal diagnosis`)
-      })
-      res('coding', issues.length ? 'fail' : 'pass', issues.length ? issues.join(' · ') + '.' : 'Diagnosis-to-CPT consistency verified.')
-    }
-
-    // 8 · payer audit — the payer's claims are reviewed and documented before they go
+    // 7 · payer audit — the payer's claims are reviewed and documented before they go
     //     out (client 2026-09-23; not a V2 rule, see A-P57)
     if (!ins.auditRequired) res('audit', 'skip', `${ins.name} does not audit claims.`)
     else if (claim.audit) res('audit', 'pass', `Audited by ${S.userName(claim.audit.by)} — ${claim.audit.docs.join(', ')}${claim.audit.note ? ` · ${claim.audit.note}` : ''}.`)
     else res('audit', 'fail', `${ins.name} is marked Audit required: a reviewer must check this claim and record the documents attached before it is submitted.`)
 
-    // 9 · manual release — insurance hold routes the claim to its release bucket (PRD V2 §6.2, CH-01)
+    // 8 · manual release — insurance hold routes the claim to its release bucket (PRD V2 §6.2, CH-01)
     if (eff(ins, 'insuranceHold') && !claim.released) {
       claim.bucketId = ins.releaseBucketId
       const b = bucketOf(claim)
@@ -470,9 +467,8 @@ const E = (() => {
     ({
       missing: 'Complete the missing claim data',
       auth: 'Obtain or record an authorization',
-      cred: 'Confirm provider enrollment with the payer',
+      ptype: 'Review the provider type',
       payer: 'Correct units or conditional boxes',
-      coding: 'Review diagnosis pointers',
       manual: 'Review and release from the bucket',
     })[k] || ''
 
@@ -699,13 +695,13 @@ const E = (() => {
     if (newLines) {
       claimLines(orig).forEach((l) => (l.void = true))
       lineIds = newLines.map((nl) => {
-        const line = { id: U.id('ln'), visitId: v.id, procedureCodeId: nl.procedureCodeId, units: nl.units, modifiers: [...nl.modifiers], pointers: [...nl.pointers], pos: nl.pos || f('locations', v.locationId).pos, notes: '', amount: 0, balIns: 0, balPat: 0 }
+        const line = { id: U.id('ln'), visitId: v.id, procedureCodeId: nl.procedureCodeId, units: nl.units, modifiers: overrideModifiers(pc(nl.procedureCodeId), nl.modifiers), pointers: [...nl.pointers], pos: nl.pos || f('locations', v.locationId).pos, notes: '', amount: 0, balIns: 0, balPat: 0 }
         DB.chargeLines.push(line)
         priceLine(line, v)
         return line.id
       })
     }
-    const claim = newClaim(v, cov, { frequency: freq, originalRef: orig.payerIcn || orig.clearinghouseRef, originalClaimId: orig.id, lineIds })
+    const claim = newClaim(v, cov, { rank: orig.rank, frequency: freq, originalRef: orig.payerIcn || orig.clearinghouseRef, originalClaimId: orig.id, lineIds })
     claim.total = claimTotal(claim)
     orig.status = freq === '8' ? 'Voided' : 'Replaced'
     orig.replacedBy = claim.id
@@ -823,7 +819,7 @@ const E = (() => {
       if (nextCov && leftover > 0 && !DB.claims.some((c) => c.visitId === claim.visitId && c.rank === nextCov.rank && !['Replaced', 'Voided', 'Cancelled'].includes(c.status))) {
         const sec = newClaim(S.visitOf(claim), nextCov, { lineIds: [...claim.lineIds], box29: claimPaid(claim), primaryClaimId: claim.id })
         sec.total = claimTotal(sec)
-        S.log(`${nextCov.rank === 2 ? 'Secondary' : 'Tertiary'} claim created after primary remit`, { module: 'BILLING', entityType: 'claim', entityId: sec.id, detail: `${insOf(nextCov).name} · Box 29 amount paid ${U.money(sec.box29)}` })
+        S.log('Secondary claim created after primary remit', { module: 'BILLING', entityType: 'claim', entityId: sec.id, detail: `${insOf(nextCov).name} · Box 29 amount paid ${U.money(sec.box29)}` })
         scrub(sec, {})
         out.secondary = sec
         S.emit('claim.secondary', sec)
@@ -1084,7 +1080,7 @@ const E = (() => {
     }
     DB.visits.unshift(v)
     pl.lines.forEach((l) => {
-      const line = { id: U.id('ln'), visitId: v.id, procedureCodeId: l.procedureCodeId, units: l.units, modifiers: [...(l.modifiers || [])], pointers: [...(l.pointers || [1])], pos: l.pos || f('locations', pl.locationId).pos, notes: '', amount: 0, balIns: 0, balPat: 0 }
+      const line = { id: U.id('ln'), visitId: v.id, procedureCodeId: l.procedureCodeId, units: l.units, modifiers: overrideModifiers(pc(l.procedureCodeId), l.modifiers), pointers: [...(l.pointers || [1])], pos: l.pos || f('locations', pl.locationId).pos, notes: '', amount: 0, balIns: 0, balPat: 0 }
       DB.chargeLines.push(line)
       priceLine(line, v)
     })
@@ -1110,11 +1106,11 @@ const E = (() => {
       const nv = { ...U.clone(v), id: U.id('v'), recordId: `${v.recordId}-R`, status: 'Billed', createdOn: DB.today, replaces: null }
       DB.visits.unshift(nv)
       up.payload.lines.forEach((l) => {
-        const line = { id: U.id('ln'), visitId: nv.id, procedureCodeId: l.procedureCodeId, units: l.units, modifiers: [...l.modifiers], pointers: [...l.pointers], pos: l.pos || f('locations', nv.locationId).pos, notes: '', amount: 0, balIns: 0, balPat: 0 }
+        const line = { id: U.id('ln'), visitId: nv.id, procedureCodeId: l.procedureCodeId, units: l.units, modifiers: overrideModifiers(pc(l.procedureCodeId), l.modifiers), pointers: [...l.pointers], pos: l.pos || f('locations', nv.locationId).pos, notes: '', amount: 0, balIns: 0, balPat: 0 }
         DB.chargeLines.push(line)
         priceLine(line, nv)
       })
-      result = newClaim(nv, f('coverages', claim.coverageId))
+      result = newClaim(nv, f('coverages', claim.coverageId), { rank: claim.rank })
       S.log('Submitted anyway as a fresh claim', { module: 'BILLING', entityType: 'claim', entityId: result.id, detail: `Update to ${claim.number} force-submitted` })
       scrub(result, {})
       up.status = 'Submitted anyway'
@@ -1139,9 +1135,9 @@ const E = (() => {
 
   return {
     LIMITS, DUMMY_NPIS, DUMMY_PHONES, HOLDS, HOLD_ORDER, REJECTIONS, AGING,
-    pc, pcByCode, coverages, coverage, insOf, primaryIns, linesOfVisit, claimLines, claimTotal, claimsOfVisit,
+    pc, pcByCode, overrideModifiers, coverages, coverage, coveragesOfPatient, casesUsingCoverage, insOf, primaryIns, linesOfVisit, claimLines, claimTotal, claimsOfVisit,
     activeClaimOfVisit, paymentsOfClaim, claimPaid, claimBalance, claimInsBalance, visitTotal, dxLabel, carcKnown,
-    carcDesc, feeRow, price, priceLine, repriceVisit, authRemaining, authStatus, authUsable, holdActive, holdCovers, holdRunning, holdWindow, holdScope, holdText, recordAudit, enrollment,
+    carcDesc, feeRow, price, priceLine, repriceVisit, authRemaining, authStatus, authUsable, holdActive, holdCovers, holdRunning, holdWindow, holdScope, holdText, recordAudit, PROVIDER_TYPES,
     zipState, npiValid, detectExceptions, syncExceptions, intake, ruleFor, scrub, newClaim, setClaimSeq, resetSequences, submit, cascade,
     cascadeSummary, release, pend, returnToReview, respond, resubmit, releaseFromBucket, waitingInBucket, corrected, adjudicate, createEra,
     eraTotal, applyAdjudication, postEra, postEraClaim, postBatch, postPatientPayment, reversePayment, runSla,

@@ -1,6 +1,7 @@
 /* Admin — account setup (§1), access control (§1.3–1.4, §10.2, §10.6),
-   EMR integration, setup data, coding rules,
-   submission automation and the audit log. */
+   EMR integration, coding rules, submission automation and the audit log.
+   Setup — providers, payers, codes, fees and referring physicians — is its own
+   module beside Admin (client 2026-09-30) and shares this file's sections. */
 
 const ADMIN_SECTIONS = [
   { group: 'Organization', items: [
@@ -10,6 +11,13 @@ const ADMIN_SECTIONS = [
     { key: 'roles', label: 'Roles & permissions', icon: 'lock', perm: 'ADMIN' },
     { key: 'integration', label: 'EMR integration', icon: 'plug', perm: 'INTEGRATION' },
   ] },
+  { group: 'Billing rules', items: [
+    { key: 'rules', label: 'Coding rules', icon: 'branch', perm: 'ADMIN' },
+    { key: 'automation', label: 'Submission & automation', icon: 'clock', perm: 'ADMIN' },
+  ] },
+  { group: 'Audit', items: [{ key: 'audit', label: 'Audit log', icon: 'history', perm: 'ADMIN' }] },
+]
+const SETUP_SECTIONS = [
   { group: 'Setup', items: [
     { key: 'providers', label: 'Providers', icon: 'stethoscope', perm: 'ADMIN' },
     { key: 'classes', label: 'Insurance classes', icon: 'layers', perm: 'ADMIN' },
@@ -18,24 +26,20 @@ const ADMIN_SECTIONS = [
     { key: 'codes', label: 'Procedure codes', icon: 'hash', perm: 'ADMIN' },
     { key: 'fees', label: 'Fee schedules', icon: 'dollar', perm: 'ADMIN' },
     { key: 'referrers', label: 'Referring physicians', icon: 'user', perm: 'ADMIN' },
-    { key: 'portals', label: 'Payer portals', icon: 'link', perm: 'ADMIN' },
   ] },
-  { group: 'Billing rules', items: [
-    { key: 'rules', label: 'Coding rules', icon: 'branch', perm: 'ADMIN' },
-    { key: 'automation', label: 'Submission & automation', icon: 'clock', perm: 'ADMIN' },
-  ] },
-  { group: 'Audit', items: [{ key: 'audit', label: 'Audit log', icon: 'history', perm: 'ADMIN' }] },
 ]
-const adminItems = () => ADMIN_SECTIONS.flatMap((g) => g.items).filter((i) => S.can(i.perm, 'r') && (!i.global || S.isGlobal()))
+const SETUP_KEYS = SETUP_SECTIONS.flatMap((g) => g.items.map((i) => i.key))
+const sectionItems = (sections) => sections.flatMap((g) => g.items).filter((i) => S.can(i.perm, 'r') && (!i.global || S.isGlobal()))
 
-Screens.admin = {
+/** A module made of sections in a side menu: Admin, and Setup beside it. */
+const sectionScreen = (root, sections, title) => ({
   render(parts, q) {
-    const items = adminItems()
+    const items = sectionItems(sections)
     const key = items.some((i) => i.key === parts[0]) ? parts[0] : items[0]?.key
     const item = items.find((i) => i.key === key)
-    const side = `<aside class="subnav">${ADMIN_SECTIONS.map((g) => {
+    const side = `<aside class="subnav">${sections.map((g) => {
       const vis = g.items.filter((i) => S.can(i.perm, 'r'))
-      return vis.length ? `<span class="eyebrow">${g.group}</span>${vis.map((i) => `<a class="subnav-link ${i.key === key ? 'active' : ''}" href="#/admin/${i.key}">${I(i.icon)}<span>${i.label}</span></a>`).join('')}` : ''
+      return vis.length ? `<span class="eyebrow">${g.group}</span>${vis.map((i) => `<a class="subnav-link ${i.key === key ? 'active' : ''}" href="#/${root}/${i.key}">${I(i.icon)}<span>${i.label}</span></a>`).join('')}` : ''
     }).join('')}</aside>`
     // Fresh System before the first practice: only practice-independent sections can open
     const needsPractice = !S.practice() && !['practices', 'users', 'roles', 'codes', 'audit'].includes(key)
@@ -43,7 +47,7 @@ Screens.admin = {
       ? UI.empty({ icon: 'building', title: 'No practice yet', text: `${U.esc(item ? item.label : 'This list')} belongs to a practice. Create the practice and its primary location first.`, action: S.isGlobal() ? UI.btn({ label: 'Create the practice', icon: 'plus', variant: 'primary', act: 'go', data: { hash: '#/admin/practices' } }) : '' })
       : Adm[key] ? Adm[key](q) : ''
     const viewOnly = item && !S.can(item.perm, 'u') && !S.can(item.perm, 'c')
-    return `<div class="screen-split">${side}<div class="subnav-content"><div class="page-x screen-head"><div><h1 class="screen-title">${U.esc(item ? item.label : 'Admin')}</h1><p class="screen-sub">${U.esc(Adm.sub[key] || '')}${viewOnly ? ' · ' + UI.chip('inert', 'View only') : ''}</p></div><div class="screen-actions">${!needsPractice && Adm.actions[key] ? Adm.actions[key]() : ''}</div></div><div class="page-x screen-body">${body}</div></div></div>`
+    return `<div class="screen-split">${side}<div class="subnav-content"><div class="page-x screen-head"><div><h1 class="screen-title">${U.esc(item ? item.label : title)}</h1><p class="screen-sub">${U.esc(Adm.sub[key] || '')}${viewOnly ? ' · ' + UI.chip('inert', 'View only') : ''}</p></div><div class="screen-actions">${!needsPractice && Adm.actions[key] ? Adm.actions[key]() : ''}</div></div><div class="page-x screen-body">${body}</div></div></div>`
   },
   after(parts, q) {
     if (parts[0] === 'providers' && q.open && S.view('prov-open', {}).done !== q.open) {
@@ -51,7 +55,9 @@ Screens.admin = {
       ACT['prov.edit']({ dataset: { id: q.open } })
     }
   },
-}
+})
+Screens.admin = sectionScreen('admin', ADMIN_SECTIONS, 'Admin')
+Screens.setup = sectionScreen('setup', SETUP_SECTIONS, 'Setup')
 const canA = (op) => S.can('ADMIN', op)
 
 const Adm = {
@@ -61,16 +67,15 @@ const Adm = {
     users: 'Users, service accounts and their practice / location grants.',
     roles: 'Permissions per role and module. A user with several roles gets the union.',
     integration: 'Integration is set up per location. Only integrated locations send sessions into billing.',
-    providers: 'Billing and rendering clinicians. Clinicians do not log in.',
+    providers: 'Billing and rendering clinicians. A Rendering provider’s claims are put on hold; a Billing provider’s go out. Clinicians do not log in.',
     classes: 'Groups of insurances that share billing rules. The class holds the default of every rule; each insurance inherits it unless it overrides it.',
-    insurances: 'Payers as the practice bills them: class, rule overrides, insurance hold and portal credentials.',
+    insurances: 'Payers as the practice bills them: class, rule overrides, insurance hold and payer portal link.',
     buckets: 'Named manual-release queues. Insurances with the insurance hold checked are assigned to one; their claims stop here after scrubbing until a user releases them.',
-    codes: 'CPT / HCPCS codes with category and active flag, shared by every practice.',
+    codes: 'CPT / HCPCS codes with category, active flag and optional override modifiers, shared by every practice.',
     fees: 'The billed price per unit for one code and one insurance; otherwise the code’s default fee.',
     referrers: 'Referring (DN) and supervising (DQ) physicians. The type sets the Box 17 qualifier.',
-    portals: 'Where each payer’s claims and remittances are checked online. Credentials are stored on the insurance and masked for every role except System Admin.',
     rules: 'Replace and Drop rules run during scrubbing; payer-specific rules override default rules.',
-    automation: 'Scheduled submission interval, the AI coding add-on and the SLA source.',
+    automation: 'When released charges are submitted automatically.',
     audit: 'Every action taken in the system: who, what, when and on which record.',
   },
   actions: {
@@ -568,7 +573,6 @@ ACT['emr.elect'] = async (el) => {
 // ---------------------------------------------------------------- providers
 Adm.providers = () => {
   const list = DB.providers.filter((p) => p.practiceId === S.session.practiceId)
-  const payers = DB.insurances.filter((i) => i.practiceId === S.session.practiceId && !i.draft)
   return UI.table({
     cols: [
       { key: 'code', label: 'Provider ID', sort: true, render: (p) => `<span class="code">${U.esc(p.code)}</span>` },
@@ -576,7 +580,7 @@ Adm.providers = () => {
       { key: 'npi', label: 'NPI', render: (p) => (E.npiValid(p.npi) ? p.npi : `<span class="status critical">${p.npi || 'Missing'}</span>`) },
       { key: 'tax', label: 'Taxonomy · license', render: (p) => `${U.esc(p.taxonomy || '—')}<span class="sub">${U.esc(p.stateLicense || '—')}</span>` },
       { key: 'hold', label: 'Claim hold', render: (p) => (p.claimHoldUntil ? `<span class="status ${E.holdRunning(p) ? 'attention' : 'inert'}">${U.esc(E.holdWindow(p))}</span><span class="sub">${U.esc(p.claimHoldReason)} · ${U.esc(E.holdScope(p))}</span>` : '<span class="muted">None</span>') },
-      { key: 'enr', label: 'Payer enrollment', render: (p) => { const a = p.enrollments.filter((e) => e.status === 'Active').length; const pen = p.enrollments.filter((e) => e.status === 'Pending').length; return `${a}/${payers.length} active${pen ? ` · <span class="status warning">${pen} pending</span>` : ''}` } },
+      { key: 'providerType', label: 'Provider type', sort: true, render: (p) => (p.providerType === 'Rendering' ? `${UI.tag('Rendering', 'sand')}<span class="sub">Claims put on hold</span>` : p.providerType === 'Billing' ? `${UI.tag('Billing')}<span class="sub">Eligible for submission</span>` : '<span class="muted">Not set</span>') },
       { key: 'st', label: 'Status', render: (p) => (p.draft ? UI.chip('critical', 'Draft from EMR') : UI.status(p.isActive ? 'success' : 'inert', p.isActive ? 'Active' : 'Inactive')) },
     ],
     empty: UI.empty({ icon: 'stethoscope', title: 'No providers yet', text: 'Providers are the clinicians who treat and bill — every visit names a billing and a rendering provider, printed with their NPI on the claim. They do not sign in. A provider can also arrive as a draft profile when an EMR session names someone unknown.', action: canA('c') ? UI.btn({ label: 'Add a provider', icon: 'plus', variant: 'primary', act: 'prov.edit' }) : '' }),
@@ -592,7 +596,6 @@ ACT['prov.edit'] = (el) => {
     items.length
       ? items.map((x) => `<label class="check-row"><input type="checkbox" ${attr}="${x.id}" ${chosen.includes(x.id) ? 'checked' : ''} ${editable ? '' : 'disabled'}><span>${U.esc(x.name)}</span></label>`).join('')
       : '<div class="t-micro muted">None yet.</div>'
-  const enrHtml = `<div class="form-section-title" style="margin-top:20px">Payer enrollment (credentialing)</div><div class="t-micro muted-2 mt-4 mb-8">Claims are checked for active enrollment with the payer on the date of service.</div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Payer</th><th>Status</th><th>Effective</th></tr></thead><tbody>${payers.map((i) => { const e = p ? p.enrollments.find((x) => x.insuranceId === i.id) : null; return `<tr><td class="ink">${U.esc(i.name)}</td><td><select class="mini-select" data-enr="${i.id}" ${editable ? '' : 'disabled'} aria-label="Enrollment with ${U.esc(i.name)}">${['Active', 'Pending', 'Not enrolled'].map((s) => `<option ${((e && e.status) || 'Not enrolled') === s ? 'selected' : ''}>${s}</option>`).join('')}</select></td><td><input class="mini-input" style="width:140px" type="date" data-enr-date="${i.id}" value="${(e && e.effective) || ''}" ${editable ? '' : 'disabled'} aria-label="Effective date"></td></tr>` }).join('')}</tbody></table></div>${payers.length ? '' : `<div class="mt-8">${UI.notice('warning', 'No insurances yet.', 'Enrollment is recorded per payer. Add the practice’s insurances first; until the provider is enrolled with a payer, that payer’s claims stop in the Credentialing hold.')}</div>`}`
   const h = UI.modal({
     title: p ? S.provName(p) || 'Provider' : 'New provider',
     desc: p && p.draft ? U.esc(p.draftFrom || 'Draft profile from the EMR') : 'Clinicians carry an individual NPI, state license and taxonomy.',
@@ -603,9 +606,10 @@ ACT['prov.edit'] = (el) => {
       { name: 'credential', label: 'Credential', span: 4, placeholder: 'PT, DPT', help: 'Optional.', disabled: !editable },
       { name: 'code', label: 'Provider ID', required: true, span: 3, disabled: !editable },
       { name: 'specialty', label: 'Specialty', type: 'select', required: true, span: 5, options: ['PHYSICAL THERAPIST', 'OCCUPATIONAL THERAPIST', 'SPEECH-LANGUAGE PATHOLOGIST'], disabled: !editable },
+      { name: 'providerType', label: 'Provider type', type: 'select', required: true, span: 4, options: E.PROVIDER_TYPES, disabled: !editable, help: 'Rendering: claims for this provider are put on hold. Billing: eligible for submission.' },
       { name: 'npi', label: 'Individual NPI', type: 'npi', required: true, span: 4, help: 'Required for billing.', disabled: !editable, validate: (v) => (E.DUMMY_NPIS.includes(v) ? 'Please enter a valid NPI.' : '') },
-      { name: 'taxonomy', label: 'Taxonomy code', required: true, span: 6, disabled: !editable },
-      { name: 'stateLicense', label: 'State license', span: 6, disabled: !editable },
+      { name: 'taxonomy', label: 'Taxonomy code', required: true, span: 4, disabled: !editable },
+      { name: 'stateLicense', label: 'State license', span: 4, disabled: !editable },
       { type: 'section', label: 'Claim hold' },
       { type: 'note', label: 'While the hold is running, this provider’s visits inside the window wait in Delayed and unsent claims stop in the Provider hold — billing and submission both. When the end date passes, they go out normally.' },
       { name: 'claimHoldFrom', label: 'Hold from', type: 'date', span: 4, requiredIf: (v) => !!v.claimHoldUntil, disabled: !editable },
@@ -614,7 +618,7 @@ ACT['prov.edit'] = (el) => {
       { type: 'html', span: 6, html: `<div class="eyebrow mb-8">Locations the hold covers</div>${scopeList(locs, 'data-hold-loc', (p && p.claimHoldLocations) || [])}<div class="t-micro muted-2 mt-4">Tick none to cover every location.</div>` },
       { type: 'html', span: 6, html: `<div class="eyebrow mb-8">Payers the hold covers</div>${scopeList(payers, 'data-hold-ins', (p && p.claimHoldInsurances) || [])}<div class="t-micro muted-2 mt-4">Tick none to cover every payer.</div>` },
       { name: 'isActive', label: 'Active', type: 'checkbox', span: 12, disabled: !editable },
-    ], p || { isActive: true, specialty: 'PHYSICAL THERAPIST', taxonomy: '225100000X', code: String(330 + DB.providers.length) }) + enrHtml,
+    ], p || { isActive: true, specialty: 'PHYSICAL THERAPIST', taxonomy: '225100000X', code: String(330 + DB.providers.length) }),
     foot: UI.btn({ label: editable ? 'Cancel' : 'Close', variant: 'quiet', act: 'layer.close' }) + (editable ? UI.btn({ label: 'Save provider', variant: 'primary', act: 'prov.save' }) : ''),
   })
   if (p) h.el.dataset.id = p.id
@@ -623,10 +627,9 @@ ACT['prov.save'] = (el) => {
   const layer = el.closest('.layer')
   const vals = UI.submitForm(UI.formOf(layer))
   if (!vals) return
-  const enrollments = U.qsa('[data-enr]', layer).filter((s) => s.value !== 'Not enrolled').map((s) => ({ insuranceId: s.dataset.enr, status: s.value, effective: layer.querySelector(`[data-enr-date="${s.dataset.enr}"]`).value || null }))
   const picked = (attr) => U.qsa(`[${attr}]`, layer).filter((x) => x.checked).map((x) => x.getAttribute(attr))
   const held = !!vals.claimHoldUntil
-  const data = { firstName: vals.firstName, lastName: vals.lastName, credential: vals.credential, code: vals.code, specialty: vals.specialty, npi: vals.npi, taxonomy: vals.taxonomy, stateLicense: vals.stateLicense, claimHoldFrom: held ? vals.claimHoldFrom || null : null, claimHoldUntil: vals.claimHoldUntil || null, claimHoldReason: held ? vals.claimHoldReason : '', claimHoldLocations: held ? picked('data-hold-loc') : [], claimHoldInsurances: held ? picked('data-hold-ins') : [], isActive: vals.isActive, enrollments, draft: false }
+  const data = { firstName: vals.firstName, lastName: vals.lastName, credential: vals.credential, code: vals.code, specialty: vals.specialty, providerType: vals.providerType, npi: vals.npi, taxonomy: vals.taxonomy, stateLicense: vals.stateLicense, claimHoldFrom: held ? vals.claimHoldFrom || null : null, claimHoldUntil: vals.claimHoldUntil || null, claimHoldReason: held ? vals.claimHoldReason : '', claimHoldLocations: held ? picked('data-hold-loc') : [], claimHoldInsurances: held ? picked('data-hold-ins') : [], isActive: vals.isActive, draft: false }
   let p
   if (layer.dataset.id) {
     p = S.find('providers', layer.dataset.id)
@@ -635,7 +638,7 @@ ACT['prov.save'] = (el) => {
     p = { id: U.id('P'), practiceId: S.session.practiceId, ...data }
     DB.providers.push(p)
   }
-  S.log(layer.dataset.id ? 'Provider updated' : 'Provider created', { module: 'ADMIN', entityType: 'provider', entityId: p.id, detail: `${S.provName(p)}${p.claimHoldUntil ? ` · ${E.holdText(p)}` : ''}` })
+  S.log(layer.dataset.id ? 'Provider updated' : 'Provider created', { module: 'ADMIN', entityType: 'provider', entityId: p.id, detail: `${S.provName(p)} · ${p.providerType}${p.claimHoldUntil ? ` · ${E.holdText(p)}` : ''}` })
   UI.closeTop()
   const sum = E.cascadeSummary(E.cascade())
   UI.toast('success', 'Provider saved', sum ? `What happened next: ${sum}.` : '', 7000)
@@ -771,13 +774,13 @@ Adm.insurances = () => {
   return UI.table({
     cols: [
       { key: 'code', label: 'Payer', sort: true, render: (i) => { const cls = E.classOf(i); return `<span class="ink fw-500">${U.esc(S.insLabel(i))}</span><span class="sub">${U.esc(cls ? cls.name : '— no class')} · ${U.esc(i.type || '—')}</span>` } },
-      { key: 'payerId', label: 'Payer ID', render: (i) => U.esc(i.payerId || '—') },
+      { key: 'payerId', label: 'Payer ID', render: (i) => `${U.esc(i.payerId || '—')}${i.portalUrl ? `<span class="sub"><a href="${U.esc(i.portalUrl)}" target="_blank" rel="noopener">${I('link', 'icon-14')} Payer portal</a></span>` : ''}` },
       { key: 'rules', label: 'Effective billing rules', render: (i) => [E.eff(i, 'authRequired') && UI.tag('Auth required'), E.eff(i, 'injuryDateRequired') && UI.tag('Injury date required'), E.eff(i, 'specialtyModifiers') && UI.tag('Specialty modifiers'), i.format === 'CMS1500' && UI.tag('Paper CMS-1500')].filter(Boolean).join(' ') + (E.RULES.some((r) => !E.inherited(i, r.key)) ? ` <span class="t-micro muted">· overrides class</span>` : '') || '<span class="muted">—</span>' },
       { key: 'hold', label: 'Insurance hold', render: (i) => `${i.insuranceHold ? `${UI.tag('Manual release', 'sand')}<span class="sub">${U.esc((S.find('releaseBuckets', i.releaseBucketId) || {}).name || '(no bucket)')}</span>` : '<span class="muted">Automatic</span>'}${i.auditRequired ? `<span class="sub">${UI.tag('Audit required', 'sand')}</span>` : ''}` },
       { key: 'sla', label: 'SLA', sort: (i) => i.slaDays, render: (i) => `${i.slaDays} days` },
       { key: 'st', label: 'Status', render: (i) => (i.draft ? UI.chip('critical', 'Draft from EMR') : UI.status(i.isActive ? 'success' : 'inert', i.isActive ? 'Active' : 'Inactive')) },
     ],
-    empty: UI.empty({ icon: 'landmark', title: 'No insurances yet', text: `An insurance is a payer as this practice bills it. Coverage on a patient’s case points to one, and claims are addressed to that coverage. ${DB.insuranceClasses.some((c) => c.practiceId === S.session.practiceId) ? 'Each one belongs to an insurance class and inherits its rules.' : 'Each one must belong to an insurance class, so create a class first.'}`, action: canA('c') ? UI.btn({ label: DB.insuranceClasses.some((c) => c.practiceId === S.session.practiceId) ? 'Add an insurance' : 'Create an insurance class', icon: 'plus', variant: 'primary', act: DB.insuranceClasses.some((c) => c.practiceId === S.session.practiceId) ? 'ins.edit' : 'go', data: { hash: '#/admin/classes' } }) : '' }),
+    empty: UI.empty({ icon: 'landmark', title: 'No insurances yet', text: `An insurance is a payer as this practice bills it. Coverage on a patient’s case points to one, and claims are addressed to that coverage. ${DB.insuranceClasses.some((c) => c.practiceId === S.session.practiceId) ? 'Each one belongs to an insurance class and inherits its rules.' : 'Each one must belong to an insurance class, so create a class first.'}`, action: canA('c') ? UI.btn({ label: DB.insuranceClasses.some((c) => c.practiceId === S.session.practiceId) ? 'Add an insurance' : 'Create an insurance class', icon: 'plus', variant: 'primary', act: DB.insuranceClasses.some((c) => c.practiceId === S.session.practiceId) ? 'ins.edit' : 'go', data: { hash: '#/setup/classes' } }) : '' }),
     rows: list, view: S.view('adm-ins', { sort: 'code', dir: 'asc', page: 1 }), viewKey: 'adm-ins', rowAct: 'ins.edit', noun: 'insurance', mark: (i) => (i.draft ? 'critical' : null),
   })
 }
@@ -787,7 +790,7 @@ ACT['ins.edit'] = (el) => {
     Dep.modal({
       title: 'Cannot add an insurance yet',
       text: 'Every insurance must belong to exactly one insurance class — the class holds the default billing rules the insurance inherits. This practice has no active insurance class yet.',
-      needs: [{ ok: false, label: 'An insurance class', why: 'For example Commercial, Medicare, Workers’ Comp or Auto / No-Fault.', action: { label: 'Create an insurance class', hash: '#/admin/classes' } }],
+      needs: [{ ok: false, label: 'An insurance class', why: 'For example Commercial, Medicare, Workers’ Comp or Auto / No-Fault.', action: { label: 'Create an insurance class', hash: '#/setup/classes' } }],
     })
     return
   }
@@ -826,14 +829,15 @@ ACT['ins.edit'] = (el) => {
       { type: 'html', span: 12, html: `<div class="card card-pad" style="background:var(--bg-sunk,#f6f7f9)"><div class="eyebrow mb-8">Effective values</div><div id="ins-eff">${effSummary(start, pid)}</div></div>` },
       { type: 'section', label: 'Manual release' },
       { name: 'insuranceHold', label: 'Insurance hold', type: 'checkbox', span: 12, disabled: !editable, desc: 'Claims for this payer stop in a release bucket after scrubbing and go out only when a user releases them.' },
-      { name: 'releaseBucketId', label: 'Release bucket', type: 'select', span: 6, disabled: !editable, hidden: !start.insuranceHold, requiredIf: (v) => !!v.insuranceHold, options: buckets.map((b) => ({ value: b.id, label: b.name + (b.isActive ? '' : ' (inactive)') })), help: buckets.length ? 'Shown only when the insurance hold is checked; required then.' : 'No active bucket — create one in Admin → Release buckets.' },
+      { name: 'releaseBucketId', label: 'Release bucket', type: 'select', span: 6, disabled: !editable, hidden: !start.insuranceHold, requiredIf: (v) => !!v.insuranceHold, options: buckets.map((b) => ({ value: b.id, label: b.name + (b.isActive ? '' : ' (inactive)') })), help: buckets.length ? 'Shown only when the insurance hold is checked; required then.' : 'No active bucket — create one in Setup → Release buckets.' },
       { type: 'section', label: 'Payer audit' },
       { name: 'auditRequired', label: 'Audit required', type: 'checkbox', span: 12, disabled: !editable, desc: 'Claims for this payer stop in the Audit hold after scrubbing. A reviewer records which documents were attached, and the claim goes out only then.' },
       { type: 'section', label: 'Submission & SLA' },
       { name: 'format', label: 'Claim format', type: 'select', span: 4, placeholder: false, options: [{ value: '837P', label: 'EDI 837P' }, { value: 'CMS1500', label: 'Paper CMS-1500 (print queue)' }], disabled: !editable },
       { name: 'maxUnits', label: 'Max units per line', type: 'number', span: 4, min: 1, max: 20, required: true, disabled: !editable },
       { name: 'slaDays', label: 'Payment SLA (days)', type: 'number', span: 4, min: 1, max: 365, required: true, disabled: !editable },
-      ...(ins ? [{ type: 'note', html: `Portal access for this payer is kept in <strong>Admin → Payer portals</strong>. ${UI.btn({ label: 'Open payer portals', size: 'sm', icon: 'arrowRight', act: 'go', data: { hash: '#/admin/portals' } })}` }] : []),
+      { type: 'section', label: 'Payer portal' },
+      { name: 'portalUrl', label: 'Payer portal URL', span: 12, disabled: !editable, placeholder: 'Enter payer portal URL', help: 'Where this payer’s claims and remittances are checked online. A link only — no credentials are stored.' },
     ], start, {
       onChange: (vals, formEl) => {
         const f = formEl.querySelector('[data-field="releaseBucketId"]')
@@ -855,66 +859,20 @@ ACT['ins.save'] = (el) => {
     code: Number(vals.code), name: vals.name, classId: vals.classId, type: vals.type, payerId: vals.payerId, address: { line1: vals.line1, city: vals.city, state: vals.state, zip: vals.zip }, phone: vals.phone, fax: vals.fax,
     ...Object.fromEntries(E.RULES.map((r) => [r.key, UNTRI(vals[r.key])])),
     insuranceHold: vals.insuranceHold, releaseBucketId: bucket && bucket.practiceId === S.session.practiceId ? bucket.id : null, auditRequired: vals.auditRequired,
-    format: vals.format, maxUnits: Number(vals.maxUnits), slaDays: Number(vals.slaDays), draft: false,
+    format: vals.format, maxUnits: Number(vals.maxUnits), slaDays: Number(vals.slaDays), portalUrl: vals.portalUrl, draft: false,
   }
   let ins
   if (layer.dataset.id) {
     ins = S.find('insurances', layer.dataset.id)
     Object.assign(ins, data)
   } else {
-    ins = { id: U.id('i'), practiceId: S.session.practiceId, isActive: true, portalUrl: '', portalUser: '', portalPassword: '', ...data }
+    ins = { id: U.id('i'), practiceId: S.session.practiceId, isActive: true, ...data }
     DB.insurances.push(ins)
   }
   S.log(layer.dataset.id ? 'Insurance updated' : 'Insurance created', { module: 'ADMIN', entityType: 'insurance', entityId: ins.id, detail: `${ins.name}${ins.insuranceHold ? ` · insurance hold → ${bucket.name}` : ''}` })
   UI.closeTop()
   const sum = E.cascadeSummary(E.cascade())
   UI.toast('success', 'Insurance saved', sum ? `What happened next: ${sum}.` : 'Rules apply to the next scrub.', 7000)
-  R.refresh()
-}
-
-// ---------------------------------------------------------------- payer portals
-Adm.portals = () => {
-  const payers = DB.insurances.filter((i) => i.practiceId === S.session.practiceId && !i.draft)
-  const dash = '<span class="muted">—</span>'
-  return UI.table({
-    cols: [
-      { key: 'payer', label: 'Payer', sort: (i) => i.name, render: (i) => `<span class="ink fw-500">${U.esc(S.insLabel(i))}</span>` },
-      { key: 'url', label: 'Portal', render: (i) => (i.portalUrl ? `<a href="${U.esc(i.portalUrl)}" target="_blank" rel="noopener">${U.esc(i.portalUrl)}</a>` : dash) },
-      { key: 'user', label: 'User', render: (i) => U.esc(i.portalUser) || dash },
-      { key: 'pw', label: 'Password', render: (i) => (i.portalPassword ? (S.canDecrypt() ? `<span class="code">${U.esc(i.portalPassword)}</span>` : '•••••••• <span class="t-micro muted">masked</span>') : dash) },
-      { key: 'act', label: '', cls: 'r', render: (i) => `<div class="row-actions">${canA('u') ? UI.iconBtn({ icon: 'pencil', label: 'Edit portal access', act: 'portal.edit', data: { id: i.id } }) : ''}</div>` },
-    ],
-    rows: payers, view: S.view('adm-portal', { sort: 'payer', dir: 'asc', page: 1 }), viewKey: 'adm-portal', rowAct: canA('u') ? 'portal.edit' : null, noun: 'payer',
-    empty: UI.empty({ icon: 'landmark', title: 'No insurances yet', text: 'Portal access is recorded per payer. Add the practice’s insurances first.', action: canA('c') ? UI.btn({ label: 'Add an insurance', icon: 'arrowRight', act: 'go', data: { hash: '#/admin/insurances' } }) : '' }),
-  })
-}
-ACT['portal.edit'] = (el) => {
-  const ins = S.find('insurances', el.dataset.id)
-  const editable = canA('u')
-  const h = UI.modal({
-    title: `${S.insLabel(ins)} — payer portal`,
-    desc: 'Where this payer’s claims and remittances are checked online.',
-    size: 'md',
-    body: UI.form([
-      { name: 'portalUrl', label: 'Portal URL', span: 12, disabled: !editable, placeholder: 'https://' },
-      { name: 'portalUser', label: 'Portal user', span: 6, disabled: !editable },
-      { name: 'portalPassword', label: 'Portal password', span: 6, disabled: !editable, placeholder: ins.portalPassword && !S.canDecrypt() ? '•••••••• — masked for your role' : '', help: S.canDecrypt() ? 'Visible because you are a System Admin.' : 'Decrypted only for System Admin. Type to replace.' },
-    ], { portalUrl: ins.portalUrl, portalUser: ins.portalUser, portalPassword: S.canDecrypt() ? ins.portalPassword : '' }),
-    foot: UI.btn({ label: editable ? 'Cancel' : 'Close', variant: 'quiet', act: 'layer.close' }) + (editable ? UI.btn({ label: 'Save portal access', variant: 'primary', act: 'portal.save' }) : ''),
-  })
-  h.el.dataset.id = ins.id
-}
-ACT['portal.save'] = (el) => {
-  const layer = el.closest('.layer')
-  const vals = UI.submitForm(UI.formOf(layer))
-  if (!vals) return
-  const ins = S.find('insurances', layer.dataset.id)
-  ins.portalUrl = vals.portalUrl
-  ins.portalUser = vals.portalUser
-  if (vals.portalPassword || S.canDecrypt()) ins.portalPassword = vals.portalPassword
-  S.log('Payer portal access saved', { module: 'ADMIN', entityType: 'insurance', entityId: ins.id, detail: ins.name })
-  UI.closeTop()
-  UI.toast('success', 'Portal access saved')
   R.refresh()
 }
 
@@ -927,7 +885,7 @@ Adm.codes = () => {
       { key: 'description', label: 'Description', sort: true, render: (c) => U.esc(c.description) },
       { key: 'procedureType', label: 'Type', sort: true, render: (c) => U.esc(c.procedureType || '—') },
       { key: 'isTimed', label: 'Timed (8-minute rule)', render: (c) => (c.isTimed ? UI.tag('Timed') : '<span class="muted">Untimed</span>') },
-      { key: 'defaultModifier', label: 'Default modifiers', render: (c) => U.esc([c.defaultModifier, c.defaultModifier2].filter(Boolean).join(' · ')) || '—' },
+      { key: 'modifiers', label: 'Modifier override', render: (c) => (c.modifierOverride && c.modifiers.length ? `${UI.tag('On')} <span class="code">${U.esc(c.modifiers.join(' · '))}</span>` : '<span class="muted">Off</span>') },
       { key: 'defaultFee', label: 'Default fee', sort: true, cls: 'r', render: (c) => (c.defaultFee ? U.money(c.defaultFee) : `<span class="status critical">$0.00</span>`) },
       { key: 'isActive', label: 'Status', render: (c) => UI.status(c.isActive ? 'success' : 'inert', c.isActive ? 'Active' : 'Inactive — not offered on new charge lines') },
       { key: 'act', label: '', cls: 'r', render: (c) => (canEdit ? UI.iconBtn({ icon: 'pencil', label: 'Edit code', act: 'code.edit', data: { id: c.id } }) : '') },
@@ -936,21 +894,34 @@ Adm.codes = () => {
     rows: DB.procedureCodes, view: S.view('adm-codes', { sort: 'code', dir: 'asc', page: 1 }), viewKey: 'adm-codes', noun: 'code', pageSize: 20, mark: (c) => (c.isActive ? null : 'inert'),
   })}`
 }
+/** Up to four modifiers, shown only while Modifier Override is on (client 2026-09-30). */
+const MOD_SLOTS = [1, 2, 3, 4]
+const syncModOverride = (vals, formEl) => {
+  MOD_SLOTS.forEach((n) => {
+    const f = formEl.querySelector(`[data-field="mod${n}"]`)
+    if (f) f.hidden = !vals.modifierOverride
+  })
+  const hint = formEl.querySelector('#mod-override-hint')
+  if (hint) hint.hidden = !vals.modifierOverride
+}
 ACT['code.edit'] = (el) => {
   const c = el.dataset.id ? S.find('procedureCodes', el.dataset.id) : null
+  const start = c ? { ...c, defaultFee: c.defaultFee.toFixed(2), ...Object.fromEntries(MOD_SLOTS.map((n) => [`mod${n}`, c.modifiers[n - 1] || ''])) } : { procedureType: 'Therapeutic', isActive: true, modifierOverride: false }
   const h = UI.modal({
     title: c ? `${c.code} — ${c.description}` : 'New procedure code',
     size: 'md',
     body: UI.form([
       { name: 'code', label: 'CPT / HCPCS', required: true, span: 4, maxLength: 5, disabled: !!c, validate: (v) => (!/^[A-Z0-9]{5}$/i.test(v) ? 'Please enter a valid code.' : !c && DB.procedureCodes.some((x) => x.code === v.toUpperCase()) ? 'This code exists.' : '') },
       { name: 'description', label: 'Description', required: true, span: 8 },
-      { name: 'defaultModifier', label: 'Default modifier 1', span: 3, maxLength: 2 },
-      { name: 'defaultModifier2', label: 'Default modifier 2', span: 3, maxLength: 2, validate: (v, all) => (v && !all.defaultModifier ? 'Use modifier 1 first.' : v && v.toUpperCase() === (all.defaultModifier || '').toUpperCase() ? 'The two modifiers must differ.' : '') },
-      { name: 'defaultFee', label: 'Default fee per unit', type: 'money', required: true, span: 3 },
-      { name: 'procedureType', label: 'Procedure type', type: 'select', required: true, span: 3, options: ['Evaluation', 'Therapeutic', 'Modality', 'Supply / DME'] },
+      { name: 'defaultFee', label: 'Default fee per unit', type: 'money', required: true, span: 6 },
+      { name: 'procedureType', label: 'Procedure type', type: 'select', required: true, span: 6, options: ['Evaluation', 'Therapeutic', 'Modality', 'Supply / DME'] },
       { name: 'isTimed', label: 'Timed — units follow the 8-minute rule', type: 'checkbox', span: 12 },
       { name: 'isActive', label: 'Active', type: 'checkbox', span: 12, desc: 'Inactive codes cannot be added to new charge lines.' },
-    ], c ? { ...c, defaultFee: c.defaultFee.toFixed(2) } : { defaultModifier: 'GP', procedureType: 'Therapeutic', isActive: true }),
+      { type: 'section', label: 'Modifiers' },
+      { name: 'modifierOverride', label: 'Modifier override', type: 'checkbox', switch: true, span: 12, desc: 'Off: charge lines keep the modifiers they arrive with.' },
+      { type: 'html', span: 12, html: `<div id="mod-override-hint" class="form-note" ${start.modifierOverride ? '' : 'hidden'}>These modifiers will override any modifiers provided from other sources.</div>` },
+      ...MOD_SLOTS.map((n) => ({ name: `mod${n}`, label: `Modifier ${n}`, span: 3, maxLength: 2, placeholder: 'Optional', hidden: !start.modifierOverride })),
+    ], start, { onChange: syncModOverride }),
     foot: UI.btn({ label: 'Cancel', variant: 'quiet', act: 'layer.close' }) + UI.btn({ label: 'Save code', variant: 'primary', act: 'code.save' }),
   })
   if (c) h.el.dataset.id = c.id
@@ -959,10 +930,11 @@ ACT['code.save'] = (el) => {
   const layer = el.closest('.layer')
   const vals = UI.submitForm(UI.formOf(layer))
   if (!vals) return
-  if (layer.dataset.id) {
-    const c = S.find('procedureCodes', layer.dataset.id)
-    Object.assign(c, { description: vals.description, defaultModifier: vals.defaultModifier.toUpperCase(), defaultModifier2: (vals.defaultModifier2 || '').toUpperCase(), defaultFee: Number(vals.defaultFee), isTimed: vals.isTimed, procedureType: vals.procedureType, isActive: vals.isActive, isNew: false })
-  } else DB.procedureCodes.push({ id: `pc${vals.code.toUpperCase()}`, code: vals.code.toUpperCase(), description: vals.description, defaultModifier: vals.defaultModifier.toUpperCase(), defaultFee: Number(vals.defaultFee), isTimed: vals.isTimed, procedureType: vals.procedureType, isActive: vals.isActive })
+  // The four inputs are optional; with the override off they are not kept
+  const modifiers = vals.modifierOverride ? MOD_SLOTS.map((n) => vals[`mod${n}`].toUpperCase()).filter(Boolean) : []
+  const data = { description: vals.description, modifierOverride: vals.modifierOverride, modifiers, defaultFee: Number(vals.defaultFee), isTimed: vals.isTimed, procedureType: vals.procedureType, isActive: vals.isActive }
+  if (layer.dataset.id) Object.assign(S.find('procedureCodes', layer.dataset.id), data, { isNew: false })
+  else DB.procedureCodes.push({ id: `pc${vals.code.toUpperCase()}`, code: vals.code.toUpperCase(), ...data })
   DB.visits.filter((v) => ['Exception', 'Review', 'Pended', 'Delayed', 'Released'].includes(v.status)).forEach((v) => E.repriceVisit(v))
   S.log('Procedure code saved', { module: 'ADMIN', detail: vals.code || S.find('procedureCodes', layer.dataset.id).code })
   UI.closeTop()
@@ -979,8 +951,8 @@ Adm.fees = () => {
       <div class="mt-16">${Dep.panel({
         title: 'A fee schedule needs',
         needs: [
-          { ok: !!payers.length, label: 'At least one insurance', why: 'Every insurance needs an insurance class first.', action: { label: 'Add an insurance', hash: '#/admin/insurances' } },
-          { ok: !!DB.procedureCodes.length, label: 'At least one procedure code', why: 'Shared CPT/HCPCS reference data.', action: { label: 'Add a procedure code', hash: '#/admin/codes' } },
+          { ok: !!payers.length, label: 'At least one insurance', why: 'Every insurance needs an insurance class first.', action: { label: 'Add an insurance', hash: '#/setup/insurances' } },
+          { ok: !!DB.procedureCodes.length, label: 'At least one procedure code', why: 'Shared CPT/HCPCS reference data.', action: { label: 'Add a procedure code', hash: '#/setup/codes' } },
         ],
       })}</div>`
   }
@@ -1147,7 +1119,7 @@ ACT['rule.edit'] = (el) => {
     Dep.modal({
       title: 'Cannot add a coding rule yet',
       text: 'Replace and Drop rules act on CPT / HCPCS codes during scrubbing. There are no procedure codes yet.',
-      needs: [{ ok: false, label: 'Procedure codes', why: 'Shared by every practice, maintained by a System Admin.', action: { label: 'Add a procedure code', hash: '#/admin/codes' } }],
+      needs: [{ ok: false, label: 'Procedure codes', why: 'Shared by every practice, maintained by a System Admin.', action: { label: 'Add a procedure code', hash: '#/setup/codes' } }],
     })
     return
   }
@@ -1194,17 +1166,15 @@ Adm.automation = () => {
     { type: 'section', label: 'Scheduled submission' },
     { name: 'schedule', label: 'Submit released charges automatically', type: 'select', placeholder: false, disabled: !editable, options: [{ value: 'off', label: 'Off — submit manually' }, ...s.scheduleOptions.map((o) => ({ value: o.id, label: o.label }))], help: `Last run ${s.lastScheduledRun ? U.stampLabel(s.lastScheduledRun, DB.today) : 'never'}.` },
     { type: 'note', html: `The list is yours to fill: add the times this practice submits on, or remove the ones it never uses. ${editable ? UI.btn({ label: 'Manage the list', size: 'sm', icon: 'clock', act: 'sched.manage' }) : ''}` },
-    { type: 'section', label: 'AI coding quality' },
-    { name: 'aiCoding', label: 'AI add-on: check diagnosis-to-CPT consistency during scrubbing', type: 'checkbox', disabled: !editable, desc: 'Failures go to the Coding Issue hold.' },
-    { type: 'section', label: 'Payer SLA engine' },
-    { name: 'slaSource', label: 'Where SLAs come from', type: 'radio', disabled: !editable, options: [{ value: 'manual', label: 'Configured manually per insurance', desc: 'Set in Setup → Insurances.' }, { value: 'ai', label: 'Predicted by AI agents', desc: 'Not available.', disabled: true }] },
+    { type: 'section', label: 'Payer SLA' },
+    { type: 'note', html: 'Each insurance carries its own payment SLA, set in <strong>Setup → Insurances</strong>.' },
   ], s)}${editable ? `<div class="row-wrap mt-24">${UI.btn({ label: 'Save settings', variant: 'primary', act: 'auto.save' })}</div>` : ''}</div>`
 }
 ACT['auto.save'] = (el) => {
   const vals = UI.readValues(UI.formOf(el.closest('.subnav-content')))
-  Object.assign(DB.settings, { schedule: vals.schedule, aiCoding: vals.aiCoding, slaSource: vals.slaSource || 'manual' })
-  S.log('Automation settings saved', { module: 'ADMIN', detail: `Schedule ${vals.schedule} · AI coding ${vals.aiCoding ? 'on' : 'off'}` })
-  UI.toast('success', 'Settings saved', `${vals.aiCoding ? 'The AI coding check runs' : 'The AI coding check is skipped'} on the next scrub.`)
+  Object.assign(DB.settings, { schedule: vals.schedule })
+  S.log('Automation settings saved', { module: 'ADMIN', detail: `Schedule ${vals.schedule}` })
+  UI.toast('success', 'Settings saved', vals.schedule === 'off' ? 'Released charges are submitted manually.' : 'The next scheduled run uses this interval.')
   R.refresh()
 }
 
