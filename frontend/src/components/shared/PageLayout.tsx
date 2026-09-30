@@ -29,15 +29,28 @@ export function PageHeader({
   className?: string
 }) {
   return (
-    <header className={cn('flex flex-wrap items-end gap-x-5 gap-y-2 pt-8 pb-5', className)}>
-      {/* The 20rem basis makes the actions wrap below the title on a narrow
-          screen instead of squeezing the description to a word per line. */}
-      <div className="min-w-0 grow basis-80">
+    <header
+      className={cn(
+        // A phone stacks it — title, description, then the actions full width,
+        // easy to reach with a thumb. Wider, the actions sit at the right and
+        // wrap below the title only when the title needs the room (the 20rem
+        // basis), never squeezing the description to a word per line.
+        'flex flex-col gap-4 pt-6 pb-5 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-5 sm:gap-y-2 sm:pt-8',
+        className,
+      )}
+    >
+      <div className="min-w-0 sm:grow sm:basis-80">
         {above !== undefined && <div className="mb-2">{above}</div>}
-        <h1 className="text-ink text-[clamp(24px,3vw,32px)] leading-none font-semibold">{title}</h1>
+        <h1 className="text-ink text-[clamp(24px,3vw,32px)] leading-tight font-semibold break-words">
+          {title}
+        </h1>
         {description !== undefined && <p className="text-meta text-n500 mt-2 leading-snug">{description}</p>}
       </div>
-      {actions !== undefined && <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions !== undefined && (
+        <div className="flex flex-col gap-2 *:w-full sm:ml-auto sm:flex-row sm:flex-wrap sm:items-center sm:*:w-auto">
+          {actions}
+        </div>
+      )}
     </header>
   )
 }

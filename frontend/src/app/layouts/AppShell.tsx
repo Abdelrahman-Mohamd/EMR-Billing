@@ -1,33 +1,25 @@
 import { useState, type ReactNode } from 'react'
-import { Link, type LinkProps } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import logoUrl from '@/assets/logo.png'
+import { DESKTOP_NAV_QUERY, useMediaQuery } from '@/lib/hooks/use-media-query'
 import { cn } from '@/lib/utils/cn'
+import { MobileBar } from './MobileNav'
+import { RailLink, type NavGroup } from './RailLink'
+
+export type { NavGroup, NavItem } from './RailLink'
 
 /**
- * The application chrome: a collapsible icon rail on the left, the screen on
- * the right. (Toasts are mounted once, at the root, so sign-in has them too.)
+ * The application chrome. From 768px: a collapsible icon rail on the left,
+ * the screen on the right. Below 768px (the prototype's phone breakpoint):
+ * a brand bar across the top and the rail as a slide-in drawer (MobileBar).
+ * Only one of the two is ever rendered. (Toasts are mounted once, at the
+ * root, so sign-in has them too.)
  *
  * It renders the navigation it is given. It does not know which modules exist,
  * and it does not decide who may see them — a feature or the router filters
  * the list before it arrives here (docs/FRONTEND_ARCHITECTURE.md §8).
  */
-export interface NavItem {
-  label: string
-  icon: ReactNode
-  link: LinkProps
-  /** A count beside the label, e.g. items waiting in a queue. */
-  count?: number
-  /** Draws attention to the count. */
-  alert?: boolean
-}
-
-export interface NavGroup {
-  /** Shown above the group when the rail is open. */
-  label?: string
-  items: readonly NavItem[]
-}
-
 export function AppShell({
   groups,
   /**
@@ -39,10 +31,25 @@ export function AppShell({
   children,
 }: {
   groups: readonly NavGroup[]
-  railFooter?: (rail: { expanded: boolean }) => ReactNode
+  railFooter?: (rail: { expanded: boolean; placement: 'rail' | 'bar' }) => ReactNode
   children: ReactNode
 }) {
   const [expanded, setExpanded] = useState(false)
+  const desktop = useMediaQuery(DESKTOP_NAV_QUERY)
+
+  if (!desktop) {
+    return (
+      <div className="bg-canvas flex h-dvh flex-col overflow-hidden">
+        <MobileBar
+          groups={groups}
+          {...(railFooter === undefined
+            ? {}
+            : { account: railFooter({ expanded: false, placement: 'bar' }) })}
+        />
+        <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-canvas flex h-dvh overflow-hidden">
@@ -109,7 +116,7 @@ export function AppShell({
 
         {railFooter !== undefined && (
           <div className="mt-2 flex flex-col gap-2 border-t border-white/15 pt-3">
-            {railFooter({ expanded })}
+            {railFooter({ expanded, placement: 'rail' })}
           </div>
         )}
 
@@ -123,7 +130,7 @@ export function AppShell({
           onClick={() => setExpanded((open) => !open)}
           aria-expanded={expanded}
           aria-label={expanded ? 'Collapse the sidebar' : 'Expand the sidebar'}
-          className="border-rule-structural bg-canvas text-n600 hover:border-brand hover:text-brand absolute top-1/2 -right-3 z-40 grid size-6 -translate-y-1/2 place-items-center rounded-full border"
+          className="border-rule-structural bg-canvas text-n600 hover:border-brand hover:text-brand absolute top-1/2 -right-3 z-40 grid size-6 -translate-y-1/2 place-items-center rounded-full border after:absolute after:-inset-2.5 after:content-['']"
         >
           {expanded ? (
             <ChevronLeft size={14} aria-hidden="true" />
@@ -135,35 +142,5 @@ export function AppShell({
 
       <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
     </div>
-  )
-}
-
-/** One rail link. Collapsed, only its icon shows and the label becomes a tip. */
-function RailLink({ item, expanded }: { item: NavItem; expanded: boolean }) {
-  return (
-    <Link
-      {...item.link}
-      // Collapsed, the icon carries no text: the name goes into
-      // the accessibility tree, and `data-tip` draws the visible
-      // label on hover and on keyboard focus (styles/index.css).
-      aria-label={expanded ? undefined : item.label}
-      data-tip={expanded ? undefined : item.label}
-      activeProps={{ className: 'bg-white/20 text-white' }}
-      inactiveProps={{ className: 'text-white/[0.78] hover:bg-white/10 hover:text-white' }}
-      className={cn(
-        'flex h-10 flex-none items-center rounded-md no-underline outline-offset-[-2px] focus-visible:outline-white',
-        expanded ? 'gap-3 px-3' : 'nav-tip w-11 justify-center',
-      )}
-    >
-      <span aria-hidden="true" className="flex-none">
-        {item.icon}
-      </span>
-      {expanded && <span className="text-meta truncate">{item.label}</span>}
-      {expanded && item.count !== undefined && (
-        <span className={cn('text-micro ml-auto', item.alert === true ? 'text-sand' : 'text-white/60')}>
-          {item.count}
-        </span>
-      )}
-    </Link>
   )
 }

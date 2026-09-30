@@ -51,7 +51,7 @@ export function Drawer({
             </div>
             <RadixDialog.Close
               aria-label="Close"
-              className="text-n400 hover:bg-n50 hover:text-ink grid size-8 flex-none place-items-center rounded-sm"
+              className="text-n400 hover:bg-n50 hover:text-ink grid size-10 flex-none place-items-center rounded-md sm:size-8 sm:rounded-sm"
             >
               <X size={16} aria-hidden="true" />
             </RadixDialog.Close>

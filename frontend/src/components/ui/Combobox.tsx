@@ -208,7 +208,7 @@ export function Combobox({
               type="button"
               aria-label="Clear selection"
               disabled={disabled}
-              className="text-n500 hover:bg-n200 hover:text-ink absolute right-8 grid size-5 place-items-center rounded-full"
+              className="text-n500 hover:bg-n200 hover:text-ink absolute right-8 grid size-5 place-items-center rounded-full after:absolute after:-inset-2 after:content-['']"
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()

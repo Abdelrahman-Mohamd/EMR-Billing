@@ -40,6 +40,12 @@ export interface Column<T> {
   /** Hidden below `sm`. Use for the columns a phone can live without. */
   hideOnMobile?: boolean
   /**
+   * Hidden below this breakpoint — for a secondary column that a narrower
+   * screen can do without, when the same value is visible elsewhere on the
+   * page. `hideOnMobile` is `hideBelow: 'sm'`.
+   */
+  hideBelow?: 'sm' | 'md' | 'lg' | 'xl'
+  /**
    * This cell holds its own controls (a menu, a button). It is lifted above the
    * row-wide link so those controls stay clickable.
    */
@@ -71,6 +77,19 @@ export interface DataTableProps<T> {
 }
 
 const ALIGN = { left: 'text-left', right: 'text-right', center: 'text-center' } as const
+
+// Whole class names, so Tailwind sees them.
+const HIDE_BELOW = {
+  sm: 'hidden sm:table-cell',
+  md: 'hidden md:table-cell',
+  lg: 'hidden lg:table-cell',
+  xl: 'hidden xl:table-cell',
+} as const
+
+function hiddenBelow<T>(column: Column<T>): string | undefined {
+  const breakpoint = column.hideBelow ?? (column.hideOnMobile === true ? 'sm' : undefined)
+  return breakpoint === undefined ? undefined : HIDE_BELOW[breakpoint]
+}
 
 export function DataTable<T>({
   columns,
@@ -117,7 +136,9 @@ export function DataTable<T>({
     <div className={className}>
       {/* `relative`: an `sr-only` header label is absolutely positioned; without a
           positioned ancestor here it escapes this scroll box and widens the page. */}
-      <div className="relative overflow-x-auto">
+      {/* -mx-2 px-2: room inside the scroll box for the enlarged tap areas of
+          the first and last cells' controls, so they never make it scroll. */}
+      <div className="relative -mx-2 overflow-x-auto px-2">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">{caption}</caption>
           <thead>
@@ -143,7 +164,7 @@ export function DataTable<T>({
                     className={cn(
                       'border-rule-structural text-eyebrow text-n500 border-b px-3 pt-3.5 pb-2.5 align-bottom font-medium whitespace-nowrap uppercase first:pl-0 last:pr-0',
                       ALIGN[column.align ?? 'left'],
-                      column.hideOnMobile === true && 'hidden sm:table-cell',
+                      hiddenBelow(column),
                     )}
                   >
                     {column.sortable === true && onSortChange ? (
@@ -155,7 +176,7 @@ export function DataTable<T>({
                             direction: sorted === 'asc' ? 'desc' : 'asc',
                           })
                         }
-                        className="hover:text-ink inline-flex items-center gap-1 uppercase"
+                        className="hover:text-ink relative inline-flex items-center gap-1 uppercase after:absolute after:-inset-x-1 after:-inset-y-3 after:content-['']"
                       >
                         {column.header}
                         {sorted === 'asc' ? (
@@ -208,7 +229,7 @@ export function DataTable<T>({
                           'border-rule-row text-micro text-n500 border-b px-3 py-[11px] align-middle first:pl-0 last:pr-0',
                           ALIGN[column.align ?? 'left'],
                           column.primary === true && 'text-meta text-ink font-medium',
-                          column.hideOnMobile === true && 'hidden sm:table-cell',
+                          hiddenBelow(column),
                           column.interactive === true && 'relative z-[1]',
                         )}
                       >

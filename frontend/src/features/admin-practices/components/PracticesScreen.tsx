@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import { Building2, Plus } from 'lucide-react'
-import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
-import { EmptyState } from '@/components/ui/States'
+import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States'
 import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { useOrganizations } from '@/features/admin-organizations'
 import { usePractices } from '../queries/use-practices'
@@ -12,6 +10,7 @@ import { LocationDialog } from './LocationDialog'
 import { LocationStatusDialog } from './LocationStatusDialog'
 import { PracticeDetails } from './PracticeDetails'
 import { PracticeDialog } from './PracticeDialog'
+import { PracticePicker } from './PracticePicker'
 
 /** What is open over the screen. One at a time. */
 type Editing =
@@ -20,9 +19,11 @@ type Editing =
   | { kind: 'location-status'; practice: Practice; location: Location }
 
 /**
- * Admin → Practices & locations, laid out as the prototype does: every
- * practice in a table; under it, the selected practice's organization, billing
- * constants and locations.
+ * Admin → Practices & locations: pick a practice from its tile, then see that
+ * practice full width — its header, then its billing details and its
+ * locations as two separate cards. A tile shows only what tells practices
+ * apart; the identifiers are in the details, once. (The prototype picks from a
+ * table that repeats them.)
  *
  * The selected practice is in the URL (`?practice=<id>`) so a reload, the back
  * button and a shared link keep it; without one, the first practice is shown.
@@ -46,110 +47,42 @@ export function PracticesScreen({ selectedId }: { selectedId: number | undefined
       ? undefined
       : organizations.data?.find((candidate) => candidate.id === selected.organizationId)
 
-  const columns: ReadonlyArray<Column<Practice>> = [
-    {
-      key: 'code',
-      header: 'Code',
-      width: '6rem',
-      // Below 640px the name needs the room; the code is in the details below.
-      hideOnMobile: true,
-      cell: (practice) => (
-        <span className="text-ink font-medium [overflow-wrap:anywhere] tabular-nums">{practice.code}</span>
-      ),
-    },
-    {
-      key: 'name',
-      header: 'Practice',
-      primary: true,
-      cell: (practice) => (
-        <span className="block [overflow-wrap:anywhere]">
-          {practice.name}
-          {practice.dbaName !== undefined && <CellSub>DBA {practice.dbaName}</CellSub>}
-        </span>
-      ),
-    },
-    {
-      key: 'npi',
-      header: 'Group NPI',
-      hideOnMobile: true,
-      cell: (practice) => <span className="whitespace-nowrap tabular-nums">{practice.npi}</span>,
-    },
-    {
-      key: 'taxId',
-      header: 'Tax ID',
-      hideOnMobile: true,
-      cell: (practice) => <span className="whitespace-nowrap tabular-nums">{practice.taxId}</span>,
-    },
-    {
-      key: 'taxonomy',
-      header: 'Taxonomy',
-      hideOnMobile: true,
-      cell: (practice) => <span className="whitespace-nowrap tabular-nums">{practice.taxonomyCode}</span>,
-    },
-    {
-      key: 'locations',
-      header: 'Locations',
-      align: 'right',
-      hideOnMobile: true,
-      // Active locations, as the prototype counts them.
-      cell: (practice) => practice.locations.filter((location) => location.isActive).length,
-    },
-    {
-      key: 'status',
-      header: <span className="sr-only">Status</span>,
-      align: 'right',
-      cell: (practice) =>
-        practice.id === selected?.id ? (
-          <Tag tone="brand">Selected</Tag>
-        ) : practice.isActive ? null : (
-          <StatusDot tone="inert">Inactive</StatusDot>
-        ),
-    },
-  ]
+  const newPractice = (
+    <Button
+      variant="primary"
+      icon={<Plus size={16} aria-hidden="true" />}
+      onClick={() => setEditing({ kind: 'practice', practice: null })}
+    >
+      New practice
+    </Button>
+  )
 
   return (
     <PageContainer>
       <PageHeader
         title="Practices & locations"
         description="Create and manage your practices and their locations."
-        actions={
-          <Button
-            variant="primary"
-            icon={<Plus size={16} aria-hidden="true" />}
-            onClick={() => setEditing({ kind: 'practice', practice: null })}
-          >
-            New practice
-          </Button>
-        }
+        actions={newPractice}
       />
 
-      <DataTable
-        caption="Practices"
-        columns={columns}
-        rows={rows}
-        getRowId={(practice) => String(practice.id)}
-        loading={practices.isPending}
-        error={practices.isError}
-        onRetry={() => void practices.refetch()}
-        rowLink={(practice) => ({ to: '/admin/practices', search: { practice: practice.id }, replace: true })}
-        empty={
-          <EmptyState
-            icon={<Building2 size={20} />}
-            title="No practices yet"
-            description="Create your first practice. You add its first location at the same time."
-            action={
-              <Button
-                variant="primary"
-                icon={<Plus size={16} aria-hidden="true" />}
-                onClick={() => setEditing({ kind: 'practice', practice: null })}
-              >
-                New practice
-              </Button>
-            }
-          />
-        }
-        footer={<span>{rows.length === 1 ? '1 practice' : `${rows.length} practices`}</span>}
-      />
+      {practices.isPending ? (
+        <div role="status" className="grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-3">
+          <span className="sr-only">Loading…</span>
+          <Skeleton className="rounded-card h-[74px]" />
+          <Skeleton className="rounded-card h-[74px]" />
+        </div>
+      ) : practices.isError ? (
+        <ErrorState onRetry={() => void practices.refetch()} />
+      ) : selected === undefined ? (
+        <EmptyState
+          icon={<Building2 size={20} />}
+          title="No practices yet"
+          description="Create your first practice. You add its first location at the same time."
+          action={newPractice}
+        />
+      ) : (
+        <PracticePicker practices={rows} selectedId={selected.id} />
+      )}
 
       {selected !== undefined && (
         <PracticeDetails

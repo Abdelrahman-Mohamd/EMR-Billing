@@ -28,10 +28,10 @@ export function LocationsTable({
       key: 'code',
       header: 'Code',
       width: '7rem',
-      // Below 640px the name needs the room; the code is in the edit dialog.
-      hideOnMobile: true,
+      // Below 1280px the name needs the room; the code rides under it there.
+      hideBelow: 'xl',
       cell: (location) => (
-        <span className="text-ink font-medium [overflow-wrap:anywhere] tabular-nums">{location.code}</span>
+        <span className="text-ink font-medium whitespace-nowrap tabular-nums">{location.code}</span>
       ),
     },
     {
@@ -42,6 +42,10 @@ export function LocationsTable({
         <span className="block [overflow-wrap:anywhere]">
           {location.name}
           <CellSub>
+            <span className="xl:hidden">
+              <span className="text-n600 font-medium tabular-nums">{location.code}</span>
+              <span aria-hidden="true"> · </span>
+            </span>
             {location.address.line1}, {location.address.city} {location.address.zip}
           </CellSub>
         </span>
@@ -56,7 +60,8 @@ export function LocationsTable({
     {
       key: 'pos',
       header: 'Default POS',
-      hideOnMobile: true,
+      // Below 1280px it is in the location's edit dialog.
+      hideBelow: 'xl',
       cell: (location) =>
         placeOfServiceLabel(location.placeOfService) ?? <span className="text-n500">—</span>,
     },

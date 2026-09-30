@@ -9,8 +9,8 @@ import { useCurrentUser, useSignOut } from '../queries/use-current-user'
 import { ChangePasswordDialog } from './ChangePasswordDialog'
 
 /**
- * The signed-in person, at the bottom of the rail — the prototype's account
- * button: their avatar (with their name beside it when the rail is open), and
+ * The signed-in person, at the bottom of the rail — or, on a phone, at the
+ * right of the top bar — the prototype's account button: their avatar (with their name beside it when the rail is open), and
  * a menu with who they are, Change password and Sign out.
  *
  * It reads who is signed in from `useCurrentUser` only. Until that answers (or
@@ -22,7 +22,15 @@ import { ChangePasswordDialog } from './ChangePasswordDialog'
  */
 type Open = 'change-password' | 'sign-out' | null
 
-export function AccountMenu({ expanded }: { expanded: boolean }) {
+export function AccountMenu({
+  expanded,
+  placement = 'rail',
+}: {
+  expanded: boolean
+  /** The desktop rail's foot, or the phone's top bar (avatar only, menu below). */
+  placement?: 'rail' | 'bar'
+}) {
+  const inBar = placement === 'bar'
   const user = useCurrentUser()
   const signOut = useSignOut()
   const [open, setOpen] = useState<Open>(null)
@@ -46,7 +54,7 @@ export function AccountMenu({ expanded }: { expanded: boolean }) {
     <>
       <Menu
         label={name === undefined ? 'Account' : `Account: ${name}`}
-        side="right"
+        side={inBar ? 'bottom' : 'right'}
         align="end"
         {...(user.data === undefined
           ? {}
@@ -82,14 +90,18 @@ export function AccountMenu({ expanded }: { expanded: boolean }) {
             type="button"
             aria-label={name === undefined ? 'Account' : `Account: ${name}`}
             // Collapsed, the name shows on hover and focus like the rail's labels.
-            data-tip={expanded ? undefined : (name ?? 'Account')}
+            data-tip={expanded || inBar ? undefined : (name ?? 'Account')}
             className={cn(
-              'flex w-full items-center gap-2.5 rounded-md text-left text-white outline-offset-[-2px] hover:bg-white/10 focus-visible:outline-white',
-              expanded ? 'px-2 py-1.5' : 'nav-tip justify-center py-1.5',
+              'flex items-center gap-2.5 rounded-md text-left text-white outline-offset-[-2px] hover:bg-white/10 focus-visible:outline-white',
+              inBar
+                ? 'size-11 flex-none justify-center'
+                : expanded
+                  ? 'w-full px-2 py-1.5'
+                  : 'nav-tip w-full justify-center py-1.5',
             )}
           >
             <Avatar name={name} />
-            {expanded && (
+            {expanded && !inBar && (
               <>
                 <span className="min-w-0 flex-1 leading-tight">
                   <span className="text-meta block truncate font-medium">{name ?? 'Account'}</span>

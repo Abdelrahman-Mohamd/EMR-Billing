@@ -134,7 +134,7 @@ function renderAt(path = '/admin/practices') {
   return { router }
 }
 
-const practicesTable = () => screen.getByRole('table', { name: 'Practices' })
+const practicePicker = () => screen.getByRole('navigation', { name: 'Practices' })
 const locationsTable = () => screen.getByRole('table', { name: 'Locations' })
 const field = (name: RegExp) => screen.getByRole('textbox', { name })
 
@@ -165,35 +165,58 @@ describe('Admin → Practices & locations: practices', () => {
       'active',
     )
 
-    await within(await screen.findByRole('table', { name: 'Practices' })).findByText(
+    const picker = await screen.findByRole('navigation', { name: 'Practices' })
+    expect(picker).toHaveTextContent('2 practices')
+    const tiles = within(picker).getAllByRole('link')
+    expect(tiles.map((tile) => tile.textContent)).toEqual([
+      expect.stringContaining('Harborline Physical Therapy'),
+      expect.stringContaining('Northgate Sports & Spine'),
+    ])
+    // A tile tells practices apart — name, code, active locations (Park Slope
+    // is inactive) — without repeating the identifiers shown below it.
+    expect(tiles[0]).toHaveTextContent('HPT1')
+    expect(tiles[0]).toHaveTextContent('1 location')
+    expect(tiles[0]).not.toHaveTextContent('1609847312')
+    // The first practice is the one on show, and its tile says so.
+    expect(tiles[0]).toHaveAttribute('aria-current', 'page')
+    expect(tiles[1]).not.toHaveAttribute('aria-current')
+
+    const details = screen.getByRole('region', { name: 'Harborline Physical Therapy' })
+    expect(within(details).getByRole('heading', { level: 2 })).toHaveTextContent(
       'Harborline Physical Therapy',
     )
-    expect(within(practicesTable()).getByText('DBA Harborline PT')).toBeInTheDocument()
-    expect(within(practicesTable()).getByText('Northgate Sports & Spine')).toBeInTheDocument()
-    expect(screen.getByText('2 practices')).toBeInTheDocument()
-
-    expect(screen.getByRole('heading', { level: 2, name: 'Harborline Physical Therapy' })).toBeInTheDocument()
-    expect(screen.getByText('8622 5th Avenue, Suite 2, Brooklyn, NY 11209')).toBeInTheDocument()
-    const organization = await screen.findByRole('region', { name: 'Organization' })
-    expect(organization).toHaveTextContent('Harborline Rehab Group')
-    expect(organization).toHaveTextContent('Includes 1 practice')
-    expect(within(organization).getByRole('link', { name: 'Manage organizations' })).toHaveAttribute(
+    expect(details).toHaveTextContent('DBA Harborline PT')
+    expect(within(details).getByRole('heading', { level: 3, name: 'Billing details' })).toBeInTheDocument()
+    expect(within(details).getByText('8622 5th Avenue, Suite 2, Brooklyn, NY 11209')).toBeInTheDocument()
+    expect(
+      within(details).getByRole('button', { name: 'About Billing details' }),
+    ).toHaveAccessibleDescription(/Printed on every claim/)
+    // Its organization, one click from its screen.
+    expect(await within(details).findByRole('link', { name: /Harborline Rehab Group/ })).toHaveAttribute(
       'href',
       '/admin/organizations',
     )
   })
 
-  it('opens another practice from its row and keeps the choice in the address', async () => {
+  it('opens another practice from its tile and keeps the choice in the address', async () => {
     const { router } = renderAt()
-    const table = await screen.findByRole('table', { name: 'Practices' })
-    await userEvent.click(within(table).getByRole('link', { name: /Northgate Sports & Spine/ }))
+    const picker = await screen.findByRole('navigation', { name: 'Practices' })
+    await userEvent.click(within(picker).getByRole('link', { name: /Northgate Sports & Spine/ }))
 
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Northgate Sports & Spine' }),
     ).toBeInTheDocument()
     expect(router.state.location.search).toEqual({ practice: 2 })
-    // In no organization: no organization card.
-    expect(screen.queryByRole('region', { name: 'Organization' })).not.toBeInTheDocument()
+    expect(within(practicePicker()).getByRole('link', { name: /Northgate Sports & Spine/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    // In no organization: no organization link.
+    expect(
+      within(screen.getByRole('region', { name: 'Northgate Sports & Spine' })).queryByRole('link', {
+        name: /Harborline Rehab Group/,
+      }),
+    ).not.toBeInTheDocument()
     expect(within(locationsTable()).getByText('Northgate Main')).toBeInTheDocument()
   })
 
@@ -216,7 +239,9 @@ describe('Admin → Practices & locations: practices', () => {
     renderAt()
     expect(await screen.findByRole('status')).toHaveTextContent('Loading')
     await userEvent.click(await screen.findByRole('button', { name: /try again/i }))
-    expect(await within(practicesTable()).findByText('Harborline Physical Therapy')).toBeInTheDocument()
+    expect(await screen.findByRole('navigation', { name: 'Practices' })).toHaveTextContent(
+      'Harborline Physical Therapy',
+    )
   })
 
   it('explains an empty system and offers to create the first practice', async () => {
@@ -412,14 +437,13 @@ describe('Admin → Practices & locations: locations', () => {
     renderAt()
     const table = await screen.findByRole('table', { name: 'Locations' })
     const bayRidge = within(table).getByText('Bay Ridge').closest('tr') as HTMLElement
-    expect(bayRidge).toHaveTextContent('8622 5th Avenue, Brooklyn 11209')
+    expect(bayRidge).toHaveTextContent('BR003 · 8622 5th Avenue, Brooklyn 11209')
     expect(bayRidge).toHaveTextContent('11 — Office')
     expect(bayRidge).toHaveTextContent('Active')
     const parkSlope = within(table).getByText('Park Slope').closest('tr') as HTMLElement
     expect(parkSlope).toHaveTextContent('Inactive')
-    // The practices table counts active locations, as the prototype does.
-    const row = within(practicesTable()).getByText('Harborline Physical Therapy').closest('tr') as HTMLElement
-    expect(row).toHaveTextContent('1')
+    // The section counts them, saying how many are active.
+    expect(screen.getByRole('heading', { level: 3, name: /^Locations/ })).toHaveTextContent('1 of 2 active')
   })
 
   it('adds a location to the selected practice, starting at place of service 11', async () => {

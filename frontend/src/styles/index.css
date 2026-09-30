@@ -124,6 +124,7 @@
   --animate-layer-in: layer-in 180ms ease-out;
   --animate-dialog-in: dialog-in 180ms ease-out;
   --animate-drawer-in: slide-in-right 220ms ease-out;
+  --animate-drawer-in-left: slide-in-left 220ms ease-out;
   --animate-pop-in: pop-in 140ms ease-out;
   --animate-toast-in: toast-in 180ms ease-out;
 }
@@ -155,6 +156,15 @@
     transform: translateY(0) scale(1);
   }
 }
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 @keyframes slide-in-right {
   from {
     transform: translateX(100%);
@@ -338,8 +348,9 @@
    * The page gutter. One rule, because every screen shares it and a screen
    * that invents its own padding is immediately visible as wrong.
    */
+  /* 16px on a phone: the screen is too narrow to spend on margins. */
   .page-x {
-    padding-inline: 20px;
+    padding-inline: 16px;
   }
   @media (min-width: 640px) {
     .page-x {

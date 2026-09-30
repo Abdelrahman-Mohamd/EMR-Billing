@@ -60,14 +60,27 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
         <span className="block [overflow-wrap:anywhere]">
           {physician.name}
           {/* On a phone, where their columns are hidden, the code and an invalid-NPI mark ride under the name. */}
+          {/* Under the name while their own columns are hidden: the code and
+              practice on a phone, the invalid-NPI mark until the NPI column
+              appears. */}
           <span className="sm:hidden">
-            <CellSub>{physician.code}</CellSub>
-            {!isValidNpi(physician.npi) && (
+            <CellSub>
+              {physician.code}
+              {practiceName(physician.practiceId) !== undefined && (
+                <>
+                  <span aria-hidden="true"> · </span>
+                  {practiceName(physician.practiceId)}
+                </>
+              )}
+            </CellSub>
+          </span>
+          {!isValidNpi(physician.npi) && (
+            <span className="lg:hidden">
               <StatusDot tone="critical" className="mt-0.5 flex font-normal">
                 Invalid NPI
               </StatusDot>
-            )}
-          </span>
+            </span>
+          )}
         </span>
       ),
     },
@@ -76,7 +89,7 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
       header: 'Code',
       hideOnMobile: true,
       cell: (physician) => (
-        <span className="text-ink font-medium [overflow-wrap:anywhere] tabular-nums">{physician.code}</span>
+        <span className="text-ink font-medium whitespace-nowrap tabular-nums">{physician.code}</span>
       ),
     },
     {
@@ -91,7 +104,8 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
     {
       key: 'npi',
       header: 'NPI',
-      hideOnMobile: true,
+      // From 1024px; until then an invalid NPI is marked under the name.
+      hideBelow: 'lg',
       cell: (physician) =>
         isValidNpi(physician.npi) ? (
           <span className="whitespace-nowrap tabular-nums">{physician.npi}</span>

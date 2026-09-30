@@ -72,7 +72,7 @@ export function InfoTip({
             event.preventDefault()
             show()
           }}
-          className="text-n500 hover:text-brand data-[state=open]:text-brand relative inline-grid size-4 flex-none place-items-center rounded-full align-middle after:absolute after:-inset-2 after:content-['']"
+          className="text-n500 hover:text-brand data-[state=open]:text-brand relative inline-grid size-4 flex-none place-items-center rounded-full align-middle after:absolute after:-inset-3 after:content-['']"
         >
           <Info size={14} aria-hidden="true" />
         </button>

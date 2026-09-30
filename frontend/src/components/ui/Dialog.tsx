@@ -99,7 +99,7 @@ export function Dialog({
             SIZE[size],
           )}
         >
-          <div className="flex items-start gap-4 px-6 pt-5 pb-4 shadow-[inset_0_-1px_0_var(--color-rule-structural)]">
+          <div className="flex items-start gap-4 px-4 pt-5 pb-4 shadow-[inset_0_-1px_0_var(--color-rule-structural)] sm:px-6">
             <div className="min-w-0 flex-1">
               <RadixDialog.Title className="text-ink text-[22px] leading-tight font-normal">
                 {title}
@@ -113,18 +113,27 @@ export function Dialog({
             {dismissible && (
               <RadixDialog.Close
                 aria-label="Close"
-                className="text-n400 hover:bg-n50 hover:text-ink grid size-8 flex-none place-items-center rounded-sm"
+                className="text-n400 hover:bg-n50 hover:text-ink -mt-1 -mr-1 grid size-10 flex-none place-items-center rounded-md sm:mt-0 sm:mr-0 sm:size-8 sm:rounded-sm"
               >
-                <X size={16} aria-hidden="true" />
+                <X size={18} aria-hidden="true" />
               </RadixDialog.Close>
             )}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
 
           {(footer !== undefined || footerNote !== undefined) && (
-            <div className="flex flex-wrap items-center justify-end gap-2.5 px-6 pt-4 pb-5 shadow-[inset_0_1px_0_var(--color-rule-structural)]">
-              {footerNote !== undefined && <span className="text-micro text-n500 mr-auto">{footerNote}</span>}
+            <div
+              className={cn(
+                'flex flex-col-reverse gap-2 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[inset_0_1px_0_var(--color-rule-structural)]',
+                // A phone stacks the buttons full width, the primary one (last)
+                // on top where the thumb is; wider, they sit side by side.
+                '*:w-full sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-2.5 sm:px-6 sm:pt-4 sm:pb-5 sm:*:w-auto',
+              )}
+            >
+              {footerNote !== undefined && (
+                <span className="text-micro text-n500 text-center sm:mr-auto sm:text-left">{footerNote}</span>
+              )}
               {footer}
             </div>
           )}

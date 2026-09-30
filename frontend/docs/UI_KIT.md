@@ -42,34 +42,34 @@ field labels, table headers, cell sub-lines, placeholders and summaries.
 
 ## Components (`src/components/ui/`)
 
-| Component                                                         | File              | Notes                                                                                                                                                                  |
-| ----------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Button`, `buttonClass`                                           | Button.tsx        | `primary · default · quiet · danger · dangerFill`, 3 sizes, `loading`                                                                                                  |
-| `Avatar`, `initialsOf`                                            | Avatar.tsx        | Picture, else initials ("Ahmed Mohamed" → AM), else a person icon; decorative                                                                                          |
-| `Spinner`                                                         | Spinner.tsx       | Decorative; the busy thing announces itself                                                                                                                            |
-| `Field`, `FormGrid`, `FormSection`, `FormNote`, `useFieldControl` | Field.tsx         | Label/description/error wiring; `asFieldset` for groups                                                                                                                |
-| `Input`, `SearchInput`, `Textarea`, `controlClass`                | Input.tsx         | Prefix/suffix, read-only, invalid                                                                                                                                      |
-| `PasswordInput`                                                   | PasswordInput.tsx | Masked by default, show/hide toggle (`aria-pressed`); never given a stored password                                                                                    |
-| `Select`                                                          | Select.tsx        | Styled listbox, not native: arrows, Home/End, type-ahead, Enter, Escape                                                                                                |
-| `SearchSelect`, `MultiSelect`                                     | SearchSelect.tsx  | Searchable combobox; single or multiple                                                                                                                                |
-| `Combobox`                                                        | Combobox.tsx      | The engine behind Select / SearchSelect / MultiSelect — not used directly                                                                                              |
-| `Checkbox`, `RadioGroup`                                          | Choice.tsx        | Real inputs; checkbox supports indeterminate                                                                                                                           |
-| `InfoTip`                                                         | InfoTip.tsx       | Info icon + on-demand explanation; hover, focus, tap; portalled. Via `Field`'s `info` prop                                                                             |
-| `Switch`                                                          | Switch.tsx        | `button role=switch`; Space/Enter; label clickable; on = colour + position + check. For `is_active`                                                                    |
-| `DateInput`, `DateRangeInput`                                     | DateInput.tsx     | Typed MM/DD/YYYY plus a custom calendar with month and year jumps; ISO value; no business date rules                                                                   |
-| `Form`, `FormField`, `FormActions`, `applyServerErrors`           | Form.tsx          | React Hook Form + Zod, and server errors back onto fields                                                                                                              |
-| `DataTable`, `CellSub`                                            | DataTable.tsx     | Sorting/selection are reported, never applied locally; `rowLink` / `rowAction` open a row                                                                              |
-| `Pagination`                                                      | Pagination.tsx    | Page numbers only, API-agnostic                                                                                                                                        |
-| `Badge`, `StatusDot`, `Tag`, `Tone`                               | Badge.tsx         | Tone vocabulary shared by the whole product                                                                                                                            |
-| `EmptyState`, `ErrorState`, `Skeleton`, `SkeletonRows`            | States.tsx        | Every list needs all three                                                                                                                                             |
-| `Notice`                                                          | Notice.tsx        | Inline message attached to its subject                                                                                                                                 |
-| `Toaster` (+ `toast`, `useToastStore`)                            | Toast.tsx         | One queue, mounted by the shell                                                                                                                                        |
-| `Dialog`, `DialogClose`, `ConfirmDialog`                          | Dialog.tsx        | Focus trap, focus restore (`returnFocusTo` for a menu-opened dialog). `ConfirmDialog`: compact alert dialog — icon, question, context, Cancel (focused first) + action |
-| `Drawer`                                                          | Drawer.tsx        | Side panel for detail beside a list                                                                                                                                    |
-| `Menu`                                                            | Menu.tsx          | Overflow menu; `danger` items                                                                                                                                          |
-| `TabNav`                                                          | TabNav.tsx        | Links, not ARIA tabs — each tab is a URL                                                                                                                               |
-| `Card`, `CardHeader`, `CardBody`, `Section`                       | Card.tsx          | `Section` (space + rule) is the default grouping                                                                                                                       |
-| `KeyValue`                                                        | KeyValue.tsx      | Read-only record view; empty shows a dash                                                                                                                              |
+| Component                                                         | File              | Notes                                                                                                                                                                                           |
+| ----------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Button`, `buttonClass`                                           | Button.tsx        | `primary · default · quiet · danger · dangerFill`, 3 sizes, `loading`                                                                                                                           |
+| `Avatar`, `initialsOf`                                            | Avatar.tsx        | Picture, else initials ("Ahmed Mohamed" → AM), else a person icon; decorative                                                                                                                   |
+| `Spinner`                                                         | Spinner.tsx       | Decorative; the busy thing announces itself                                                                                                                                                     |
+| `Field`, `FormGrid`, `FormSection`, `FormNote`, `useFieldControl` | Field.tsx         | Label/description/error wiring; `asFieldset` for groups                                                                                                                                         |
+| `Input`, `SearchInput`, `Textarea`, `controlClass`                | Input.tsx         | Prefix/suffix, read-only, invalid                                                                                                                                                               |
+| `PasswordInput`                                                   | PasswordInput.tsx | Masked by default, show/hide toggle (`aria-pressed`); never given a stored password                                                                                                             |
+| `Select`                                                          | Select.tsx        | Styled listbox, not native: arrows, Home/End, type-ahead, Enter, Escape                                                                                                                         |
+| `SearchSelect`, `MultiSelect`                                     | SearchSelect.tsx  | Searchable combobox; single or multiple                                                                                                                                                         |
+| `Combobox`                                                        | Combobox.tsx      | The engine behind Select / SearchSelect / MultiSelect — not used directly                                                                                                                       |
+| `Checkbox`, `RadioGroup`                                          | Choice.tsx        | Real inputs; checkbox supports indeterminate                                                                                                                                                    |
+| `InfoTip`                                                         | InfoTip.tsx       | Info icon + on-demand explanation; hover, focus, tap; portalled. Via `Field`'s `info` prop                                                                                                      |
+| `Switch`                                                          | Switch.tsx        | `button role=switch`; Space/Enter; label clickable; on = colour + position + check. For `is_active`                                                                                             |
+| `DateInput`, `DateRangeInput`                                     | DateInput.tsx     | Typed MM/DD/YYYY plus a custom calendar with month and year jumps; ISO value; no business date rules                                                                                            |
+| `Form`, `FormField`, `FormActions`, `applyServerErrors`           | Form.tsx          | React Hook Form + Zod, and server errors back onto fields                                                                                                                                       |
+| `DataTable`, `CellSub`                                            | DataTable.tsx     | Sorting/selection are reported, never applied locally; `rowLink` / `rowAction` open a row; `hideBelow` drops secondary columns on narrower screens                                              |
+| `Pagination`                                                      | Pagination.tsx    | Page numbers only, API-agnostic                                                                                                                                                                 |
+| `Badge`, `StatusDot`, `Tag`, `Tone`                               | Badge.tsx         | Tone vocabulary shared by the whole product                                                                                                                                                     |
+| `EmptyState`, `ErrorState`, `Skeleton`, `SkeletonRows`            | States.tsx        | Every list needs all three                                                                                                                                                                      |
+| `Notice`                                                          | Notice.tsx        | Inline message attached to its subject                                                                                                                                                          |
+| `Toaster` (+ `toast`, `useToastStore`)                            | Toast.tsx         | One queue, mounted by the shell                                                                                                                                                                 |
+| `Dialog`, `DialogClose`, `ConfirmDialog`                          | Dialog.tsx        | Focus trap, focus restore (`returnFocusTo` for a menu-opened dialog). `ConfirmDialog`: compact alert dialog — icon, question, context, Cancel (focused first) + action                          |
+| `Drawer`                                                          | Drawer.tsx        | Side panel for detail beside a list                                                                                                                                                             |
+| `Menu`                                                            | Menu.tsx          | Overflow menu; `danger` items                                                                                                                                                                   |
+| `TabNav`                                                          | TabNav.tsx        | Links, not ARIA tabs — each tab is a URL                                                                                                                                                        |
+| `Card`, `CardHeader`, `CardBody`, `Section`                       | Card.tsx          | `Section` (space + rule) is the default grouping; a labelled region, with `info` and `headingLevel` 2/3. A `Card` is a named region with `labelledBy`; `CardHeader` takes `id`, `info`, `aside` |
+| `KeyValue`                                                        | KeyValue.tsx      | Read-only record view; empty shows a dash                                                                                                                                                       |
 
 ## Shared patterns (`src/components/shared/`)
 
@@ -150,6 +150,28 @@ starts from the action — "Create and manage…", "Add and manage…", "View an
 data-model explanation, not PRD wording, no internal terms. The same applies to dialog descriptions and
 empty states: "Create your first practice. You add its first location at the same time." — not "A practice
 is the billing entity…".
+
+**Responsive by design, not by shrinking.** Breakpoints are Tailwind's, and the phone breakpoint is the
+prototype's (768px, `md`). A component changes its layout or its interaction where the current one stops
+working — it never scales, zooms or shrinks type to fit.
+
+| Where          | Phone (< 640 / < 768 for navigation)                                                                     | Tablet (768–1023)               | Desktop (≥ 1024) |
+| -------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------- |
+| Navigation     | Brand top bar (menu · logo · account) and the rail as a left drawer, Admin sections nested (`MobileBar`) | Collapsed rail                  | Rail, expandable |
+| Admin sections | In the drawer                                                                                            | Row of pills                    | Sticky column    |
+| Page header    | Stacked; actions full width                                                                              | Actions right, wrap when needed | Same             |
+| Tables         | Priority columns: one main cell carrying secondary values on a sub-line; the row opens the record        | More columns (`hideBelow`)      | All columns      |
+| Dialogs        | Bottom sheet, body scrolls, footer buttons stacked full width, primary on top                            | Centred                         | Centred          |
+| Confirmations  | Centred card, buttons stacked full width                                                                 | Side by side                    | Side by side     |
+| Forms          | One column (`FormGrid` spans from `sm`)                                                                  | Grid                            | Grid             |
+
+- Structure that differs (the rail vs the bar and drawer) is chosen with `useMediaQuery` so only one exists
+  in the page; anything that only moves or resizes stays in Tailwind classes.
+- Tap targets: 44px for primary touch controls; a control drawn smaller (an icon button, a text link, a sort
+  header) carries an invisible `::after` hit box instead of growing visibly.
+- Page padding is 16px on a phone, 32px from 640px, 44px from 1024px (`.page-x`).
+- No page ever scrolls sideways; a table may, only if its columns cannot be prioritised.
+- Tests render at 1280px; a test about the phone layout calls `setViewportWidth` (`src/test/viewport.ts`).
 
 ## Deliberately absent
 

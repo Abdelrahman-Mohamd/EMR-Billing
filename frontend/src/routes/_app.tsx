@@ -18,7 +18,10 @@ export const Route = createFileRoute('/_app')({
 
 function AppLayout() {
   return (
-    <AppShell groups={navigationGroups()} railFooter={({ expanded }) => <AccountMenu expanded={expanded} />}>
+    <AppShell
+      groups={navigationGroups()}
+      railFooter={({ expanded, placement }) => <AccountMenu expanded={expanded} placement={placement} />}
+    >
       <Outlet />
     </AppShell>
   )

@@ -85,7 +85,19 @@ export function Button({
       disabled={disabled === true || loading}
       // Announce the wait, so a screen reader is not left on a silent button.
       aria-busy={loading || undefined}
-      className={buttonClass(variant, size, cn(block && 'w-full', className))}
+      className={buttonClass(
+        variant,
+        size,
+        cn(
+          block && 'w-full',
+          // An icon-only button is drawn small; its tap area is not: the
+          // invisible box reaches 44px from a 28px button.
+          icon !== undefined &&
+            (children === undefined || children === null) &&
+            "relative after:absolute after:-inset-2 after:content-['']",
+          className,
+        ),
+      )}
       {...rest}
     >
       {loading ? <Spinner size={16} /> : icon}

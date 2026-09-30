@@ -1,5 +1,6 @@
 import { Home, LayoutGrid, Settings } from 'lucide-react'
-import type { NavGroup } from './AppShell'
+import { ADMIN_SECTION_GROUPS } from './admin-sections'
+import type { NavGroup } from './RailLink'
 
 /**
  * What the rail shows. It lists the routes that exist — nothing else.
@@ -17,8 +18,17 @@ export function navigationGroups(): NavGroup[] {
       items: [{ label: 'Home', icon: <Home size={18} />, link: { to: '/', activeOptions: { exact: true } } }],
     },
     {
-      // Lit for every /admin/* screen.
-      items: [{ label: 'Admin', icon: <Settings size={18} />, link: { to: '/admin' } }],
+      // Lit for every /admin/* screen. Its sections are listed under it where
+      // there is room (the phone's drawer); on a wider screen the Admin area
+      // shows them itself.
+      items: [
+        {
+          label: 'Admin',
+          icon: <Settings size={18} />,
+          link: { to: '/admin' },
+          children: ADMIN_SECTION_GROUPS.flatMap((group) => group.items),
+        },
+      ],
     },
   ]
 
