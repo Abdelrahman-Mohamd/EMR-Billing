@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { MoreHorizontal } from 'lucide-react'
+import { Check, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
 /**
@@ -17,6 +17,10 @@ export interface MenuItem {
   icon?: ReactNode
   danger?: boolean
   disabled?: boolean
+  /** A second, muted line under the label — e.g. a case's insurance and status. */
+  description?: string
+  /** Marks the current choice when the menu picks between things (a check at the right). */
+  selected?: boolean
 }
 
 export function Menu({
@@ -81,7 +85,20 @@ export function Menu({
                 )}
               >
                 {item.icon !== undefined && <span className="flex-none">{item.icon}</span>}
-                {item.label}
+                {item.description === undefined ? (
+                  item.label
+                ) : (
+                  <span className="min-w-0 flex-1">
+                    <span className="block break-words">{item.label}</span>
+                    <span className="text-micro text-n500 block">{item.description}</span>
+                  </span>
+                )}
+                {item.selected === true && (
+                  <>
+                    <Check size={16} aria-hidden="true" className="text-brand ml-auto flex-none" />
+                    <span className="sr-only">(current)</span>
+                  </>
+                )}
               </DropdownMenu.Item>
             ),
           )}

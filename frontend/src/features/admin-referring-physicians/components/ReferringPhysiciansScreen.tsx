@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Pencil, Plus, UserRound } from 'lucide-react'
+import { Plus, UserRound } from 'lucide-react'
 import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { RowActionButton, actionsColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { PracticeSelect, usePractices } from '@/features/admin-practices'
-import { isValidNpi } from '../model/npi'
+import { isValidNpi } from '@/lib/validation/npi'
 import { physicianTypeLabel } from '../model/physician-type'
 import { useReferringPhysicians } from '../queries/use-referring-physicians'
 import type { ReferringPhysician } from '../schemas/referring-physician'
@@ -38,7 +39,7 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
   const filter = practiceFilter === undefined ? null : String(practiceFilter)
   const setFilter = (value: string | null) =>
     void navigate({
-      to: '/admin/referring-physicians',
+      to: '/setup/referring-physicians',
       search: value === null ? {} : { practice: Number(value) },
       replace: true,
     })
@@ -128,15 +129,9 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
         <span className="[overflow-wrap:anywhere]">{practiceName(physician.practiceId) ?? '—'}</span>
       ),
     },
-    {
-      key: 'edit',
-      header: <span className="sr-only">Edit</span>,
-      align: 'right',
-      width: '3rem',
-      hideOnMobile: true,
-      // The row is the edit button (rowAction); the pencil only says so.
-      cell: () => <Pencil size={16} aria-hidden="true" className="text-n400 ml-auto" />,
-    },
+    actionsColumn<ReferringPhysician>((physician) => (
+      <RowActionButton action="edit" label={`Edit ${physician.name}`} onClick={() => setEditing(physician)} />
+    )),
   ]
 
   const newButton = (
@@ -174,7 +169,6 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
         onRetry={() => void physicians.refetch()}
         sort={sort}
         onSortChange={setSort}
-        rowAction={{ label: (physician) => `Edit ${physician.name}`, onAction: setEditing }}
         empty={
           filter === null ? (
             <EmptyState

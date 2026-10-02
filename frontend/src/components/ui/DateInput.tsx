@@ -237,7 +237,7 @@ export function DateInput({
             type="button"
             aria-label="Choose a date from the calendar"
             disabled={disabled}
-            className="text-n500 hover:bg-n50 hover:text-brand grid size-7 flex-none place-items-center rounded-sm"
+            className="text-n500 hover:bg-n50 hover:text-brand relative grid size-7 flex-none place-items-center rounded-sm after:absolute after:-inset-1.5 after:content-['']"
           >
             <CalendarDays size={16} aria-hidden="true" />
           </button>
@@ -281,7 +281,7 @@ export function DateInput({
                   addMonths(current, view === 'days' ? -1 : view === 'months' ? -12 : -12 * YEARS_PER_PAGE),
                 )
               }
-              className="text-n500 hover:bg-n50 hover:text-ink grid size-7 flex-none place-items-center rounded-sm"
+              className="text-n500 hover:bg-n50 hover:text-ink relative grid size-7 flex-none place-items-center rounded-sm after:absolute after:-inset-1.5 after:content-['']"
             >
               <ChevronLeft size={16} aria-hidden="true" />
             </button>
@@ -296,7 +296,7 @@ export function DateInput({
                 onClick={() => setView(view === 'days' ? 'months' : 'years')}
                 aria-expanded={view !== 'days'}
                 aria-label={view === 'days' ? 'Choose a month or year' : 'Choose a year'}
-                className="text-meta text-ink hover:bg-n50 flex flex-1 items-center justify-center gap-1 rounded-sm py-1 font-medium"
+                className="text-meta text-ink hover:bg-n50 relative flex flex-1 items-center justify-center gap-1 rounded-sm py-1 font-medium after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']"
               >
                 <span aria-live="polite">
                   {view === 'days'
@@ -315,7 +315,7 @@ export function DateInput({
                   addMonths(current, view === 'days' ? 1 : view === 'months' ? 12 : 12 * YEARS_PER_PAGE),
                 )
               }
-              className="text-n500 hover:bg-n50 hover:text-ink grid size-7 flex-none place-items-center rounded-sm"
+              className="text-n500 hover:bg-n50 hover:text-ink relative grid size-7 flex-none place-items-center rounded-sm after:absolute after:-inset-1.5 after:content-['']"
             >
               <ChevronRight size={16} aria-hidden="true" />
             </button>
@@ -466,7 +466,7 @@ export function DateInput({
                 setView('days')
                 choose(new Date())
               }}
-              className="text-micro text-brand-deep hover:text-ink px-1"
+              className="text-micro text-brand-deep hover:text-ink relative px-1 after:absolute after:-inset-x-1 after:-inset-y-2.5 after:content-['']"
             >
               Today
             </button>
@@ -477,7 +477,7 @@ export function DateInput({
                   onChange('')
                   setOpen(false)
                 }}
-                className="text-micro text-n500 hover:text-ink px-1"
+                className="text-micro text-n500 hover:text-ink relative px-1 after:absolute after:-inset-x-1 after:-inset-y-2.5 after:content-['']"
               >
                 Clear
               </button>

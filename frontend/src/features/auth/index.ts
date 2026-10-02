@@ -7,3 +7,5 @@ export { ForgotPasswordScreen } from './components/ForgotPasswordScreen'
 // The signed-in person's menu (Change password, Sign out), for the app shell.
 export { AccountMenu } from './components/AccountMenu'
 export { safeRedirect } from './model/safe-redirect'
+// Who is signed in — for a record of who did something (EMR integration requests).
+export { useCurrentUser } from './queries/use-current-user'

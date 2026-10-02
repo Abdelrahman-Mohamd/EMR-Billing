@@ -439,9 +439,9 @@ describe('Admin → Practices & locations: locations', () => {
     const bayRidge = within(table).getByText('Bay Ridge').closest('tr') as HTMLElement
     expect(bayRidge).toHaveTextContent('BR003 · 8622 5th Avenue, Brooklyn 11209')
     expect(bayRidge).toHaveTextContent('11 — Office')
-    expect(bayRidge).toHaveTextContent('Active')
+    expect(within(bayRidge).getByRole('switch', { name: 'Bay Ridge: active' })).toBeChecked()
     const parkSlope = within(table).getByText('Park Slope').closest('tr') as HTMLElement
-    expect(parkSlope).toHaveTextContent('Inactive')
+    expect(within(parkSlope).getByRole('switch', { name: 'Park Slope: active' })).not.toBeChecked()
     // The section counts them, saying how many are active.
     expect(screen.getByRole('heading', { level: 3, name: /^Locations/ })).toHaveTextContent('1 of 2 active')
   })
@@ -539,7 +539,7 @@ describe('Admin → Practices & locations: locations', () => {
 
   it('deactivates a location from its row after a confirmation, changing only is_active', async () => {
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: 'Deactivate Bay Ridge' }))
+    await userEvent.click(await screen.findByRole('switch', { name: 'Bay Ridge: active' }))
     const confirm = screen.getByRole('alertdialog', { name: 'Deactivate Bay Ridge?' })
     expect(confirm).toHaveTextContent('Its status becomes Inactive.')
     await userEvent.click(within(confirm).getByRole('button', { name: 'Deactivate' }))
@@ -558,13 +558,13 @@ describe('Admin → Practices & locations: locations', () => {
 
   it('reactivates an inactive location, and changes nothing when the confirmation is cancelled', async () => {
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: 'Reactivate Park Slope' }))
+    await userEvent.click(await screen.findByRole('switch', { name: 'Park Slope: active' }))
     const confirm = screen.getByRole('alertdialog', { name: 'Reactivate Park Slope?' })
     await userEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     expect(updateLocationMock).not.toHaveBeenCalled()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Reactivate Park Slope' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Park Slope: active' }))
     await userEvent.click(
       within(screen.getByRole('alertdialog', { name: 'Reactivate Park Slope?' })).getByRole('button', {
         name: 'Reactivate',
@@ -577,7 +577,7 @@ describe('Admin → Practices & locations: locations', () => {
   it('says so when a status change fails', async () => {
     updateLocationMock.mockRejectedValueOnce(new ApiError({ kind: 'unavailable', message: 'Down.' }))
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: 'Deactivate Bay Ridge' }))
+    await userEvent.click(await screen.findByRole('switch', { name: 'Bay Ridge: active' }))
     await userEvent.click(
       within(screen.getByRole('alertdialog', { name: 'Deactivate Bay Ridge?' })).getByRole('button', {
         name: 'Deactivate',

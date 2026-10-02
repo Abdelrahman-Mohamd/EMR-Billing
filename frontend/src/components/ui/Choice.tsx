@@ -78,13 +78,15 @@ export function RadioGroup<T extends string>({
       role="radiogroup"
       {...(aria['aria-describedby'] === undefined ? {} : { 'aria-describedby': aria['aria-describedby'] })}
       {...(invalid ? { 'aria-invalid': true as const } : {})}
-      className={cn('flex flex-col gap-2.5', className)}
+      // Each option row is its own tap target, at least 32px tall: the rows
+      // carry the spacing, so the group's gap is small.
+      className={cn('flex flex-col gap-1', className)}
     >
       {options.map((option) => (
         <label
           key={option.value}
           className={cn(
-            'text-meta text-ink flex cursor-pointer items-start gap-2.5 leading-tight',
+            'text-meta text-ink flex min-h-8 cursor-pointer items-start gap-2.5 py-1.5 leading-tight',
             (disabled || option.disabled) && 'cursor-not-allowed opacity-60',
           )}
         >

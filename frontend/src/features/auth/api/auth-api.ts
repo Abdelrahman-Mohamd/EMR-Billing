@@ -1,4 +1,4 @@
-import { ApiError, isApiError } from '@/lib/api/api-error'
+import { ApiError, renameFieldErrors } from '@/lib/api/api-error'
 import type {
   ChangePasswordRequest,
   ResetPasswordRequest,
@@ -73,32 +73,11 @@ async function backend(): Promise<AuthApi> {
   return live
 }
 
-/**
- * A server's field errors name backend fields (`current_password`); the forms
- * name theirs (`currentPassword`). Renamed here so the message lands on the
- * right input. Anything else passes through unchanged.
- */
-function withFormFieldNames(error: unknown): unknown {
-  if (!isApiError(error) || error.fieldErrors.length === 0) return error
-  return new ApiError({
-    kind: error.kind,
-    message: error.message,
-    status: error.status,
-    detail: error.detail,
-    requestId: error.requestId,
-    fieldErrors: error.fieldErrors.map((fieldError) => ({
-      ...fieldError,
-      path: FORM_FIELD_FOR[fieldError.path] ?? fieldError.path,
-    })),
-    cause: error,
-  })
-}
-
 async function send(call: (api: AuthApi) => Promise<unknown>): Promise<void> {
   try {
     await call(await backend())
   } catch (error) {
-    throw withFormFieldNames(error)
+    throw renameFieldErrors(error, FORM_FIELD_FOR)
   }
 }
 

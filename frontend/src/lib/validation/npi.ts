@@ -1,4 +1,7 @@
 /**
+ * The NPI checks the prototype makes, shared by every screen that takes one
+ * (referring physicians, providers): ten digits, and not a placeholder.
+ *
  * NPIs that are placeholders, not real numbers. PRD V2 §4.4 (BR20) flags dummy
  * NPIs such as 9999999999 and 1234567890; this is the prototype's list of them.
  */

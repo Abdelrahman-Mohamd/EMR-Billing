@@ -73,19 +73,28 @@ export function CardBody({ children, className }: { children: ReactNode; classNa
  * `info` puts the shared info icon beside the title — beside it, not inside
  * the heading, so the heading's name stays just the title. The section is
  * named by its heading, so it is a landmark a screen reader can jump to.
+ *
+ * `description` is the prototype's section subtitle: a short line set beside
+ * the title (under it when there is no room), outside the heading too.
  */
 export function Section({
   title,
   info,
   infoLabel,
   aside,
+  description,
   headingLevel = 2,
+  id,
   children,
   className,
 }: {
   title: ReactNode
+  /** A short line beside the title, e.g. "Required for billing: date of birth, gender, address". */
+  description?: ReactNode
   /** 3 when the section sits under another heading on the page (a detail pane's). */
   headingLevel?: 2 | 3
+  /** For an in-page menu that jumps to the section. */
+  id?: string
   /** Optional context about the whole section, behind an info icon. */
   info?: ReactNode
   /** The info icon's name when `title` is not plain text, e.g. "About locations". */
@@ -97,8 +106,10 @@ export function Section({
   const headingId = useId()
   const Heading = headingLevel === 3 ? 'h3' : 'h2'
   return (
-    <section aria-labelledby={headingId} className={cn('py-6', className)}>
-      <div className="border-rule-row flex min-h-10 items-center gap-3 border-b pb-2.5">
+    <section id={id} aria-labelledby={headingId} className={cn('py-6', className)}>
+      {/* A phone puts the title and the actions on the first row and the
+          description under them, full width, as the prototype does. */}
+      <div className="border-rule-row flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-b pb-2.5 sm:flex-nowrap">
         <div className="flex min-w-0 items-center gap-1.5">
           <Heading id={headingId} className="text-row text-ink font-medium">
             {title}
@@ -109,7 +120,12 @@ export function Section({
             </InfoTip>
           )}
         </div>
-        {aside !== undefined && <div className="ml-auto flex items-center gap-2">{aside}</div>}
+        {description !== undefined && (
+          <p className="text-micro text-n500 order-3 min-w-0 basis-full sm:order-none sm:flex-1 sm:basis-0">
+            {description}
+          </p>
+        )}
+        {aside !== undefined && <div className="ml-auto flex flex-none items-center gap-2">{aside}</div>}
       </div>
       {children}
     </section>

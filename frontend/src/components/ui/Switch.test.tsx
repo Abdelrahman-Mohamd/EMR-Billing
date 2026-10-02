@@ -53,4 +53,14 @@ describe('Switch', () => {
     await userEvent.click(screen.getByText('Active'))
     expect(onCheckedChange).not.toHaveBeenCalled()
   })
+
+  it('offers a field note beside the label, without renaming the switch', () => {
+    renderWithProviders(
+      <Switch label="Audit required" info="Explained here." checked={false} onCheckedChange={vi.fn()} />,
+    )
+    expect(screen.getByRole('switch', { name: 'Audit required' })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'About Audit required' })).toHaveAccessibleDescription(
+      'Explained here.',
+    )
+  })
 })

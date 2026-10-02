@@ -237,6 +237,13 @@ export function Combobox({
             if (searchable) searchRef.current?.focus()
             else listRef.current?.focus()
           }}
+          // The panel is portalled out of any open Dialog, and a Dialog locks
+          // scrolling for everything outside itself — including this list, so
+          // a mouse wheel or touchpad could not scroll it. Its own wheel and
+          // touch moves stop here, before the lock sees them; the list still
+          // scrolls natively, and the page behind stays locked.
+          onWheel={(event) => event.stopPropagation()}
+          onTouchMove={(event) => event.stopPropagation()}
           className="rounded-card bg-canvas shadow-popover ring-n200 animate-pop-in z-[70] w-[var(--radix-popover-trigger-width)] p-2 ring-1"
         >
           {searchable && (
@@ -273,7 +280,7 @@ export function Combobox({
             aria-activedescendant={
               !searchable && visible[activeIndex] ? `${listId}-${visible[activeIndex].value}` : undefined
             }
-            className="max-h-56 overflow-y-auto outline-none"
+            className="max-h-56 overflow-y-auto overscroll-contain outline-none"
           >
             {visible.length === 0 && <li className="text-micro text-n500 px-2 py-2">{emptyMessage}</li>}
             {visible.map((option, index) => {
@@ -328,7 +335,8 @@ function Chip({ label, onRemove }: { label: string; onRemove?: (() => void) | un
             event.stopPropagation()
             onRemove()
           }}
-          className="text-n500 hover:bg-brand-line hover:text-ink grid size-4 cursor-pointer place-items-center rounded-full"
+          // The after: box widens the hit area to a comfortable touch target without changing the drawn size.
+          className="text-n500 hover:bg-brand-line hover:text-ink relative grid size-4 cursor-pointer place-items-center rounded-full after:absolute after:-inset-2 after:content-['']"
         >
           <X size={11} aria-hidden="true" />
         </button>

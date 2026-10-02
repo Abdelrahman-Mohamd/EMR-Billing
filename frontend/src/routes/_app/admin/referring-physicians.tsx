@@ -1,16 +1,11 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { z } from 'zod'
-import { ReferringPhysiciansScreen } from '@/features/admin-referring-physicians'
 
-/** `?practice=<id>`: the practice the list is filtered to. An opaque id, no PHI. */
-const searchSchema = z.object({
-  practice: z.coerce.number().int().positive().optional().catch(undefined),
-})
-
+/** Referring physicians moved from Admin to Setup (client, 2026-09-30); an old link still lands there. */
 export const Route = createFileRoute('/_app/admin/referring-physicians')({
-  validateSearch: searchSchema,
-  component: function ReferringPhysiciansRoute() {
-    const { practice } = Route.useSearch()
-    return <ReferringPhysiciansScreen practiceFilter={practice} />
+  validateSearch: z.object({ practice: z.coerce.number().int().positive().optional().catch(undefined) }),
+  beforeLoad: ({ search }) => {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- redirect() is TanStack Router's control flow, not an error.
+    throw redirect({ to: '/setup/referring-physicians', search, replace: true })
   },
 })

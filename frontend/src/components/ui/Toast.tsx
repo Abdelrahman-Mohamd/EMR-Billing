@@ -63,7 +63,8 @@ function ToastItem({ toast }: { toast: ToastData }) {
         type="button"
         onClick={() => dismiss(toast.id)}
         aria-label="Dismiss"
-        className="text-n400 hover:bg-n50 hover:text-ink grid size-6 flex-none place-items-center rounded-sm"
+        // The after: box widens the hit area to a comfortable touch target without changing the drawn size.
+        className="text-n400 hover:bg-n50 hover:text-ink relative grid size-6 flex-none place-items-center rounded-sm after:absolute after:-inset-2 after:content-['']"
       >
         <X size={14} aria-hidden="true" />
       </button>

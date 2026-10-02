@@ -75,8 +75,8 @@ describe('Admin → Organizations', () => {
 
     const rail = screen.getByRole('navigation', { name: 'Main' })
     expect(within(rail).getByRole('link', { name: 'Admin' })).toHaveAttribute('data-status', 'active')
-    // Home is not lit just because every path starts with "/".
-    expect(within(rail).getByRole('link', { name: 'Home' })).not.toHaveAttribute('data-status', 'active')
+    // Only the module the screen belongs to is lit.
+    expect(within(rail).getByRole('link', { name: 'Patients' })).not.toHaveAttribute('data-status', 'active')
 
     const sections = screen.getByRole('navigation', { name: 'Admin' })
     expect(within(sections).getByRole('link', { name: 'Organizations' })).toHaveAttribute(
@@ -94,8 +94,13 @@ describe('Admin → Organizations', () => {
       'Alder Therapy Partners',
       'Harborline Rehab Group',
     ])
-    expect(within(rows[0] as HTMLElement).getByText('Inactive')).toBeInTheDocument()
-    expect(within(rows[1] as HTMLElement).getByText('Active')).toBeInTheDocument()
+    // The shared Active switch: off is Inactive, on is Active.
+    expect(
+      within(rows[0] as HTMLElement).getByRole('switch', { name: 'Alder Therapy Partners: active' }),
+    ).not.toBeChecked()
+    expect(
+      within(rows[1] as HTMLElement).getByRole('switch', { name: 'Harborline Rehab Group: active' }),
+    ).toBeChecked()
     expect(screen.getByText('2 organizations')).toBeInTheDocument()
   })
 
@@ -190,7 +195,33 @@ describe('Admin → Organizations', () => {
     expect(updateMock).toHaveBeenCalledWith(2, { name: 'Alder Therapy Partners', isActive: true })
     expect(screen.getByRole('status')).toHaveTextContent('Organization saved')
     const row = within(table()).getByText('Alder Therapy Partners').closest('tr') as HTMLElement
-    expect(within(row).getByText('Active')).toBeInTheDocument()
+    expect(within(row).getByRole('switch', { name: 'Alder Therapy Partners: active' })).toBeChecked()
+  })
+
+  it('activates and deactivates from the row with the Active switch, changing only is_active', async () => {
+    renderAt()
+    const toggle = await screen.findByRole('switch', { name: 'Alder Therapy Partners: active' })
+    await userEvent.click(toggle)
+    expect(updateMock).toHaveBeenCalledWith(2, { name: 'Alder Therapy Partners', isActive: true })
+    await waitFor(() => expect(toggle).toBeChecked())
+    // No confirmation and no message, as in Coding rules.
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('says so when the Active switch fails, and leaves the switch as it was', async () => {
+    updateMock.mockRejectedValueOnce(
+      new ApiError({ kind: 'server', message: 'The server could not do that.' }),
+    )
+    renderAt()
+    const toggle = await screen.findByRole('switch', { name: 'Harborline Rehab Group: active' })
+    await userEvent.click(toggle)
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts).toEqual([
+        expect.objectContaining({ tone: 'error', title: 'Harborline Rehab Group was not deactivated' }),
+      ]),
+    )
+    expect(toggle).toBeChecked()
   })
 
   it('puts a duplicate-name rejection from the server on the name field', async () => {

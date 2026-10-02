@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/render'
+import { Dialog } from './Dialog'
 import { Field } from './Field'
 import { Select, type SelectOption } from './Select'
 
@@ -73,5 +74,26 @@ describe('Select', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Schedule' }))
     await userEvent.click(screen.getByRole('option', { name: /Weekdays only/ }))
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('keeps its list scrollable inside a dialog: wheel and touch moves never reach the dialog’s scroll lock', async () => {
+    renderWithProviders(
+      <Dialog open onOpenChange={() => undefined} title="Edit">
+        <Harness />
+      </Dialog>,
+    )
+    await userEvent.click(screen.getByRole('combobox', { name: 'Schedule' }))
+    // The lock listens on the document; the list's own moves must stop before it.
+    const reachedDocument = vi.fn()
+    document.addEventListener('wheel', reachedDocument)
+    document.addEventListener('touchmove', reachedDocument)
+    try {
+      fireEvent.wheel(screen.getByRole('listbox'), { deltaY: 120 })
+      fireEvent.touchMove(screen.getByRole('listbox'))
+      expect(reachedDocument).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('wheel', reachedDocument)
+      document.removeEventListener('touchmove', reachedDocument)
+    }
   })
 })

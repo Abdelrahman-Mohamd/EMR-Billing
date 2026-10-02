@@ -256,7 +256,7 @@ function OrganizationField({ disabled }: { disabled: boolean }) {
       name="organizationId"
       label="Organization"
       span={6}
-      info="Groups practices that share an owner, so reports can cover all of them. Optional."
+      info="Groups practices that share an owner, so reports can cover all of them."
       // A load failure is not optional context: it stays visible.
       {...(organizations.isError
         ? { description: 'Organizations could not be loaded, so this cannot be changed right now.' }

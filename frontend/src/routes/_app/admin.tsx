@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router'
-import { AdminLayout } from '@/app/layouts/AdminLayout'
+import { SectionLayout } from '@/app/layouts/SectionLayout'
+import { ADMIN_SECTION_GROUPS } from '@/app/layouts/admin-sections'
 
 /**
  * Every Admin section renders inside the Admin section list. Admin access is
@@ -9,8 +10,8 @@ import { AdminLayout } from '@/app/layouts/AdminLayout'
  */
 export const Route = createFileRoute('/_app/admin')({
   component: () => (
-    <AdminLayout>
+    <SectionLayout label="Admin" groups={ADMIN_SECTION_GROUPS}>
       <Outlet />
-    </AdminLayout>
+    </SectionLayout>
   ),
 })

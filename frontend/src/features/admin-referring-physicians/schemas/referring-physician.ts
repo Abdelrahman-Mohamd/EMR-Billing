@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { isDummyNpi } from '../model/npi'
+import { isDummyNpi } from '@/lib/validation/npi'
 
 /**
  * A referring physician, as the current backend payload defines it:

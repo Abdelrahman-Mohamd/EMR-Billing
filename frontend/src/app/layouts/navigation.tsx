@@ -1,5 +1,6 @@
-import { Home, LayoutGrid, Settings } from 'lucide-react'
+import { Settings, SlidersHorizontal, TriangleAlert, Users } from 'lucide-react'
 import { ADMIN_SECTION_GROUPS } from './admin-sections'
+import { SETUP_SECTION_GROUPS } from './setup-sections'
 import type { NavGroup } from './RailLink'
 
 /**
@@ -13,15 +14,25 @@ import type { NavGroup } from './RailLink'
 export function navigationGroups(): NavGroup[] {
   const groups: NavGroup[] = [
     {
-      // `exact`: every path starts with "/", so without it Home would be lit
-      // on every screen.
-      items: [{ label: 'Home', icon: <Home size={18} />, link: { to: '/', activeOptions: { exact: true } } }],
+      // The modules people work in, in the prototype's order. "/" itself is
+      // not listed: it opens Patients (routes/_app/index.tsx).
+      items: [
+        { label: 'Patients', icon: <Users size={18} />, link: { to: '/patients' } },
+        { label: 'Exceptions', icon: <TriangleAlert size={18} />, link: { to: '/exceptions' } },
+      ],
     },
     {
-      // Lit for every /admin/* screen. Its sections are listed under it where
-      // there is room (the phone's drawer); on a wider screen the Admin area
-      // shows them itself.
+      // Lit for every /setup/* and /admin/* screen. Their sections are listed
+      // under them where there is room (the phone's drawer); on a wider screen
+      // each area shows them itself. Setup stands beside Admin (client,
+      // 2026-09-30), in the prototype's order: Setup, then Admin.
       items: [
+        {
+          label: 'Setup',
+          icon: <SlidersHorizontal size={18} />,
+          link: { to: '/setup' },
+          children: SETUP_SECTION_GROUPS.flatMap((group) => group.items),
+        },
         {
           label: 'Admin',
           icon: <Settings size={18} />,
@@ -32,12 +43,7 @@ export function navigationGroups(): NavGroup[] {
     },
   ]
 
-  if (import.meta.env.DEV) {
-    groups.push({
-      label: 'Development',
-      items: [{ label: 'Components', icon: <LayoutGrid size={18} />, link: { to: '/dev/ui' } }],
-    })
-  }
-
+  // The component showcase (/dev/ui) is a developer tool: reached by its
+  // address in development, never listed here.
   return groups
 }

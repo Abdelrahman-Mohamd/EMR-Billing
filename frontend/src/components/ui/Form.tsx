@@ -75,6 +75,7 @@ export function FormField<TValues extends FieldValues, TName extends FieldPath<T
   required,
   span,
   disabled,
+  asFieldset,
   children,
 }: {
   name: TName
@@ -89,6 +90,7 @@ export function FormField<TValues extends FieldValues, TName extends FieldPath<T
       {...(required === undefined ? {} : { required })}
       {...(span === undefined ? {} : { span })}
       {...(disabled === undefined ? {} : { disabled })}
+      {...(asFieldset === undefined ? {} : { asFieldset })}
       error={fieldState.error?.message}
     >
       {children(field)}

@@ -54,6 +54,8 @@ export function TabNav({
             className="text-meta flex flex-none items-center gap-1.5 px-3 pt-3.5 pb-2.5 whitespace-nowrap no-underline"
           >
             {item.label}
+            {/* The space keeps "Resolved 3" two words for a screen reader; a flex row does not draw it. */}
+            {item.count !== undefined && ' '}
             {item.count !== undefined && (
               <span className={cn('text-micro', item.countTone === 'alert' ? 'text-critical' : 'text-n500')}>
                 {item.count}

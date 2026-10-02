@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Ban, Pencil, Plus, RotateCcw, Users } from 'lucide-react'
-import { StatusDot } from '@/components/ui/Badge'
+import { Plus, Users } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { RowActionButton, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { useUsers } from '../queries/use-users'
@@ -15,8 +15,10 @@ type Open = { kind: 'form'; user: User | null } | { kind: 'status'; user: User }
 
 /**
  * Admin → Users: who can sign in, as the prototype lists them — name and
- * email, status, the whole row to edit, and Deactivate / Reactivate on the
- * row. No password is in the list data at all.
+ * email, and the shared Active switch and Edit action
+ * (components/ui/RowActions); the switch deactivates or reactivates the user
+ * after a confirmation, as the prototype's row action does. No password is in
+ * the list data at all.
  *
  * Not shown, because the payload has none of it: roles, practice and location
  * grants, username, service-account flag. Not built: delete (the prototype has
@@ -58,45 +60,19 @@ export function UsersScreen() {
       hideOnMobile: true,
       cell: (user) => <span className="[overflow-wrap:anywhere]">{user.email}</span>,
     },
-    {
-      key: 'status',
-      header: 'Status',
-      cell: (user) =>
-        user.isActive ? (
-          <StatusDot tone="success">Active</StatusDot>
-        ) : (
-          <StatusDot tone="inert">Inactive</StatusDot>
-        ),
-    },
-    {
-      key: 'edit',
-      header: <span className="sr-only">Edit</span>,
-      align: 'right',
-      width: '3rem',
-      hideOnMobile: true,
-      // The row is the edit button (rowAction); the pencil only says so.
-      cell: () => <Pencil size={16} aria-hidden="true" className="text-n400 ml-auto" />,
-    },
-    {
-      key: 'activation',
-      header: <span className="sr-only">Deactivate or reactivate</span>,
-      align: 'right',
-      width: '3.5rem',
-      // Its own control, lifted above the row's edit button.
-      interactive: true,
-      cell: (user) => (
-        <Button
-          size="xs"
-          variant={user.isActive ? 'danger' : 'default'}
-          icon={
-            user.isActive ? <Ban size={14} aria-hidden="true" /> : <RotateCcw size={14} aria-hidden="true" />
-          }
-          aria-label={user.isActive ? `Deactivate ${user.name}` : `Reactivate ${user.name}`}
-          title={user.isActive ? 'Deactivate' : 'Reactivate'}
-          onClick={() => setOpen({ kind: 'status', user })}
-        />
-      ),
-    },
+    activeColumn<User>({
+      isActive: (user) => user.isActive,
+      label: (user) => user.name,
+      // As in the prototype, a change of status asks first (UserStatusDialog).
+      onChange: (user) => setOpen({ kind: 'status', user }),
+    }),
+    actionsColumn<User>((user) => (
+      <RowActionButton
+        action="edit"
+        label={`Edit ${user.name}`}
+        onClick={() => setOpen({ kind: 'form', user })}
+      />
+    )),
   ]
 
   const newUser = (label: string) => (
@@ -127,10 +103,6 @@ export function UsersScreen() {
         onRetry={() => void users.refetch()}
         sort={sort}
         onSortChange={setSort}
-        rowAction={{
-          label: (user) => `Edit ${user.name}`,
-          onAction: (user) => setOpen({ kind: 'form', user }),
-        }}
         empty={
           <EmptyState
             icon={<Users size={20} />}

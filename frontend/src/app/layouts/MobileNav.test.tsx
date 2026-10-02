@@ -36,23 +36,39 @@ describe('navigation on a phone', () => {
     expect(screen.queryByRole('button', { name: 'Expand the sidebar' })).not.toBeInTheDocument()
   })
 
-  it('opens a drawer with every module and the Admin sections under Admin, the current one marked', async () => {
+  it('opens a drawer with every module and each module’s sections under it, the current one marked', async () => {
     renderApp()
     await userEvent.click(await menuButton())
     const drawer = await screen.findByRole('dialog', { name: 'Navigation menu' })
     const nav = within(drawer).getByRole('navigation', { name: 'Main' })
-    for (const name of [
-      'Home',
+    const names = within(nav)
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+    // Setup is its own module beside Admin (client, 2026-09-30), each with its sections under it.
+    expect(names).toEqual([
+      'Patients',
+      'Exceptions',
+      'Setup',
+      'Providers',
+      'Insurance classes',
+      'Insurances',
+      'Release buckets',
+      'Procedure codes',
+      'Fee schedules',
+      'Referring physicians',
       'Admin',
       'Organizations',
       'Practices & locations',
       'Users',
-      'Referring physicians',
-    ]) {
-      expect(within(nav).getByRole('link', { name })).toBeInTheDocument()
-    }
+      'Roles & permissions',
+      'EMR integration',
+      'Coding rules',
+      'Submission & automation',
+      'Audit log',
+    ])
     expect(within(nav).getByRole('link', { name: 'Users' })).toHaveAttribute('data-status', 'active')
     expect(within(nav).getByRole('link', { name: 'Admin' })).toHaveAttribute('data-status', 'active')
+    expect(within(nav).getByRole('link', { name: 'Setup' })).not.toHaveAttribute('data-status', 'active')
   })
 
   it('closes when a link is followed, and goes there', async () => {

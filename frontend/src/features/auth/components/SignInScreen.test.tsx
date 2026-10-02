@@ -107,7 +107,7 @@ describe('sign-in page', () => {
     const { router } = renderSignIn()
     await screen.findByRole('heading', { level: 1 })
     await fillAndSubmit()
-    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients'))
   })
 
   it('returns to the page that sent the user here', async () => {
@@ -123,7 +123,7 @@ describe('sign-in page', () => {
     const { router } = renderSignIn('/login?redirect=%2F%2Fevil.example')
     await screen.findByRole('heading', { level: 1 })
     await fillAndSubmit()
-    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients'))
   })
 
   it('drops whatever the previous session had cached', async () => {

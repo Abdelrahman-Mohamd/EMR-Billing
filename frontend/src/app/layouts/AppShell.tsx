@@ -46,7 +46,12 @@ export function AppShell({
             ? {}
             : { account: railFooter({ expanded: false, placement: 'bar' }) })}
         />
-        <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+        {/* `relative`: the scroll area is the containing block for anything
+            absolutely positioned inside a page — an `sr-only` label above
+            all. Without it such an element is placed against the document,
+            at its spot deep in the scrolled content, and stretches the
+            document: a second scrollbar beside this one. */}
+        <main className="relative min-w-0 flex-1 overflow-y-auto">{children}</main>
       </div>
     )
   }
@@ -140,7 +145,12 @@ export function AppShell({
         </button>
       </nav>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+      {/* `relative`: the scroll area is the containing block for anything
+            absolutely positioned inside a page — an `sr-only` label above
+            all. Without it such an element is placed against the document,
+            at its spot deep in the scrolled content, and stretches the
+            document: a second scrollbar beside this one. */}
+      <main className="relative min-w-0 flex-1 overflow-y-auto">{children}</main>
     </div>
   )
 }

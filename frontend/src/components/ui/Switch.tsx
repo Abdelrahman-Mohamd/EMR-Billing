@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from 'react'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { InfoTip } from './InfoTip'
 
 /**
  * An on/off control for a boolean state — by project convention, every
@@ -20,6 +21,11 @@ export interface SwitchProps {
   label: ReactNode
   /** Secondary line under the label. */
   description?: ReactNode
+  /**
+   * Optional context, shown on demand from an info icon beside the label —
+   * the same field-note convention as `Field`'s `info` (docs/UI_KIT.md).
+   */
+  info?: ReactNode
   disabled?: boolean
   name?: string
   onBlur?: () => void
@@ -31,6 +37,7 @@ export function Switch({
   onCheckedChange,
   label,
   description,
+  info,
   disabled = false,
   name,
   onBlur,
@@ -77,6 +84,14 @@ export function Switch({
         >
           {label}
         </label>
+        {/* Beside the label, never inside it: inside, its name would join the switch's. */}
+        {info !== undefined && (
+          <span className="ml-1 inline-flex align-middle">
+            <InfoTip label={typeof label === 'string' ? `About ${label}` : 'More information'}>
+              {info}
+            </InfoTip>
+          </span>
+        )}
         {description !== undefined && (
           <span id={descriptionId} className="text-micro text-n500 mt-0.5 block">
             {description}

@@ -19,22 +19,43 @@ function renderRoute(path: string) {
   return renderWithProviders(<RouterProvider router={router} />, { queryClient })
 }
 
-describe('application shell', () => {
-  it('renders the landing route', async () => {
-    renderRoute('/')
-    expect(await screen.findByRole('heading', { name: /frontend foundation/i })).toBeInTheDocument()
+function renderRouteWithRouter(path: string) {
+  const queryClient = createTestQueryClient()
+  const router = createRouter({
+    routeTree,
+    history: createMemoryHistory({ initialEntries: [path] }),
+    context: { queryClient },
   })
+  renderWithProviders(<RouterProvider router={router} />, { queryClient })
+  return { router }
+}
+
+describe('application shell', () => {
+  it('opens Patients from the start address', async () => {
+    const { router } = renderRouteWithRouter('/')
+    // The first test pays for loading the route's code-split chunk.
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Patients' }, { timeout: 5000 }),
+    ).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/patients')
+  }, 10_000)
 
   it('shows a not-found page instead of a blank screen for an unknown address', async () => {
     renderRoute('/no-such-page')
     expect(await screen.findByRole('heading', { name: /page not found/i })).toBeInTheDocument()
   })
 
-  it('puts the navigation rail around every screen', async () => {
+  it('puts the navigation rail around every screen — the production modules only', async () => {
     renderRoute('/')
-    await screen.findByRole('heading', { name: /frontend foundation/i })
+    await screen.findByRole('heading', { level: 1, name: 'Patients' }, { timeout: 5000 })
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).getByRole('link', { name: 'Home' })).toBeInTheDocument()
+    // The rail's links are named by their labels (icons only while it is collapsed).
+    for (const name of ['Patients', 'Exceptions', 'Setup', 'Admin'])
+      expect(within(nav).getByRole('link', { name })).toBeInTheDocument()
+    // The development pages are never in the navigation.
+    // (The logo, "EMR Billing — home", still leads to the start: Patients.)
+    expect(within(nav).queryByRole('link', { name: 'Home' })).not.toBeInTheDocument()
+    expect(within(nav).queryByRole('link', { name: 'Components' })).not.toBeInTheDocument()
   })
 
   it('loads the development component showcase behind its own route', async () => {

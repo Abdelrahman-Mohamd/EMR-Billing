@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ApiError, userMessage } from './api-error'
+import { ApiError, isApiError, renameFieldErrors, userMessage } from './api-error'
 
 describe('ApiError', () => {
   it('retries only failures that a retry can fix', () => {
@@ -27,5 +27,34 @@ describe('ApiError', () => {
     expect(userMessage(new TypeError('undefined is not a function'))).toBe(
       'Something went wrong. Please try again.',
     )
+  })
+})
+
+describe('renameFieldErrors', () => {
+  it('renames the first segment of each path and keeps the rest of the error', () => {
+    const error = new ApiError({
+      kind: 'validation',
+      message: 'Some fields need attention.',
+      status: 422,
+      fieldErrors: [
+        { path: 'payer_id', message: 'Taken.' },
+        { path: 'address.zip', message: 'Invalid.' },
+      ],
+    })
+    const renamed = renameFieldErrors(error, { payer_id: 'payerId' })
+    expect(isApiError(renamed) && renamed.fieldErrors).toEqual([
+      { path: 'payerId', message: 'Taken.' },
+      { path: 'address.zip', message: 'Invalid.' },
+    ])
+    expect(isApiError(renamed) && [renamed.kind, renamed.status, renamed.message]).toEqual([
+      'validation',
+      422,
+      'Some fields need attention.',
+    ])
+  })
+
+  it('passes anything else through untouched', () => {
+    const plain = new Error('boom')
+    expect(renameFieldErrors(plain, { a: 'b' })).toBe(plain)
   })
 })

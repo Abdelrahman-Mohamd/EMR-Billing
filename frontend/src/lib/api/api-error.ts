@@ -115,3 +115,26 @@ export function userMessage(error: unknown): string {
       return 'Something went wrong. Please try again.'
   }
 }
+
+/**
+ * A server's field errors name backend fields (`payer_id`); a form names its
+ * own (`payerId`). Returns the error with its paths renamed through `names`, so
+ * `applyServerErrors` lands each message on the right input. Only the first
+ * segment of a dotted path is renamed (`address.zip` stays nested). Anything
+ * that is not an ApiError, or carries no field errors, passes through.
+ */
+export function renameFieldErrors(error: unknown, names: Readonly<Record<string, string>>): unknown {
+  if (!isApiError(error) || error.fieldErrors.length === 0) return error
+  return new ApiError({
+    kind: error.kind,
+    message: error.message,
+    status: error.status,
+    detail: error.detail,
+    requestId: error.requestId,
+    fieldErrors: error.fieldErrors.map((fieldError) => {
+      const [head = '', ...rest] = fieldError.path.split('.')
+      return { ...fieldError, path: [names[head] ?? head, ...rest].join('.') }
+    }),
+    cause: error,
+  })
+}

@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { Layers, Pencil, Plus } from 'lucide-react'
+import { Layers, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { StatusDot } from '@/components/ui/Badge'
 import { DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { RowActionButton, actionsColumn, activeColumn, statusChangeFailed } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
-import { useOrganizations } from '../queries/use-organizations'
+import { useOrganizations, useUpdateOrganization } from '../queries/use-organizations'
 import type { Organization } from '../schemas/organization'
 import { OrganizationDialog } from './OrganizationDialog'
 
@@ -29,6 +29,7 @@ import { OrganizationDialog } from './OrganizationDialog'
  */
 export function OrganizationsScreen() {
   const organizations = useOrganizations()
+  const update = useUpdateOrganization()
   /** `undefined`: no dialog. `null`: creating. An organization: editing it. */
   const [editing, setEditing] = useState<Organization | null | undefined>(undefined)
   const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
@@ -47,28 +48,24 @@ export function OrganizationsScreen() {
       // Long names wrap instead of pushing the table wider than the screen.
       cell: (organization) => <span className="[overflow-wrap:anywhere]">{organization.name}</span>,
     },
-    {
-      key: 'status',
-      header: 'Status',
-      width: '7rem',
-      cell: (organization) =>
-        organization.isActive ? (
-          <StatusDot tone="success">Active</StatusDot>
-        ) : (
-          <StatusDot tone="inert">Inactive</StatusDot>
+    activeColumn<Organization>({
+      isActive: (organization) => organization.isActive,
+      label: (organization) => organization.name,
+      // The organization's own update, with only `is_active` changed.
+      onChange: (organization, isActive) =>
+        update.mutate(
+          { id: organization.id, input: { name: organization.name, isActive } },
+          { onError: (error) => statusChangeFailed(organization.name, isActive, error) },
         ),
-    },
-    {
-      key: 'edit',
-      header: <span className="sr-only">Edit</span>,
-      align: 'right',
-      width: '3rem',
-      // Below 640px the name needs the room; the row is still the button.
-      hideOnMobile: true,
-      // The whole row is the edit button (see rowAction). The pencil is the
-      // prototype's visual cue for that, not a second control to tab through.
-      cell: () => <Pencil size={16} aria-hidden="true" className="text-n400 ml-auto" />,
-    },
+      pending: (organization) => update.isPending && update.variables.id === organization.id,
+    }),
+    actionsColumn<Organization>((organization) => (
+      <RowActionButton
+        action="edit"
+        label={`Edit ${organization.name}`}
+        onClick={() => setEditing(organization)}
+      />
+    )),
   ]
 
   return (
@@ -97,7 +94,6 @@ export function OrganizationsScreen() {
         onRetry={() => void organizations.refetch()}
         sort={sort}
         onSortChange={setSort}
-        rowAction={{ label: (organization) => `Edit ${organization.name}`, onAction: setEditing }}
         empty={
           <EmptyState
             icon={<Layers size={20} />}

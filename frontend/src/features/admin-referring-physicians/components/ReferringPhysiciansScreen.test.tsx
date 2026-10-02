@@ -89,7 +89,7 @@ afterEach(() => {
   useToastStore.getState().clear()
 })
 
-function renderAt(path = '/admin/referring-physicians') {
+function renderAt(path = '/setup/referring-physicians') {
   const queryClient = createTestQueryClient()
   const router = createRouter({
     routeTree,
@@ -115,14 +115,23 @@ async function choose(dialog: HTMLElement, combobox: RegExp, option: RegExp) {
   await userEvent.click(await screen.findByRole('option', { name: option }))
 }
 
-describe('Admin → Referring physicians', () => {
+describe('Setup → Referring physicians', () => {
+  it('is under Setup now; an old Admin link, with its filter, lands there', async () => {
+    const { router } = renderAt('/admin/referring-physicians?practice=2')
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Referring physicians' }, { timeout: 5000 }),
+    ).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/setup/referring-physicians')
+    expect(router.state.location.search).toEqual({ practice: 2 })
+  })
+
   it('lists every practice’s physicians by name, with code, type, NPI and practice', async () => {
     renderAt()
     // The first test pays for loading the route's code-split chunk.
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Referring physicians' }, { timeout: 5000 }),
     ).toBeInTheDocument()
-    const sections = screen.getByRole('navigation', { name: 'Admin' })
+    const sections = screen.getByRole('navigation', { name: 'Setup' })
     expect(within(sections).getByRole('link', { name: 'Referring physicians' })).toHaveAttribute(
       'data-status',
       'active',
@@ -212,7 +221,7 @@ describe('Admin → Referring physicians', () => {
   })
 
   it('pre-selects the practice the list is filtered to', async () => {
-    renderAt('/admin/referring-physicians?practice=1')
+    renderAt('/setup/referring-physicians?practice=1')
     await table()
     const dialog = await openNew()
     await waitFor(() =>
@@ -260,7 +269,7 @@ describe('Admin → Referring physicians', () => {
         fieldErrors: [{ path: 'code', message: 'This code is already used in this practice.' }],
       }),
     )
-    renderAt('/admin/referring-physicians?practice=1')
+    renderAt('/setup/referring-physicians?practice=1')
     await table()
     const dialog = await openNew()
     await userEvent.type(field(/^name/i), 'Ada Lin, MD')

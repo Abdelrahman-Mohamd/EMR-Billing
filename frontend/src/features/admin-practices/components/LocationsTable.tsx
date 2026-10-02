@@ -1,15 +1,14 @@
-import { Ban, Pencil, RotateCcw } from 'lucide-react'
-import { StatusDot } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
+import { RowActionButton, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { placeOfServiceLabel } from '../model/place-of-service'
 import type { Location } from '../schemas/practice'
 
 /**
  * One practice's locations, as in the prototype: code, site and address, NPI,
- * default place of service, status. The whole row edits the location; the
- * last cell deactivates or reactivates it, as the prototype's row action does.
+ * default place of service, and the shared Active switch and Edit action
+ * (components/ui/RowActions). The switch deactivates or reactivates the
+ * location after a confirmation, as the prototype's row action does.
  *
  * Not shown, because the payloads do not carry them: the prototype's
  * "Primary" tag and its EMR-integration column.
@@ -65,49 +64,15 @@ export function LocationsTable({
       cell: (location) =>
         placeOfServiceLabel(location.placeOfService) ?? <span className="text-n500">—</span>,
     },
-    {
-      key: 'status',
-      header: 'Status',
-      cell: (location) =>
-        location.isActive ? (
-          <StatusDot tone="success">Active</StatusDot>
-        ) : (
-          <StatusDot tone="inert">Inactive</StatusDot>
-        ),
-    },
-    {
-      key: 'edit',
-      header: <span className="sr-only">Edit</span>,
-      align: 'right',
-      width: '3rem',
-      hideOnMobile: true,
-      // The row is the edit button (rowAction); the pencil only says so.
-      cell: () => <Pencil size={16} aria-hidden="true" className="text-n400 ml-auto" />,
-    },
-    {
-      key: 'activation',
-      header: <span className="sr-only">Deactivate or reactivate</span>,
-      align: 'right',
-      width: '3.5rem',
-      // Its own control, lifted above the row's edit button.
-      interactive: true,
-      cell: (location) => (
-        <Button
-          size="xs"
-          variant={location.isActive ? 'danger' : 'default'}
-          icon={
-            location.isActive ? (
-              <Ban size={14} aria-hidden="true" />
-            ) : (
-              <RotateCcw size={14} aria-hidden="true" />
-            )
-          }
-          aria-label={location.isActive ? `Deactivate ${location.name}` : `Reactivate ${location.name}`}
-          title={location.isActive ? 'Deactivate' : 'Reactivate'}
-          onClick={() => onToggleActive(location)}
-        />
-      ),
-    },
+    activeColumn<Location>({
+      isActive: (location) => location.isActive,
+      label: (location) => location.name,
+      // As in the prototype, a change of status asks first (LocationStatusDialog).
+      onChange: (location) => onToggleActive(location),
+    }),
+    actionsColumn<Location>((location) => (
+      <RowActionButton action="edit" label={`Edit ${location.name}`} onClick={() => onEdit(location)} />
+    )),
   ]
 
   return (
@@ -116,7 +81,6 @@ export function LocationsTable({
       columns={columns}
       rows={locations}
       getRowId={(location) => String(location.id)}
-      rowAction={{ label: (location) => `Edit ${location.name}`, onAction: onEdit }}
       empty={<EmptyState title="No locations" description="Add a location to this practice." />}
     />
   )

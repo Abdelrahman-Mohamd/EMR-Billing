@@ -88,8 +88,13 @@ describe('Admin → Users', () => {
       expect.stringContaining('Owen Park'),
     ])
     expect(within(rows[0] as HTMLElement).getAllByText('d.whitfield@example.test').length).toBeGreaterThan(0)
-    expect(within(rows[0] as HTMLElement).getByText('Active')).toBeInTheDocument()
-    expect(within(rows[2] as HTMLElement).getByText('Inactive')).toBeInTheDocument()
+    // The shared Active switch: on is Active, off is Inactive.
+    expect(
+      within(rows[0] as HTMLElement).getByRole('switch', { name: 'Dana Whitfield: active' }),
+    ).toBeChecked()
+    expect(
+      within(rows[2] as HTMLElement).getByRole('switch', { name: 'Owen Park: active' }),
+    ).not.toBeChecked()
     // No password column, and nothing password-like in the table.
     expect(within(await table()).queryByText(/password/i)).not.toBeInTheDocument()
     expect(screen.getByText('3 users')).toBeInTheDocument()
@@ -130,7 +135,7 @@ describe('Admin → Users', () => {
     const row = within(await table())
       .getByText('Ada Lin')
       .closest('tr') as HTMLElement
-    expect(within(row).getByText('Inactive')).toBeInTheDocument()
+    expect(within(row).getByRole('switch', { name: 'Ada Lin: active' })).not.toBeChecked()
     // The password went to the request and nowhere else on the page.
     expect(document.body).not.toHaveTextContent(SECRET)
   })
@@ -217,9 +222,12 @@ describe('Admin → Users', () => {
     expect(screen.getByRole('status')).toHaveTextContent('User saved')
   })
 
-  it('deactivates and reactivates from the row after a confirmation, changing only the status', async () => {
+  it('deactivates and reactivates with the Active switch after a confirmation, changing only the status', async () => {
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: 'Deactivate Marcus Reyes' }))
+    const marcus = await screen.findByRole('switch', { name: 'Marcus Reyes: active' })
+    await userEvent.click(marcus)
+    // Asked first, as in the prototype: the switch waits for the answer.
+    expect(marcus).toBeChecked()
     const confirm = screen.getByRole('alertdialog', { name: 'Deactivate Marcus Reyes?' })
     expect(confirm).toHaveTextContent('Their status becomes Inactive.')
     await userEvent.click(within(confirm).getByRole('button', { name: 'Deactivate user' }))
@@ -230,7 +238,9 @@ describe('Admin → Users', () => {
       isActive: false,
     })
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Reactivate Owen Park' }))
+    await waitFor(() => expect(marcus).not.toBeChecked())
+
+    await userEvent.click(await screen.findByRole('switch', { name: 'Owen Park: active' }))
     await userEvent.click(
       within(screen.getByRole('alertdialog', { name: 'Reactivate Owen Park?' })).getByRole('button', {
         name: 'Reactivate user',

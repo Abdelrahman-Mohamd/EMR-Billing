@@ -3,8 +3,12 @@
 The Billing System frontend. React 19 + TypeScript + Vite + TanStack Router/Query + Zustand + Zod + Tailwind.
 **Features so far: authentication — sign in, forgot password, change password (`src/features/auth`), Admin → Organizations (`src/features/admin-organizations`) and
 Admin → Practices & locations (`src/features/admin-practices` — the reference for mapping a backend payload and
-for a master–detail screen; it also owns `PracticeSelect`) Admin → Users (`src/features/admin-users`) and Admin → Referring physicians
-(`src/features/admin-referring-physicians`). No backend exists yet; request payloads are known for these entities and for authentication only.**
+for a master–detail screen; it also owns `PracticeSelect`), Admin → Users (`src/features/admin-users`), Admin → Roles & permissions (`src/features/admin-roles` — **frontend only**, an in-tab store like procedure codes), Admin → EMR integration (`src/features/admin-emr-integration` — **frontend only**, same in-tab pattern; locations from the practices list), Admin → Coding rules (`src/features/admin-coding-rules` — **frontend only**, same in-tab pattern; insurances, classes and procedure codes from their features), Admin → Submission & automation (`src/features/admin-automation` — **frontend only**, same in-tab pattern), **Patients** (`src/features/patients` — roster, and the chart as one page — Profile, Insurance, then the cases and the chosen case; **frontend only**, one in-tab store for patients, coverage, cases and authorizations), **Exceptions** (`src/features/exceptions` — Billing exceptions / Incomplete profiles / Resolved, with the Resolve forms that fix the source record; **frontend only**, an in-tab store, no detection), Admin → Audit log (`src/features/admin-audit-log` — read-only, **no backend contract**: a provisional page query behind one integration point), and — in the Setup
+module beside Admin — Setup → Providers (`src/features/admin-providers`, provisional contract), Setup → Procedure codes (`src/features/admin-procedure-codes` — **frontend only, no backend and no api layer**: an in-tab store in `data/`), Setup → Fee schedules (`src/features/admin-fee-schedules` — **frontend only**, same in-tab pattern), Setup → Referring physicians (`src/features/admin-referring-physicians`), Setup → Insurances and
+Setup → Insurance classes (`src/features/admin-insurances`) and Setup → Release buckets
+(`src/features/admin-release-buckets`). No backend exists yet; request payloads are known for organizations, practices,
+locations, users, referring physicians, release buckets and authentication only. Providers, insurances and insurance classes use a
+**provisional** contract built from the prototype's fields under PRD V2 column names — replace it when the real payload arrives.**
 
 ## Read the smallest thing that lets you finish the task
 
