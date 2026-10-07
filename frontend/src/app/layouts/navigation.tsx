@@ -1,4 +1,4 @@
-import { Settings, SlidersHorizontal, TriangleAlert, Users } from 'lucide-react'
+import { CalendarCheck, Send, Settings, SlidersHorizontal, TriangleAlert, Users } from 'lucide-react'
 import { ADMIN_SECTION_GROUPS } from './admin-sections'
 import { SETUP_SECTION_GROUPS } from './setup-sections'
 import type { NavGroup } from './RailLink'
@@ -18,7 +18,10 @@ export function navigationGroups(): NavGroup[] {
       // not listed: it opens Patients (routes/_app/index.tsx).
       items: [
         { label: 'Patients', icon: <Users size={18} />, link: { to: '/patients' } },
+        // The prototype's "Charges": the backend's entity is the visit and its charge lines.
+        { label: 'Visits', icon: <CalendarCheck size={18} />, link: { to: '/visits' } },
         { label: 'Exceptions', icon: <TriangleAlert size={18} />, link: { to: '/exceptions' } },
+        { label: 'Claims', icon: <Send size={18} />, link: { to: '/claims' } },
       ],
     },
     {

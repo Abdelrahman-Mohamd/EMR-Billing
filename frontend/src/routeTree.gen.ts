@@ -14,8 +14,10 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
+import { Route as AppClaimsRouteImport } from './routes/_app/claims'
 import { Route as AppExceptionsRouteImport } from './routes/_app/exceptions'
 import { Route as AppSetupRouteImport } from './routes/_app/setup'
+import { Route as AppVisitsRouteImport } from './routes/_app/visits'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminAutomationRouteImport } from './routes/_app/admin/automation'
@@ -40,6 +42,8 @@ import { Route as AppSetupProcedureCodesRouteImport } from './routes/_app/setup/
 import { Route as AppSetupProvidersRouteImport } from './routes/_app/setup/providers'
 import { Route as AppSetupReferringPhysiciansRouteImport } from './routes/_app/setup/referring-physicians'
 import { Route as AppSetupReleaseBucketsRouteImport } from './routes/_app/setup/release-buckets'
+import { Route as AppVisitsIndexRouteImport } from './routes/_app/visits/index'
+import { Route as AppVisitsVisitIdRouteImport } from './routes/_app/visits/$visitId'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -65,6 +69,11 @@ const AppAdminRoute = AppAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AppRoute,
 } as any)
+const AppClaimsRoute = AppClaimsRouteImport.update({
+  id: '/claims',
+  path: '/claims',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppExceptionsRoute = AppExceptionsRouteImport.update({
   id: '/exceptions',
   path: '/exceptions',
@@ -73,6 +82,11 @@ const AppExceptionsRoute = AppExceptionsRouteImport.update({
 const AppSetupRoute = AppSetupRouteImport.update({
   id: '/setup',
   path: '/setup',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppVisitsRoute = AppVisitsRouteImport.update({
+  id: '/visits',
+  path: '/visits',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
@@ -198,14 +212,26 @@ const AppSetupReleaseBucketsRoute = AppSetupReleaseBucketsRouteImport.update({
   path: '/release-buckets',
   getParentRoute: () => AppSetupRoute,
 } as any)
+const AppVisitsIndexRoute = AppVisitsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppVisitsRoute,
+} as any)
+const AppVisitsVisitIdRoute = AppVisitsVisitIdRouteImport.update({
+  id: '/$visitId',
+  path: '/$visitId',
+  getParentRoute: () => AppVisitsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/admin': typeof AppAdminRouteWithChildren
+  '/claims': typeof AppClaimsRoute
   '/exceptions': typeof AppExceptionsRouteWithChildren
   '/setup': typeof AppSetupRouteWithChildren
+  '/visits': typeof AppVisitsRouteWithChildren
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/automation': typeof AppAdminAutomationRoute
   '/admin/coding-rules': typeof AppAdminCodingRulesRoute
@@ -226,14 +252,17 @@ export interface FileRoutesByFullPath {
   '/setup/providers': typeof AppSetupProvidersRoute
   '/setup/referring-physicians': typeof AppSetupReferringPhysiciansRoute
   '/setup/release-buckets': typeof AppSetupReleaseBucketsRoute
+  '/visits/$visitId': typeof AppVisitsVisitIdRoute
   '/admin/': typeof AppAdminIndexRoute
   '/exceptions/': typeof AppExceptionsIndexRoute
   '/patients/': typeof AppPatientsIndexRoute
   '/setup/': typeof AppSetupIndexRoute
+  '/visits/': typeof AppVisitsIndexRoute
 }
 export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/claims': typeof AppClaimsRoute
   '/': typeof AppIndexRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/automation': typeof AppAdminAutomationRoute
@@ -255,10 +284,12 @@ export interface FileRoutesByTo {
   '/setup/providers': typeof AppSetupProvidersRoute
   '/setup/referring-physicians': typeof AppSetupReferringPhysiciansRoute
   '/setup/release-buckets': typeof AppSetupReleaseBucketsRoute
+  '/visits/$visitId': typeof AppVisitsVisitIdRoute
   '/admin': typeof AppAdminIndexRoute
   '/exceptions': typeof AppExceptionsIndexRoute
   '/patients': typeof AppPatientsIndexRoute
   '/setup': typeof AppSetupIndexRoute
+  '/visits': typeof AppVisitsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -266,8 +297,10 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/_app/admin': typeof AppAdminRouteWithChildren
+  '/_app/claims': typeof AppClaimsRoute
   '/_app/exceptions': typeof AppExceptionsRouteWithChildren
   '/_app/setup': typeof AppSetupRouteWithChildren
+  '/_app/visits': typeof AppVisitsRouteWithChildren
   '/_app/': typeof AppIndexRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/automation': typeof AppAdminAutomationRoute
@@ -289,10 +322,12 @@ export interface FileRoutesById {
   '/_app/setup/providers': typeof AppSetupProvidersRoute
   '/_app/setup/referring-physicians': typeof AppSetupReferringPhysiciansRoute
   '/_app/setup/release-buckets': typeof AppSetupReleaseBucketsRoute
+  '/_app/visits/$visitId': typeof AppVisitsVisitIdRoute
   '/_app/admin/': typeof AppAdminIndexRoute
   '/_app/exceptions/': typeof AppExceptionsIndexRoute
   '/_app/patients/': typeof AppPatientsIndexRoute
   '/_app/setup/': typeof AppSetupIndexRoute
+  '/_app/visits/': typeof AppVisitsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -301,8 +336,10 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/login'
     | '/admin'
+    | '/claims'
     | '/exceptions'
     | '/setup'
+    | '/visits'
     | '/admin/audit'
     | '/admin/automation'
     | '/admin/coding-rules'
@@ -323,14 +360,17 @@ export interface FileRouteTypes {
     | '/setup/providers'
     | '/setup/referring-physicians'
     | '/setup/release-buckets'
+    | '/visits/$visitId'
     | '/admin/'
     | '/exceptions/'
     | '/patients/'
     | '/setup/'
+    | '/visits/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/forgot-password'
     | '/login'
+    | '/claims'
     | '/'
     | '/admin/audit'
     | '/admin/automation'
@@ -352,18 +392,22 @@ export interface FileRouteTypes {
     | '/setup/providers'
     | '/setup/referring-physicians'
     | '/setup/release-buckets'
+    | '/visits/$visitId'
     | '/admin'
     | '/exceptions'
     | '/patients'
     | '/setup'
+    | '/visits'
   id:
     | '__root__'
     | '/_app'
     | '/forgot-password'
     | '/login'
     | '/_app/admin'
+    | '/_app/claims'
     | '/_app/exceptions'
     | '/_app/setup'
+    | '/_app/visits'
     | '/_app/'
     | '/_app/admin/audit'
     | '/_app/admin/automation'
@@ -385,10 +429,12 @@ export interface FileRouteTypes {
     | '/_app/setup/providers'
     | '/_app/setup/referring-physicians'
     | '/_app/setup/release-buckets'
+    | '/_app/visits/$visitId'
     | '/_app/admin/'
     | '/_app/exceptions/'
     | '/_app/patients/'
     | '/_app/setup/'
+    | '/_app/visits/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -434,6 +480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/claims': {
+      id: '/_app/claims'
+      path: '/claims'
+      fullPath: '/claims'
+      preLoaderRoute: typeof AppClaimsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/exceptions': {
       id: '/_app/exceptions'
       path: '/exceptions'
@@ -446,6 +499,13 @@ declare module '@tanstack/react-router' {
       path: '/setup'
       fullPath: '/setup'
       preLoaderRoute: typeof AppSetupRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/visits': {
+      id: '/_app/visits'
+      path: '/visits'
+      fullPath: '/visits'
+      preLoaderRoute: typeof AppVisitsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/admin/': {
@@ -616,6 +676,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSetupReleaseBucketsRouteImport
       parentRoute: typeof AppSetupRoute
     }
+    '/_app/visits/': {
+      id: '/_app/visits/'
+      path: '/'
+      fullPath: '/visits/'
+      preLoaderRoute: typeof AppVisitsIndexRouteImport
+      parentRoute: typeof AppVisitsRoute
+    }
+    '/_app/visits/$visitId': {
+      id: '/_app/visits/$visitId'
+      path: '/$visitId'
+      fullPath: '/visits/$visitId'
+      preLoaderRoute: typeof AppVisitsVisitIdRouteImport
+      parentRoute: typeof AppVisitsRoute
+    }
   }
 }
 
@@ -691,10 +765,26 @@ const AppSetupRouteWithChildren = AppSetupRoute._addFileChildren(
   AppSetupRouteChildren,
 )
 
+interface AppVisitsRouteChildren {
+  AppVisitsVisitIdRoute: typeof AppVisitsVisitIdRoute
+  AppVisitsIndexRoute: typeof AppVisitsIndexRoute
+}
+
+const AppVisitsRouteChildren: AppVisitsRouteChildren = {
+  AppVisitsVisitIdRoute: AppVisitsVisitIdRoute,
+  AppVisitsIndexRoute: AppVisitsIndexRoute,
+}
+
+const AppVisitsRouteWithChildren = AppVisitsRoute._addFileChildren(
+  AppVisitsRouteChildren,
+)
+
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRouteWithChildren
+  AppClaimsRoute: typeof AppClaimsRoute
   AppExceptionsRoute: typeof AppExceptionsRouteWithChildren
   AppSetupRoute: typeof AppSetupRouteWithChildren
+  AppVisitsRoute: typeof AppVisitsRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
   AppDevUiRoute: typeof AppDevUiRoute
   AppPatientsPatientIdRoute: typeof AppPatientsPatientIdRoute
@@ -703,8 +793,10 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRouteWithChildren,
+  AppClaimsRoute: AppClaimsRoute,
   AppExceptionsRoute: AppExceptionsRouteWithChildren,
   AppSetupRoute: AppSetupRouteWithChildren,
+  AppVisitsRoute: AppVisitsRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppDevUiRoute: AppDevUiRoute,
   AppPatientsPatientIdRoute: AppPatientsPatientIdRoute,

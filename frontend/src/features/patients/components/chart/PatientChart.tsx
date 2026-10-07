@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
   ArrowLeft,
   Ban,
+  CalendarCheck,
   ChevronDown,
   FileCheck,
   FileText,
@@ -31,6 +32,7 @@ import { ageOn, fullName } from '../../model/patient'
 import { casesOf, leadCase, primaryInsuranceId } from '../../model/roster'
 import { PatientStatusDialog } from '../PatientStatusDialog'
 import { CaseEditor } from './CaseEditor'
+import { ChartCard } from './ChartCard'
 import { CaseSection } from './CaseSection'
 import { InsuranceSection } from './InsuranceSection'
 import { ProfileSection } from './ProfileSection'
@@ -51,12 +53,31 @@ import { scrollToSection, useScrollSpy, useScrollToHashOnce } from './chart-scro
  *
  * The case shown is in the URL (`?case=<id>`); with none, the first open case.
  *
- * Not built, because what they show does not exist yet: the Ledger, the
- * "New charge" button and the Visits & claims list (Charges, Claims and
- * Payments come later). With no visits, Delete is always offered; the
- * prototype refuses it for a patient with visits.
+ * The case's visits (from Visits, handed over by the route) follow the case's
+ * cards, each opening the visit with its charge lines and claims.
+ *
+ * Not built: the Ledger and the "New charge" header button (payments and
+ * balances come later; a visit starts from the case's Visits card). Delete is
+ * always offered — whether a patient with visits may be deleted is not known.
  */
-export function PatientChart({ patientId, caseId }: { patientId: string; caseId: string | undefined }) {
+/**
+ * The case's visits, from Visits: the route hands them over (an action for the
+ * card's corner and the list), so Patients does not depend on Visits.
+ */
+export interface CaseVisitsSlot {
+  Action: ComponentType<{ caseId: string }>
+  List: ComponentType<{ caseId: string }>
+}
+
+export function PatientChart({
+  patientId,
+  caseId,
+  visits,
+}: {
+  patientId: string
+  caseId: string | undefined
+  visits?: CaseVisitsSlot
+}) {
   const navigate = useNavigate()
   const records = usePatientRecords()
   const insurances = useInsurances()
@@ -70,7 +91,14 @@ export function PatientChart({ patientId, caseId }: { patientId: string; caseId:
   const sections =
     current === undefined
       ? ['profile', 'insurance', 'case']
-      : ['profile', 'insurance', 'case', 'diagnoses', 'authorizations']
+      : [
+          'profile',
+          'insurance',
+          'case',
+          'diagnoses',
+          'authorizations',
+          ...(visits === undefined ? [] : ['visits']),
+        ]
   const drawn = records.ready && patient !== undefined
   const active = useScrollSpy(sections, drawn)
   useScrollToHashOnce(drawn)
@@ -253,6 +281,11 @@ export function PatientChart({ patientId, caseId }: { patientId: string; caseId:
             <MenuLink id="authorizations" active={active} icon={<FileCheck size={18} />} count={authCount}>
               Authorizations
             </MenuLink>
+            {visits !== undefined && (
+              <MenuLink id="visits" active={active} icon={<CalendarCheck size={18} />}>
+                Visits
+              </MenuLink>
+            )}
           </>
         )}
       </ChartMenu>
@@ -261,6 +294,18 @@ export function PatientChart({ patientId, caseId }: { patientId: string; caseId:
         <ProfileSection patientId={patient.id} />
         <InsuranceSection patientId={patient.id} />
         <CaseSection patientId={patient.id} caseId={current?.id} />
+        {/* Case → Visit: the case's visits, each opening its charge lines and claims. */}
+        {visits !== undefined && current !== undefined && (
+          <ChartCard
+            id="visits"
+            className="mt-4"
+            headingLevel={3}
+            title="Visits"
+            aside={<visits.Action caseId={current.id} />}
+          >
+            <visits.List caseId={current.id} />
+          </ChartCard>
+        )}
       </div>
 
       {addingCase && <CaseEditor patientId={patient.id} item={null} onClose={() => setAddingCase(false)} />}

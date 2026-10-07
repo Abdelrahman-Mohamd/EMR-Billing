@@ -47,7 +47,9 @@ describe('navigation on a phone', () => {
     // Setup is its own module beside Admin (client, 2026-09-30), each with its sections under it.
     expect(names).toEqual([
       'Patients',
+      'Visits',
       'Exceptions',
+      'Claims',
       'Setup',
       'Providers',
       'Insurance classes',

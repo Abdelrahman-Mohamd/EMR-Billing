@@ -50,7 +50,7 @@ describe('application shell', () => {
     await screen.findByRole('heading', { level: 1, name: 'Patients' }, { timeout: 5000 })
     const nav = screen.getByRole('navigation', { name: 'Main' })
     // The rail's links are named by their labels (icons only while it is collapsed).
-    for (const name of ['Patients', 'Exceptions', 'Setup', 'Admin'])
+    for (const name of ['Patients', 'Visits', 'Exceptions', 'Claims', 'Setup', 'Admin'])
       expect(within(nav).getByRole('link', { name })).toBeInTheDocument()
     // The development pages are never in the navigation.
     // (The logo, "EMR Billing — home", still leads to the start: Patients.)

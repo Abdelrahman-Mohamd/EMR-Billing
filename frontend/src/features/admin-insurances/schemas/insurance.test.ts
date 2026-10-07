@@ -45,9 +45,8 @@ describe('insurance payload (provisional — prototype fields, PRD V2 names)', (
       insurance_hold: false,
       release_bucket_id: null,
       audit_required: false,
-      claim_format: '837P',
-      max_units: 6,
-      sla_days: 30,
+      claim_format: null,
+      sla_days: null,
       portal_url: null,
       is_active: true,
     })
@@ -111,7 +110,6 @@ describe('insurance form checks (the prototype’s)', () => {
         code: '10A',
         address: { line1: '', city: '', state: 'N', zip: '123' },
         phone: '8005550100',
-        maxUnits: '21',
         slaDays: '0',
       }),
     ).toEqual({
@@ -119,9 +117,20 @@ describe('insurance form checks (the prototype’s)', () => {
       'address.state': 'Please enter a valid state.',
       'address.zip': 'Please enter a valid ZIP code.',
       phone: 'Enter the phone number as 000-000-0000.',
-      maxUnits: 'Enter a number from 1 to 20.',
       slaDays: 'Enter a number of days from 1 to 365.',
     })
+  })
+
+  it('leaves the claim format and payment SLA optional, sent as null when not set', () => {
+    const values = { ...filled, claimFormat: null, slaDays: '' }
+    expect(errorsOf(values)).toEqual({})
+    expect(toInsurancePayload(values)).toEqual(
+      expect.objectContaining({ claim_format: null, sla_days: null }),
+    )
+    expect(toInsurancePayload({ ...filled, claimFormat: 'CMS1500', slaDays: '45' })).toEqual(
+      expect.objectContaining({ claim_format: 'CMS1500', sla_days: 45 }),
+    )
+    expect(toInsurancePayload(values)).not.toHaveProperty('max_units')
   })
 
   it('accepts any payer portal link — the client gave no rule for it', () => {

@@ -17,8 +17,10 @@ import {
  * class, code, name, insurance type, payer ID, address, phone, fax, the five
  * rule overrides (`null` = inherit), insurance hold and release bucket, and
  * the payer portal link. Four have no V2 column and are named here:
- * `audit_required` (client, 2026-09-23), `claim_format`, `max_units` and
- * `sla_days` (prototype settings with no home in V2 — Q-011, Q-040).
+ * `audit_required` (client, 2026-09-23), `claim_format` and `sla_days`
+ * (prototype settings with no home in V2 — Q-011, Q-040), both optional (user,
+ * 2026-10-02: `null` when not set). The prototype's max units per line was
+ * removed (user, 2026-10-02).
  *
  * The payer portal is a link only (client, 2026-09-30): no portal user or
  * password is read, sent or shown, although V2 keeps both, encrypted.
@@ -53,9 +55,8 @@ export const insuranceResponseSchema = z
     insurance_hold: z.boolean(),
     release_bucket_id: z.number().int().nullable(),
     audit_required: z.boolean(),
-    claim_format: z.string(),
-    max_units: z.number().int(),
-    sla_days: z.number().int(),
+    claim_format: z.string().nullable(),
+    sla_days: z.number().int().nullable(),
     portal_url: nullableText,
     is_active: z.boolean(),
   })
@@ -81,7 +82,6 @@ export const insuranceResponseSchema = z
     releaseBucketId: wire.release_bucket_id,
     auditRequired: wire.audit_required,
     claimFormat: wire.claim_format,
-    maxUnits: wire.max_units,
     slaDays: wire.sla_days,
     portalUrl: wire.portal_url,
     isActive: wire.is_active,
@@ -108,9 +108,8 @@ export interface InsurancePayload {
   insurance_hold: boolean
   release_bucket_id: number | null
   audit_required: boolean
-  claim_format: string
-  max_units: number
-  sla_days: number
+  claim_format: string | null
+  sla_days: number | null
   portal_url: string | null
   is_active: boolean
 }
@@ -130,7 +129,6 @@ export const INSURANCE_FORM_FIELD_FOR: Readonly<Record<string, string>> = {
   release_bucket_id: 'releaseBucketId',
   audit_required: 'auditRequired',
   claim_format: 'claimFormat',
-  max_units: 'maxUnits',
   sla_days: 'slaDays',
   portal_url: 'portalUrl',
   is_active: 'isActive',
@@ -150,11 +148,15 @@ const optionalMatching = (pattern: RegExp, message: string) =>
     .string()
     .trim()
     .refine((value) => value === '' || pattern.test(value), message)
-const wholeNumberBetween = (min: number, max: number, message: string) =>
-  required(message).refine(
-    (value) => /^\d+$/.test(value) && Number(value) >= min && Number(value) <= max,
-    message,
-  )
+/** Empty, or a whole number in range. */
+const optionalWholeNumberBetween = (min: number, max: number, message: string) =>
+  z
+    .string()
+    .trim()
+    .refine(
+      (value) => value === '' || (/^\d+$/.test(value) && Number(value) >= min && Number(value) <= max),
+      message,
+    )
 const chosen = (message: string) =>
   z
     .string()
@@ -164,8 +166,10 @@ const chosen = (message: string) =>
 /**
  * What the form accepts — the prototype's checks, and only those:
  * - **Required:** practice, code (a whole number), name, insurance class,
- *   insurance type, payer ID, claim format, max units (1–20) and SLA days
- *   (1–365); a release bucket while the insurance hold is on (PRD V2 CH-01).
+ *   insurance type and payer ID; a release bucket while the insurance hold is
+ *   on (PRD V2 CH-01).
+ * - **Optional (user, 2026-10-02):** claim format, and the payment SLA —
+ *   when given, 1–365 days.
  * - **Formats, when filled:** state two letters, ZIP five digits, phone and
  *   fax 000-000-0000.
  * - **Not checked:** the payer portal link (the client gave no rule), code
@@ -200,9 +204,8 @@ export const insuranceFormSchema = z
     insuranceHold: z.boolean(),
     releaseBucketId: z.string().nullable(),
     auditRequired: z.boolean(),
-    claimFormat: z.enum(CLAIM_FORMATS.map((format) => format.value)),
-    maxUnits: wholeNumberBetween(1, 20, 'Enter a number from 1 to 20.'),
-    slaDays: wholeNumberBetween(1, 365, 'Enter a number of days from 1 to 365.'),
+    claimFormat: z.enum(CLAIM_FORMATS.map((format) => format.value)).nullable(),
+    slaDays: optionalWholeNumberBetween(1, 365, 'Enter a number of days from 1 to 365.'),
     portalUrl: z.string().trim(),
     isActive: z.boolean(),
   })
@@ -232,9 +235,8 @@ export const NEW_INSURANCE_VALUES: Omit<InsuranceFormValues, 'practiceId'> = {
   insuranceHold: false,
   releaseBucketId: null,
   auditRequired: false,
-  claimFormat: '837P',
-  maxUnits: '6',
-  slaDays: '30',
+  claimFormat: null,
+  slaDays: '',
   portalUrl: '',
   isActive: true,
 }
@@ -260,9 +262,10 @@ export function toInsuranceFormValues(insurance: Insurance): InsuranceFormValues
     insuranceHold: insurance.insuranceHold,
     releaseBucketId: insurance.releaseBucketId === null ? null : String(insurance.releaseBucketId),
     auditRequired: insurance.auditRequired,
-    claimFormat: insurance.claimFormat === 'CMS1500' ? 'CMS1500' : '837P',
-    maxUnits: String(insurance.maxUnits),
-    slaDays: String(insurance.slaDays),
+    // A format this form does not offer reads as none rather than breaking the form.
+    claimFormat:
+      insurance.claimFormat === 'CMS1500' || insurance.claimFormat === '837P' ? insurance.claimFormat : null,
+    slaDays: insurance.slaDays === null ? '' : String(insurance.slaDays),
     portalUrl: insurance.portalUrl,
     isActive: insurance.isActive,
   }
@@ -304,8 +307,7 @@ export function toInsurancePayload(values: InsuranceFormValues): InsurancePayloa
       values.insuranceHold && values.releaseBucketId !== null ? Number(values.releaseBucketId) : null,
     audit_required: values.auditRequired,
     claim_format: values.claimFormat,
-    max_units: Number(values.maxUnits),
-    sla_days: Number(values.slaDays),
+    sla_days: values.slaDays === '' ? null : Number(values.slaDays),
     portal_url: orNull(values.portalUrl),
     is_active: values.isActive,
   }

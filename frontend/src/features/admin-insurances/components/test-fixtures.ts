@@ -70,7 +70,6 @@ export function insurance(
     release_bucket_id: null,
     audit_required: false,
     claim_format: '837P',
-    max_units: 6,
     sla_days: 30,
     portal_url: null,
     is_active: true,

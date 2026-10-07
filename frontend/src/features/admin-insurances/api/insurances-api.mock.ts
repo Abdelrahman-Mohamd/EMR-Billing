@@ -31,7 +31,6 @@ const defaults = {
   release_bucket_id: null,
   audit_required: false,
   claim_format: '837P',
-  max_units: 6,
   sla_days: 30,
   portal_url: 'https://provider.example-payer.com',
   is_active: true,
@@ -48,7 +47,6 @@ let insurances: InsuranceRecord[] = [
     insurance_type: 'Medicare',
     payer_id: '13202',
     address: { line1: 'PO Box 6178', city: 'Indianapolis', state: 'IN', zip: '46206' },
-    max_units: 4,
     sla_days: 14,
     portal_url: 'https://portal.example-medicare.gov',
   },
@@ -85,7 +83,6 @@ let insurances: InsuranceRecord[] = [
     payer_id: '87726',
     address: { line1: 'PO Box 30555', city: 'Salt Lake City', state: 'UT', zip: '84130' },
     authorization_required: true,
-    max_units: 4,
   },
   {
     ...defaults,
@@ -150,7 +147,6 @@ let insurances: InsuranceRecord[] = [
     insurance_type: 'Medicare',
     payer_id: '13202',
     address: { line1: 'PO Box 6178', city: 'Indianapolis', state: 'IN', zip: '46206' },
-    max_units: 4,
     sla_days: 14,
   },
   {

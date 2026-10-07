@@ -416,39 +416,22 @@ export function InsuranceDialog({
           </FormSection>
 
           <FormSection title="Submission & SLA">
-            <FormField name="claimFormat" label="Claim format" required span={4}>
+            <FormField name="claimFormat" label="Claim format" span={6}>
               {(field) => (
                 <Select
                   value={typeof field.value === 'string' ? field.value : null}
                   onChange={field.onChange}
                   options={FORMAT_OPTIONS}
+                  placeholder="Select a claim format"
+                  clearable
                   disabled={submitting}
-                />
-              )}
-            </FormField>
-            <FormField
-              name="maxUnits"
-              label="Max units per line"
-              required
-              span={4}
-              info="The most units one charge line may bill to this payer."
-            >
-              {(field) => (
-                <Input
-                  {...field}
-                  placeholder="Enter max units"
-                  inputMode="numeric"
-                  maxLength={2}
-                  autoComplete="off"
-                  readOnly={submitting}
                 />
               )}
             </FormField>
             <FormField
               name="slaDays"
               label="Payment SLA (days)"
-              required
-              span={4}
+              span={6}
               info="How many days the payer has to pay a claim before it goes to A/R follow-up."
             >
               {(field) => (

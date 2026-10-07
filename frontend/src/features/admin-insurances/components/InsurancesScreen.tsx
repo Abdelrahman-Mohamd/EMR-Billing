@@ -51,7 +51,12 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
   const rows = (insurances.data ?? [])
     .filter((insurance) => practiceFilter === undefined || insurance.practiceId === practiceFilter)
     .sort((a, b) => {
-      const order = sort.key === 'sla' ? a.slaDays - b.slaDays : a.code - b.code
+      // An insurance without a payment SLA sorts after those with one.
+      const order =
+        sort.key === 'sla'
+          ? (a.slaDays ?? Number.POSITIVE_INFINITY) - (b.slaDays ?? Number.POSITIVE_INFINITY) ||
+            a.code - b.code
+          : a.code - b.code
       return sort.direction === 'asc' ? order : -order
     })
 
@@ -157,7 +162,12 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
       header: 'SLA',
       sortable: true,
       hideBelow: 'lg',
-      cell: (insurance) => <span className="whitespace-nowrap tabular-nums">{insurance.slaDays} days</span>,
+      cell: (insurance) =>
+        insurance.slaDays === null ? (
+          <span className="text-n400">—</span>
+        ) : (
+          <span className="whitespace-nowrap tabular-nums">{insurance.slaDays} days</span>
+        ),
     },
     activeColumn<Insurance>({
       isActive: (insurance) => insurance.isActive,
