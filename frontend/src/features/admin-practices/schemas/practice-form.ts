@@ -39,8 +39,15 @@ export const locationFieldsSchema = z.object({
   name: required('Enter the location name.'),
   npi,
   address: locationAddressFormSchema,
-  /** `null`: none chosen — left out of the payload. */
-  placeOfService: z.string().nullable(),
+  /**
+   * Always one: the server cannot clear it (and gives a new location 11). The
+   * select holds `null` only while nothing is chosen.
+   */
+  placeOfService: z
+    .string()
+    .nullable()
+    // Not `value !== null`: that would narrow the type and split the form's input from its output.
+    .refine((value) => (value ?? '') !== '', 'Select the place of service.'),
 })
 
 export const locationFormSchema = locationFieldsSchema.extend({ isActive: z.boolean() })

@@ -13,10 +13,7 @@ import type { Patient } from '../model/patient'
  * request. This is architecture only; the screens show no message about it.
  *
  * - Changes last until the page reloads.
- * - In development and tests it starts with the prototype's patients
- *   (`sample-patients.ts`, loaded only when `__MOCK_DATA__` is true, so a
- *   production build never contains them); otherwise it starts empty — and
- *   with no ICD-10 code list, which only a backend can supply.
+ * - It starts empty: there is no sample data.
  * - The screens only use `usePatientRecords()`. When a backend exists, that
  *   hook is replaced by server-state hooks (docs/FRONTEND_ARCHITECTURE.md §5)
  *   and this file is deleted — the screens do not change.
@@ -33,7 +30,7 @@ export interface Icd10Code {
 }
 
 interface Snapshot {
-  /** False only while the development sample is still loading. */
+  /** Always true: the list is in memory. Kept so the screens read it as they will a query. */
   ready: boolean
   patients: readonly Patient[]
   coverages: readonly Coverage[]
@@ -45,7 +42,7 @@ interface Snapshot {
 
 const EMPTY: Snapshot = { ready: true, patients: [], coverages: [], cases: [], authorizations: [], icd10: [] }
 
-let snapshot: Snapshot = { ...EMPTY, ready: !__MOCK_DATA__ }
+let snapshot: Snapshot = { ...EMPTY, ready: true }
 const listeners = new Set<() => void>()
 let nextId = 1
 const newId = (kind: string) => `${kind}-${nextId++}`
@@ -53,14 +50,6 @@ const newId = (kind: string) => `${kind}-${nextId++}`
 function publish(next: Snapshot): void {
   snapshot = next
   for (const listener of listeners) listener()
-}
-
-// Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-if (__MOCK_DATA__) {
-  void import('./sample-patients').then(({ SAMPLE_RECORDS }) => {
-    if (snapshot.ready) return
-    publish({ ready: true, ...structuredClone(SAMPLE_RECORDS) })
-  })
 }
 
 function subscribe(listener: () => void): () => void {

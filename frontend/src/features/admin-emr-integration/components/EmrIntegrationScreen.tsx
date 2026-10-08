@@ -7,7 +7,7 @@ import { ConfirmDialog } from '@/components/ui/Dialog'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { useCurrentUser } from '@/features/auth'
-import { PracticeSelect, usePractices } from '@/features/admin-practices'
+import { PracticeSelect, usePractice, usePractices } from '@/features/admin-practices'
 import { todayIso } from '@/lib/utils/dates'
 import { useEmrIntegration } from '../data/integration-store'
 import { plural, summarize } from '../model/summary'
@@ -55,9 +55,11 @@ export function EmrIntegrationScreen({ practiceFilter }: { practiceFilter: numbe
 
   const all = practices.data ?? []
   const practice = all.find((item) => item.id === practiceFilter) ?? all[0]
-  const locations = practice?.locations ?? []
+  // The list names practices; their locations come with the practice itself.
+  const details = usePractice(practice?.id ?? null)
+  const locations = details.data?.locations ?? []
   const locationName = (id: number) => locations.find((location) => location.id === id)?.name ?? '—'
-  const loading = practices.isPending || !emr.ready
+  const loading = practices.isPending || (practice !== undefined && details.isPending) || !emr.ready
 
   const choose = (value: string | null) =>
     void navigate({
@@ -141,8 +143,8 @@ export function EmrIntegrationScreen({ practiceFilter }: { practiceFilter: numbe
         </FilterBar>
       )}
 
-      {practices.isError ? (
-        <ErrorState onRetry={() => void practices.refetch()} />
+      {practices.isError || details.isError ? (
+        <ErrorState onRetry={() => void (practices.isError ? practices.refetch() : details.refetch())} />
       ) : !practices.isPending && practice === undefined ? (
         <EmptyState
           icon={<Plug size={20} />}

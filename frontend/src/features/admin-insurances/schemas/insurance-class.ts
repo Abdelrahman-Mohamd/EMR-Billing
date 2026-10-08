@@ -2,16 +2,23 @@ import { z } from 'zod'
 import { ICD_VERSIONS } from '../model/rules'
 
 /**
- * An insurance class as the screens see it, parsed from the wire.
+ * An insurance class, as the backend sends and takes it (contracts confirmed
+ * 2026-10-07, tried on staging):
  *
- * **Provisional contract.** No backend payload exists for insurance classes.
- * The fields are the prototype's (practice, code, name, the four rule defaults,
- * ICD version, active), written under the PRD V2 column names of
- * `insurance_class` (§10.3). When the real payload arrives, this file and
- * `api/` change — nothing else.
+ * - `GET /insurance-classes?page=N` → Laravel pagination (15 a page) of
+ *   `{ id, practice_id, code, name, authorization_required,
+ *   injury_date_required, apply_specialty_modifiers, accept_assignment,
+ *   icd_version, is_active, insurances_count, created_at }`;
+ * - `GET /insurance-classes/{id}` → the same, plus its `practice` (not read);
+ * - `POST /insurance-classes` — the payload below, with `practice_id`;
+ *   `PUT /insurance-classes/{id}` — the same without `practice_id` (refused:
+ *   a class never moves practice); `DELETE /insurance-classes/{id}`. Writes
+ *   answer `{ success, message, data: null }`.
  *
- * Assumed until a contract says otherwise: a saved class comes back as its
- * payload plus a numeric `id`.
+ * `is_active` is not in the example payloads, but the server takes it on both
+ * (seen on staging), so the form's Active is sent. A `PUT` changes only the
+ * fields it carries. ICD versions the server accepts: ICD10 (ICD9 offered as
+ * the prototype does; anything else is refused).
  */
 export const insuranceClassResponseSchema = z
   .object({
@@ -27,6 +34,8 @@ export const insuranceClassResponseSchema = z
     // not make the whole list fail to load.
     icd_version: z.string(),
     is_active: z.boolean(),
+    /** How many insurances are in the class — the list carries it. */
+    insurances_count: z.number().int().nonnegative().optional(),
   })
   .transform((wire) => ({
     id: wire.id,
@@ -39,13 +48,26 @@ export const insuranceClassResponseSchema = z
     acceptAssignment: wire.accept_assignment,
     icdVersion: wire.icd_version,
     isActive: wire.is_active,
+    insurancesCount: wire.insurances_count ?? 0,
   }))
 
 export type InsuranceClass = z.output<typeof insuranceClassResponseSchema>
 
-/** The request body for create and update (provisional — see above). */
-export interface InsuranceClassPayload {
-  practice_id: number
+export const insuranceClassPageResponseSchema = z
+  .object({
+    data: z.object({
+      data: z.array(insuranceClassResponseSchema),
+      meta: z.object({ current_page: z.number().int().positive(), last_page: z.number().int().positive() }),
+    }),
+  })
+  .transform(({ data }) => ({ classes: data.data, pageCount: data.meta.last_page }))
+
+export const insuranceClassDetailResponseSchema = z
+  .object({ data: insuranceClassResponseSchema })
+  .transform((wire) => wire.data)
+
+/** Saving a class (`PUT`): every field but `practice_id`. */
+export interface InsuranceClassUpdatePayload {
   code: string
   name: string
   authorization_required: boolean
@@ -54,6 +76,11 @@ export interface InsuranceClassPayload {
   accept_assignment: boolean
   icd_version: string
   is_active: boolean
+}
+
+/** Creating a class (`POST`): with the practice it belongs to. */
+export interface InsuranceClassPayload extends InsuranceClassUpdatePayload {
+  practice_id: number
 }
 
 /** Backend field → form field, so a server's field error lands on the right input. */
@@ -125,10 +152,10 @@ export function toInsuranceClassFormValues(insuranceClass: InsuranceClass): Insu
   }
 }
 
-export function toInsuranceClassPayload(values: InsuranceClassFormValues): InsuranceClassPayload {
-  // The schema has refused a missing practice or version before this runs.
+/** A save: every field but the practice, which a class never changes. */
+export function toInsuranceClassUpdatePayload(values: InsuranceClassFormValues): InsuranceClassUpdatePayload {
+  // The schema has refused a missing version before this runs.
   return {
-    practice_id: Number(values.practiceId),
     code: values.code,
     name: values.name,
     authorization_required: values.authorizationRequired,
@@ -138,4 +165,10 @@ export function toInsuranceClassPayload(values: InsuranceClassFormValues): Insur
     icd_version: values.icdVersion ?? '',
     is_active: values.isActive,
   }
+}
+
+/** A new class: with its practice. */
+export function toInsuranceClassPayload(values: InsuranceClassFormValues): InsuranceClassPayload {
+  // The schema has refused a missing practice before this runs.
+  return { practice_id: Number(values.practiceId), ...toInsuranceClassUpdatePayload(values) }
 }

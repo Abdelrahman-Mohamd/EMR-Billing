@@ -1,87 +1,183 @@
-import { z } from 'zod'
-import { ApiError } from '@/lib/api/api-error'
+import { renameFieldErrors } from '@/lib/api/api-error'
+import { request } from '@/lib/api/http-client'
+import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
 import type { LocationFormValues, NewPracticeFormValues, PracticeFormValues } from '../schemas/practice-form'
-import type { LocationPayload, PracticePayload } from '../schemas/practice-payload'
+import type { LocationPayload, LocationUpdatePayload, PracticePayload } from '../schemas/practice-payload'
 import {
-  locationResponseSchema,
-  practiceResponseSchema,
-  type Location,
+  locationPageResponseSchema,
+  practiceDetailResponseSchema,
+  practicePageResponseSchema,
+  type LocationSummary,
   type Practice,
+  type PracticePage,
+  type PracticeSummary,
 } from '../schemas/practice'
-import { toLocationPayload, toPracticePayload } from './payloads'
+import {
+  locationFormFieldFor,
+  practiceFormFieldFor,
+  toLocationPayload,
+  toLocationUpdatePayload,
+  toPracticePayload,
+} from './payloads'
 
 /**
- * Practices & Locations' only door to a server.
+ * Practices & Locations' only door to a server. Every call carries the
+ * session's token. All confirmed 2026-10-07 and tried on staging:
  *
- * **No endpoints exist yet.** The request bodies are known (the practice and
- * location payloads); paths, methods and response bodies are not, so none are
- * written here. In development and tests the calls go to an in-memory mock
- * that plays the server — it receives the real payloads and answers in wire
- * format — so the mapping on the way out and the parsing on the way back run
- * exactly as they will against the backend (ADR 0006). In any other build they
- * reject as `unavailable`.
+ * - `GET /practices?page=N` — the list, paged by the server, as summaries (no
+ *   address, no locations). Only `page` is sent.
+ * - `GET /practices/{id}` — one practice in full, with its locations.
+ * - `POST /practices` — the practice with its first location in
+ *   `locations[]`. `PUT /practices/{id}` — the practice without `locations`
+ *   (they stay as they are). `DELETE /practices/{id}` — its locations go with
+ *   it.
+ * - `GET /locations?page=N` — every location, as summaries (no address).
+ * - `POST /locations` — one location with its `practice_id`.
+ *   `PUT /locations/{id}` — without `practice_id` (refused: a location never
+ *   moves practice). `DELETE /locations/{id}`.
  *
- * Assumed until the contract says otherwise: practices are read as one list,
- * each with its locations; a location is created and saved on its own (the
- * standalone location payload); editing a practice does not send its
- * locations.
+ * Writes answer `{ success, message, data: null }`: each resolves with the
+ * server's message, which the screens show (lib/api/server-message.ts). A `PUT` changes only the fields it carries (see
+ * schemas/practice-payload.ts). `GET /locations/{id}` exists too; nothing here
+ * needs it, since a practice comes with its locations in full.
  */
 export interface PracticesApi {
-  listPractices: (signal?: AbortSignal) => Promise<unknown>
-  createPractice: (payload: PracticePayload) => Promise<unknown>
-  updatePractice: (id: number, payload: PracticePayload) => Promise<unknown>
-  createLocation: (payload: LocationPayload) => Promise<unknown>
-  updateLocation: (id: number, payload: LocationPayload) => Promise<unknown>
+  listPractices: (page: number, signal?: AbortSignal) => Promise<PracticePage>
+  getPractice: (id: number, signal?: AbortSignal) => Promise<Practice>
+  createPractice: (payload: PracticePayload) => Promise<ServerMessage>
+  updatePractice: (id: number, payload: PracticePayload) => Promise<ServerMessage>
+  deletePractice: (id: number) => Promise<ServerMessage>
+  listLocations: (
+    page: number,
+    signal?: AbortSignal,
+  ) => Promise<{ locations: LocationSummary[]; pageCount: number }>
+  createLocation: (payload: LocationPayload) => Promise<ServerMessage>
+  updateLocation: (
+    id: number,
+    payload: LocationUpdatePayload | { is_active: boolean },
+  ) => Promise<ServerMessage>
+  deleteLocation: (id: number) => Promise<ServerMessage>
 }
-
-const notConnected = (): Promise<never> =>
-  Promise.reject(
-    new ApiError({
-      kind: 'unavailable',
-      message: 'Practices are not available right now.',
-      detail:
-        'No practice or location endpoints exist yet. features/admin-practices/api/practices-api.ts is the integration point.',
-    }),
-  )
 
 const live: PracticesApi = {
-  listPractices: notConnected,
-  createPractice: notConnected,
-  updatePractice: notConnected,
-  createLocation: notConnected,
-  updateLocation: notConnected,
+  listPractices: (page, signal) =>
+    request({
+      method: 'GET',
+      path: '/practices',
+      searchParams: { page },
+      schema: practicePageResponseSchema,
+      ...(signal ? { signal } : {}),
+    }),
+  getPractice: (id, signal) =>
+    request({
+      method: 'GET',
+      path: `/practices/${id}`,
+      schema: practiceDetailResponseSchema,
+      ...(signal ? { signal } : {}),
+    }),
+  createPractice: (payload) =>
+    request({ method: 'POST', path: '/practices', body: payload, schema: serverMessageSchema }),
+  updatePractice: (id, payload) =>
+    request({ method: 'PUT', path: `/practices/${id}`, body: payload, schema: serverMessageSchema }),
+  deletePractice: (id) =>
+    request({ method: 'DELETE', path: `/practices/${id}`, schema: serverMessageSchema }),
+  listLocations: (page, signal) =>
+    request({
+      method: 'GET',
+      path: '/locations',
+      searchParams: { page },
+      schema: locationPageResponseSchema,
+      ...(signal ? { signal } : {}),
+    }),
+  createLocation: (payload) =>
+    request({ method: 'POST', path: '/locations', body: payload, schema: serverMessageSchema }),
+  updateLocation: (id, payload) =>
+    request({ method: 'PUT', path: `/locations/${id}`, body: payload, schema: serverMessageSchema }),
+  deleteLocation: (id) =>
+    request({ method: 'DELETE', path: `/locations/${id}`, schema: serverMessageSchema }),
 }
 
-async function backend(): Promise<PracticesApi> {
-  // Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-  if (__MOCK_DATA__) return (await import('./practices-api.mock')).mockPracticesApi
-  return live
+function backend(): Promise<PracticesApi> {
+  return Promise.resolve(live)
 }
 
-export async function listPractices(signal?: AbortSignal): Promise<Practice[]> {
-  return z.array(practiceResponseSchema).parse(await (await backend()).listPractices(signal))
+/** Every page of a server-paged list: page 1, then the rest at once. */
+async function everyPage<T>(
+  read: (page: number) => Promise<{ items: T[]; pageCount: number }>,
+): Promise<T[]> {
+  const first = await read(1)
+  const rest = await Promise.all(Array.from({ length: first.pageCount - 1 }, (_, index) => read(index + 2)))
+  return [first, ...rest].flatMap((page) => page.items)
 }
 
-export async function createPractice(values: NewPracticeFormValues): Promise<Practice> {
-  return practiceResponseSchema.parse(await (await backend()).createPractice(toPracticePayload(values)))
+/**
+ * Every practice, as summaries — for the picker here and the practice
+ * selects and name lookups elsewhere. Practices are a handful of pages at
+ * most.
+ */
+export async function listPractices(signal?: AbortSignal): Promise<PracticeSummary[]> {
+  const api = await backend()
+  return everyPage(async (page) => {
+    const result = await api.listPractices(page, signal)
+    return { items: result.practices, pageCount: result.pageCount }
+  })
 }
 
-export async function updatePractice(id: number, values: PracticeFormValues): Promise<Practice> {
-  return practiceResponseSchema.parse(await (await backend()).updatePractice(id, toPracticePayload(values)))
+/** One practice in full, with its locations. */
+export async function getPractice(id: number, signal?: AbortSignal): Promise<Practice> {
+  return (await backend()).getPractice(id, signal)
 }
 
-export async function createLocation(practiceId: number, values: LocationFormValues): Promise<Location> {
-  return locationResponseSchema.parse(
-    await (await backend()).createLocation(toLocationPayload(practiceId, values)),
-  )
+/**
+ * Every location of every practice, as summaries (no address) — to pick or
+ * name a location elsewhere in the app (visits, provider holds).
+ */
+export async function listLocations(signal?: AbortSignal): Promise<LocationSummary[]> {
+  const api = await backend()
+  return everyPage(async (page) => {
+    const result = await api.listLocations(page, signal)
+    return { items: result.locations, pageCount: result.pageCount }
+  })
 }
 
-export async function updateLocation(
-  id: number,
-  practiceId: number,
-  values: LocationFormValues,
-): Promise<Location> {
-  return locationResponseSchema.parse(
-    await (await backend()).updateLocation(id, toLocationPayload(practiceId, values)),
-  )
+/** The server names payload fields; the forms name and nest theirs their own way. */
+async function send(
+  call: (api: PracticesApi) => Promise<ServerMessage>,
+  fieldFor: (path: string) => string,
+): Promise<ServerMessage> {
+  try {
+    return await call(await backend())
+  } catch (error) {
+    throw renameFieldErrors(error, fieldFor)
+  }
+}
+
+/** Creates a practice with its first location. */
+export function createPractice(values: NewPracticeFormValues): Promise<ServerMessage> {
+  return send((api) => api.createPractice(toPracticePayload(values)), practiceFormFieldFor)
+}
+
+export function updatePractice(id: number, values: PracticeFormValues): Promise<ServerMessage> {
+  return send((api) => api.updatePractice(id, toPracticePayload(values)), practiceFormFieldFor)
+}
+
+export function deletePractice(id: number): Promise<ServerMessage> {
+  return send((api) => api.deletePractice(id), practiceFormFieldFor)
+}
+
+export function createLocation(practiceId: number, values: LocationFormValues): Promise<ServerMessage> {
+  return send((api) => api.createLocation(toLocationPayload(practiceId, values)), locationFormFieldFor)
+}
+
+export function updateLocation(id: number, values: LocationFormValues): Promise<ServerMessage> {
+  return send((api) => api.updateLocation(id, toLocationUpdatePayload(values)), locationFormFieldFor)
+}
+
+/** Activates or deactivates a location: a save carrying `is_active` alone. */
+export function setLocationActive(id: number, isActive: boolean): Promise<ServerMessage> {
+  return send((api) => api.updateLocation(id, { is_active: isActive }), locationFormFieldFor)
+}
+
+export function deleteLocation(id: number): Promise<ServerMessage> {
+  return send((api) => api.deleteLocation(id), locationFormFieldFor)
 }

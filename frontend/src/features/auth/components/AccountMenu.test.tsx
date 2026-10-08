@@ -24,9 +24,16 @@ const changeMock = vi.mocked(changePassword)
 const signOutMock = vi.mocked(signOut)
 
 beforeEach(() => {
-  userMock.mockReset().mockResolvedValue({ name: 'Dana Whitfield', email: 'd.whitfield@example.test' })
-  changeMock.mockReset().mockResolvedValue(undefined)
-  signOutMock.mockReset().mockResolvedValue(undefined)
+  userMock.mockReset().mockResolvedValue({
+    id: 1,
+    name: 'Dana Whitfield',
+    email: 'd.whitfield@example.test',
+    isActive: true,
+    createdAt: '2026-10-05T19:23:35.000000Z',
+    updatedAt: '2026-10-05T19:23:35.000000Z',
+  })
+  changeMock.mockReset().mockResolvedValue(null)
+  signOutMock.mockReset().mockResolvedValue(null)
 })
 afterEach(() => {
   useToastStore.getState().clear()
@@ -174,16 +181,18 @@ describe('change password dialog', () => {
     await userEvent.click(busy)
     expect(changeMock).toHaveBeenCalledOnce()
 
+    // The backend's answer to a wrong current password: 400, no field.
     fail(
       new ApiError({
         kind: 'validation',
-        message: 'Some fields need attention.',
-        status: 422,
-        fieldErrors: [{ path: 'currentPassword', message: 'The current password is incorrect.' }],
+        message: 'Current password is incorrect',
+        status: 400,
+        fieldErrors: [],
       }),
     )
     expect(await within(dialog).findByText('The current password is incorrect.')).toBeInTheDocument()
     expect(current()).toHaveAttribute('aria-invalid', 'true')
+    expect(within(dialog).queryByText('Current password is incorrect')).not.toBeInTheDocument()
     expect(next()).toHaveValue('new-pw')
   })
 

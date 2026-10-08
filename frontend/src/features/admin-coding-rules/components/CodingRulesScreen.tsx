@@ -3,10 +3,10 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { Circle, FlaskConical, Plus, RefreshCw } from 'lucide-react'
 import { Tag } from '@/components/ui/Badge'
 import { Button, buttonClass } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
+import { DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { EmptyState, ErrorState } from '@/components/ui/States'
-import { RowActionButton, actionsColumn, activeColumn } from '@/components/ui/RowActions'
+import { RowActionButton, actionsColumn, StatusChangeDialog, activeColumn } from '@/components/ui/RowActions'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { useInsuranceClasses, useInsurances } from '@/features/admin-insurances'
 import { PracticeSelect, usePractices } from '@/features/admin-practices'
@@ -48,6 +48,8 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
   const store = useCodingRules()
   /** `undefined`: no dialog. `null`: adding. A rule: editing it. */
   const [editing, setEditing] = useState<CodingRule | null | undefined>(undefined)
+  /** The row whose Active switch was flipped, waiting for confirmation. */
+  const [statusOf, setStatusOf] = useState<CodingRule | null>(null)
   const [deleting, setDeleting] = useState<CodingRule | null>(null)
   const [needsCodes, setNeedsCodes] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -56,7 +58,11 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
   const payers = (insurances.data ?? []).filter((item) => item.practiceId === practice?.id)
   const practiceClasses = (classes.data ?? []).filter((item) => item.practiceId === practice?.id)
   const loading =
-    practices.isPending || insurances.isPending || classes.isPending || !procedureCodes.ready || !store.ready
+    practices.isPending ||
+    insurances.isPending ||
+    classes.isPending ||
+    procedureCodes.isPending ||
+    !store.ready
   const failed = practices.isError || insurances.isError || classes.isError
 
   const choose = (value: string | null) =>
@@ -83,11 +89,11 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
     return `${payers.find((item) => item.id === scope.insuranceId)?.name ?? 'Payer'} only`
   }
 
-  const codeOptions: Option[] = [...procedureCodes.codes]
+  const codeOptions: Option[] = [...(procedureCodes.data ?? [])]
     .sort((a, b) => a.code.localeCompare(b.code))
     .map((code) => ({ value: code.code, label: `${code.code} — ${code.description}` }))
   // The tester's codes show as short chips: the code, with its description in the list.
-  const testerCodeOptions = [...procedureCodes.codes]
+  const testerCodeOptions = [...(procedureCodes.data ?? [])]
     .sort((a, b) => a.code.localeCompare(b.code))
     .map((code) => ({ value: code.code, label: code.code, description: code.description }))
   // The prototype offers the active classes; a rule already on an inactive class keeps it.
@@ -102,13 +108,12 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
     })),
   ]
 
-  const openNew = () => (procedureCodes.codes.length === 0 ? setNeedsCodes(true) : setEditing(null))
+  const openNew = () => ((procedureCodes.data ?? []).length === 0 ? setNeedsCodes(true) : setEditing(null))
 
   const columns: ReadonlyArray<Column<CodingRule>> = [
     {
       key: 'type',
       header: 'Rule',
-      hideOnMobile: true,
       cell: (rule) => <Tag tone={rule.type === 'Replace' ? 'brand' : 'attention'}>{rule.type}</Tag>,
     },
     {
@@ -117,45 +122,29 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
       primary: true,
       cell: (rule) => (
         <span className="block">
-          {/* On a phone, where its column is hidden, the rule type leads. */}
-          <span className="mb-1 block sm:hidden">
-            <Tag tone={rule.type === 'Replace' ? 'brand' : 'attention'}>{rule.type}</Tag>
-          </span>
           <span className="whitespace-nowrap tabular-nums">
             {rule.fromCode}
             <span className="text-n500 font-normal"> → </span>
             {rule.type === 'Replace' ? rule.toCode : <span className="text-n500 font-normal">dropped</span>}
           </span>
-          {/* Until their columns appear, what it applies to and why ride under the code. */}
-          <span className="md:hidden">
-            <CellSub>{appliesTo(rule)}</CellSub>
-          </span>
-          {rule.note !== '' && (
-            <span className="xl:hidden">
-              <CellSub>
-                <span className="[overflow-wrap:anywhere]">{rule.note}</span>
-              </CellSub>
-            </span>
-          )}
         </span>
       ),
     },
     {
       key: 'scope',
       header: 'Applies to',
-      hideBelow: 'md',
       cell: (rule) => <span className="break-words">{appliesTo(rule)}</span>,
     },
     {
       key: 'note',
       header: 'Why',
-      hideBelow: 'xl',
       cell: (rule) => <span className="block min-w-32 break-words">{rule.note}</span>,
     },
     activeColumn<CodingRule>({
       isActive: (rule) => rule.isActive,
       label: (rule) => `${ruleName(rule)}, ${appliesTo(rule)}`,
-      onChange: (rule, next) => store.setActive(rule.id, next),
+      // Asks first (StatusChangeDialog below).
+      onChange: (rule) => setStatusOf(rule),
     }),
     actionsColumn<CodingRule>((rule) => (
       <>
@@ -241,7 +230,7 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
               <EmptyState
                 icon={<RefreshCw size={20} />}
                 title="No coding rules yet"
-                description={`Coding rules are optional. A Replace rule swaps one CPT / HCPCS code for another and a Drop rule removes a code during scrubbing; a payer-specific rule overrides a default rule.${procedureCodes.codes.length > 0 ? '' : ' Rules act on procedure codes, so add those first.'}`}
+                description={`Coding rules are optional. A Replace rule swaps one CPT / HCPCS code for another and a Drop rule removes a code during scrubbing; a payer-specific rule overrides a default rule.${(procedureCodes.data ?? []).length > 0 ? '' : ' Rules act on procedure codes, so add those first.'}`}
               />
             }
           />
@@ -319,6 +308,14 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
           setDeleting(null)
         }}
       />
+      {statusOf !== null && (
+        <StatusChangeDialog
+          name={`Rule ${ruleName(statusOf)}`}
+          isActive={statusOf.isActive}
+          onConfirm={() => store.setActive(statusOf.id, !statusOf.isActive)}
+          onClose={() => setStatusOf(null)}
+        />
+      )}
     </PageContainer>
   )
 }

@@ -1,30 +1,32 @@
+import type { SelectOption } from '@/components/ui/Select'
+
 /**
- * A procedure code as the prototype shows and edits it — its fields, and no
- * others. **Frontend-only:** no backend exists for procedure codes, so this is
- * the screen's own shape, not a contract; field names here say nothing about
- * what a server will send.
+ * The procedure types the server takes, worded as the prototype words them.
+ * The prototype offers the first four; `other` is the server's too. A value
+ * outside these, if the server ever sends one, is shown with its label and
+ * kept when the code is saved.
  */
-export interface ProcedureCode {
-  /** The CPT / HCPCS code — five letters or digits, in capitals. Also the record's identity here. */
-  code: string
-  description: string
-  /** One of PROCEDURE_TYPES. */
-  procedureType: string
-  /** Units follow the 8-minute rule. */
-  isTimed: boolean
-  /** Modifier override (client, 2026-09-30): when on, `modifiers` replace a line's own. */
-  modifierOverride: boolean
-  /** Up to four, only while the override is on. */
-  modifiers: readonly string[]
-  /** Default fee per unit, in dollars. */
-  defaultFee: number
-  isActive: boolean
-  /** The prototype's "New from EMR" mark on a code the EMR sent first; cleared once the code is saved. */
-  isNewFromEmr: boolean
+export const PROCEDURE_TYPES: readonly SelectOption[] = [
+  { value: 'evaluation', label: 'Evaluation' },
+  { value: 'therapeutic', label: 'Therapeutic' },
+  { value: 'modality', label: 'Modality' },
+  { value: 'supply_dme', label: 'Supply / DME' },
+  { value: 'other', label: 'Other' },
+]
+
+export function procedureTypeOptions(current: string | null, currentLabel = ''): readonly SelectOption[] {
+  if (current === null || PROCEDURE_TYPES.some((type) => type.value === current)) return PROCEDURE_TYPES
+  return [...PROCEDURE_TYPES, { value: current, label: currentLabel || current }]
 }
 
-/** The procedure types the prototype offers. */
-export const PROCEDURE_TYPES = ['Evaluation', 'Therapeutic', 'Modality', 'Supply / DME'] as const
+/** The type's name: the server's label, else ours, else the value. */
+export function procedureTypeName(code: { procedureType: string; procedureTypeLabel: string }): string {
+  return (
+    code.procedureTypeLabel ||
+    PROCEDURE_TYPES.find((type) => type.value === code.procedureType)?.label ||
+    code.procedureType
+  )
+}
 
-/** The prototype's four modifier inputs. */
+/** The prototype's four modifier inputs — also the server's limit. */
 export const MODIFIER_SLOTS = 4

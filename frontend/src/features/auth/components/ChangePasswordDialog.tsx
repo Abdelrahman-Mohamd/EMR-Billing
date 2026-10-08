@@ -10,6 +10,7 @@ import { Form, FormField, applyServerErrors } from '@/components/ui/Form'
 import { Notice } from '@/components/ui/Notice'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { changePassword } from '../api/auth-api'
+import { WRONG_CURRENT_PASSWORD } from '../model/messages'
 import { changePasswordSchema, type ChangePasswordValues } from '../schemas/password-schemas'
 
 /**
@@ -41,9 +42,19 @@ export function ChangePasswordDialog({
 
   const onSubmit = async (values: ChangePasswordValues) => {
     setFailure(null)
+    let message: string | null
     try {
-      await changePassword(values)
+      message = await changePassword(values)
     } catch (error) {
+      if (isApiError(error) && error.kind === 'validation' && error.fieldErrors.length === 0) {
+        // The server refused the current password (it names no field): its words, on that field.
+        form.setError(
+          'currentPassword',
+          { message: error.serverMessage ?? WRONG_CURRENT_PASSWORD },
+          { shouldFocus: true },
+        )
+        return
+      }
       setFailure(
         isApiError(error) && error.kind === 'validation'
           ? applyServerErrors(form, error)
@@ -51,7 +62,8 @@ export function ChangePasswordDialog({
       )
       return
     }
-    toast.success('Password changed', 'Use the new password the next time you sign in.')
+    if (message !== null) toast.success(message)
+    else toast.success('Password changed', 'Use the new password the next time you sign in.')
     onClose()
   }
 

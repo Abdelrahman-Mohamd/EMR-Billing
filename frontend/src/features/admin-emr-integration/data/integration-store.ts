@@ -12,9 +12,7 @@ import { notLinked, type BillingElection, type LocationIntegration, type Payload
  * - **The payload log** is read-only: payloads come from the EMR through the
  *   backend, which does not exist, so outside development it stays empty and
  *   the screen shows the prototype's "No payloads".
- * - In development and tests it starts with the prototype's states and log
- *   (`sample-integration.ts`, loaded only when `__MOCK_DATA__` is true, so a
- *   production build never contains them).
+ * - It starts empty: there is no sample data.
  * - The screens only use `useEmrIntegration()`. When a backend exists, that
  *   hook is replaced by server-state hooks (docs/FRONTEND_ARCHITECTURE.md §5)
  *   and this file is deleted — the screens do not change.
@@ -24,7 +22,7 @@ import { notLinked, type BillingElection, type LocationIntegration, type Payload
  * Same pattern as the roles, procedure codes and fee schedules stores.
  */
 interface Snapshot {
-  /** False only while the development sample is still loading. */
+  /** Always true: the list is in memory. Kept so the screens read it as they will a query. */
   ready: boolean
   /** By location id; a location with no entry is not linked. */
   integrations: Readonly<Record<number, LocationIntegration>>
@@ -32,28 +30,12 @@ interface Snapshot {
   payloads: readonly Payload[]
 }
 
-let snapshot: Snapshot = { ready: !__MOCK_DATA__, integrations: {}, payloads: [] }
+let snapshot: Snapshot = { ready: true, integrations: {}, payloads: [] }
 const listeners = new Set<() => void>()
 
 function publish(next: Snapshot): void {
   snapshot = next
   for (const listener of listeners) listener()
-}
-
-// Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-if (__MOCK_DATA__) {
-  void import('./sample-integration').then(({ SAMPLE_INTEGRATIONS, SAMPLE_PAYLOADS }) => {
-    if (snapshot.ready) return
-    publish({
-      ready: true,
-      // Anything changed while the sample loaded wins.
-      integrations: {
-        ...Object.fromEntries(SAMPLE_INTEGRATIONS.map((item) => [item.locationId, item])),
-        ...snapshot.integrations,
-      },
-      payloads: [...SAMPLE_PAYLOADS],
-    })
-  })
 }
 
 function subscribe(listener: () => void): () => void {

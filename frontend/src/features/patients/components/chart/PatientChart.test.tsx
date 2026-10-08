@@ -52,14 +52,20 @@ vi.mock('@/features/admin-referring-physicians/api/referring-physicians-api', ()
 
 beforeEach(() => {
   practicesMock.mockReset().mockResolvedValue([practice(1, 'Harborline Physical Therapy')])
-  insurancesMock
-    .mockReset()
-    .mockResolvedValue([
-      insurance(1, 'Medicare Part B'),
-      insurance(3, 'Aetna', { insuranceClassId: 3 }),
-      insurance(5, 'Corvel Enterprise', { insuranceType: 'Workers Comp', insuranceClassId: 4 }),
-      insurance(6, 'GEICO No-Fault', { insuranceType: 'PIP', insuranceClassId: 5 }),
-    ])
+  insurancesMock.mockReset().mockResolvedValue([
+    insurance(1, 'Medicare Part B'),
+    insurance(3, 'Aetna', { insuranceClassId: 3 }),
+    insurance(5, 'Corvel Enterprise', {
+      insuranceType: 'WC',
+      insuranceTypeLabel: "Workers' Comp",
+      insuranceClassId: 4,
+    }),
+    insurance(6, 'GEICO No-Fault', {
+      insuranceType: 'AM',
+      insuranceTypeLabel: 'Auto / PIP',
+      insuranceClassId: 5,
+    }),
+  ])
   classesMock
     .mockReset()
     .mockResolvedValue([

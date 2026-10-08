@@ -47,9 +47,9 @@ async function verifyCode(code = '123456') {
 }
 
 beforeEach(() => {
-  sendMock.mockReset().mockResolvedValue(undefined)
-  verifyMock.mockReset().mockResolvedValue(undefined)
-  resetMock.mockReset().mockResolvedValue(undefined)
+  sendMock.mockReset().mockResolvedValue(null)
+  verifyMock.mockReset().mockResolvedValue(null)
+  resetMock.mockReset().mockResolvedValue(null)
 })
 
 describe('forgot password', () => {
@@ -101,7 +101,7 @@ describe('forgot password', () => {
 
   it('shows each step working, and does not send twice', async () => {
     let finish: () => void = () => undefined
-    sendMock.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)))
+    sendMock.mockImplementation(() => new Promise<null>((resolve) => (finish = () => resolve(null))))
     renderFlow()
     await userEvent.type(await screen.findByRole('textbox', { name: /^email/i }), EMAIL)
     await userEvent.click(screen.getByRole('button', { name: 'Send code' }))
@@ -128,6 +128,36 @@ describe('forgot password', () => {
     expect(await screen.findByText('This code is invalid or has expired.')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /^code/i })).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/check your email/i)
+  })
+
+  // The backend's real answer to a wrong or expired code: 400, "Invalid OTP.", no field.
+  const invalidCode = () =>
+    new ApiError({ kind: 'validation', message: 'Invalid OTP.', status: 400, fieldErrors: [] })
+
+  it('says a wrong code is invalid or expired, on the code field, in plain words', async () => {
+    verifyMock.mockRejectedValue(invalidCode())
+    renderFlow()
+    await sendCode()
+    await verifyCode('000000')
+    expect(await screen.findByText('This code is invalid or has expired.')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /^code/i })).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByText('Invalid OTP.')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/check your email/i)
+  })
+
+  it('says so when the code expired before the new password was set, and offers to start over', async () => {
+    resetMock.mockRejectedValue(invalidCode())
+    renderFlow()
+    await sendCode()
+    await verifyCode()
+    await heading(/choose a new password/i)
+    await userEvent.type(screen.getByLabelText(/^new password/i), 'new-password')
+    await userEvent.type(screen.getByLabelText(/^confirm new password/i), 'new-password')
+    await userEvent.click(screen.getByRole('button', { name: 'Reset password' }))
+    expect(
+      await screen.findByText('This code is invalid or has expired. Request a new one.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start over' })).toBeInTheDocument()
   })
 
   it('asks for the code before checking it', async () => {

@@ -1,11 +1,10 @@
 import { useId } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Layers, Pencil, Plus } from 'lucide-react'
+import { Layers, Pencil, Plus, Trash2 } from 'lucide-react'
 import { StatusDot } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { KeyValue } from '@/components/ui/KeyValue'
-import type { Organization } from '@/features/admin-organizations'
 import { formatAddress } from '../model/format-address'
 import type { Location, Practice } from '../schemas/practice'
 import { LocationsTable } from './LocationsTable'
@@ -17,21 +16,22 @@ import { LocationsTable } from './LocationsTable'
  */
 export function PracticeDetails({
   practice,
-  organization,
   practicesInOrganization,
   onEditPractice,
+  onDeletePractice,
   onAddLocation,
   onEditLocation,
   onToggleLocationActive,
+  onDeleteLocation,
 }: {
   practice: Practice
-  /** `undefined` when the practice is in none, or its organization is not loaded. */
-  organization: Organization | undefined
   practicesInOrganization: number
   onEditPractice: () => void
+  onDeletePractice: () => void
   onAddLocation: () => void
   onEditLocation: (location: Location) => void
   onToggleLocationActive: (location: Location) => void
+  onDeleteLocation: (location: Location) => void
 }) {
   const nameId = useId()
   const billingId = useId()
@@ -59,7 +59,7 @@ export function PracticeDetails({
             ) : (
               <StatusDot tone="inert">Inactive</StatusDot>
             )}
-            {organization !== undefined && (
+            {practice.organizationName !== undefined && (
               <span className="inline-flex flex-wrap items-center gap-x-1.5">
                 <Link
                   to="/admin/organizations"
@@ -67,7 +67,7 @@ export function PracticeDetails({
                 >
                   <Layers size={15} aria-hidden="true" className="flex-none" />
                   <span className="sr-only">Organization: </span>
-                  {organization.name}
+                  {practice.organizationName}
                 </Link>
                 <span>
                   · {practicesInOrganization === 1 ? '1 practice' : `${practicesInOrganization} practices`}
@@ -76,9 +76,14 @@ export function PracticeDetails({
             )}
           </p>
         </div>
-        <Button icon={<Pencil size={15} aria-hidden="true" />} onClick={onEditPractice}>
-          Edit practice
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button icon={<Pencil size={15} aria-hidden="true" />} onClick={onEditPractice}>
+            Edit practice
+          </Button>
+          <Button variant="danger" icon={<Trash2 size={15} aria-hidden="true" />} onClick={onDeletePractice}>
+            Delete practice
+          </Button>
+        </div>
       </header>
 
       <div className="mt-6 flex flex-col gap-6">
@@ -126,6 +131,7 @@ export function PracticeDetails({
               locations={practice.locations}
               onEdit={onEditLocation}
               onToggleActive={onToggleLocationActive}
+              onDelete={onDeleteLocation}
             />
           </CardBody>
         </Card>

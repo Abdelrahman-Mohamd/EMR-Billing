@@ -195,20 +195,13 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
       primary: true,
       cell: (auth) => (
         <span className="block">
-          <span className="[overflow-wrap:anywhere] tabular-nums">{auth.number}</span>
-          {/* Until their columns appear, the issuer and dates ride under the number.
-              (From 1280px: below that the chart's menu takes the room.) */}
-          <span className="text-eyebrow text-n500 mt-px block font-normal xl:hidden">
-            {insuranceOf(coverageById(auth.coverageId))?.name ?? '—'} · {formatIsoDate(auth.start)} –{' '}
-            {formatIsoDate(auth.end)}
-          </span>
+          <span className="break-words tabular-nums">{auth.number}</span>
         </span>
       ),
     },
     {
       key: 'issuer',
       header: 'Issued by',
-      hideBelow: 'xl',
       cell: (auth) => (
         <span className="break-words">{insuranceOf(coverageById(auth.coverageId))?.name ?? '—'}</span>
       ),
@@ -216,7 +209,6 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
     {
       key: 'dates',
       header: 'Active dates',
-      hideBelow: 'xl',
       cell: (auth) => (
         // Wraps between the two dates, never inside one, when the card is narrow.
         <span className="tabular-nums">
@@ -228,7 +220,6 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
     {
       key: 'approved',
       header: 'Approved',
-      hideBelow: 'md',
       cell: (auth) => (
         <span className="whitespace-nowrap tabular-nums">
           {auth.qty} {auth.unit.toLowerCase()}
@@ -238,7 +229,6 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
     {
       key: 'used',
       header: 'Used',
-      hideBelow: 'md',
       cell: (auth) => <span className="tabular-nums">{auth.used}</span>,
     },
     {
@@ -255,7 +245,6 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
     {
       key: 'status',
       header: 'Status',
-      hideOnMobile: true,
       cell: (auth) => {
         const status = authStatus(auth, today)
         return <Badge tone={status.tone}>{status.label}</Badge>

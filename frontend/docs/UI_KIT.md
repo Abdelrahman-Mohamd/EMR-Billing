@@ -61,7 +61,7 @@ field labels, table headers, cell sub-lines, placeholders and summaries.
 | `Switch`                                                          | Switch.tsx           | `button role=switch`; Space/Enter; label clickable; on = colour + position + check. For `is_active`                                                                                                         |
 | `DateInput`, `DateRangeInput`                                     | DateInput.tsx        | Typed MM/DD/YYYY plus a custom calendar with month and year jumps; ISO value; no business date rules                                                                                                        |
 | `Form`, `FormField`, `FormActions`, `applyServerErrors`           | Form.tsx             | React Hook Form + Zod, and server errors back onto fields                                                                                                                                                   |
-| `DataTable`, `CellSub`                                            | DataTable.tsx        | Sorting/selection are reported, never applied locally; `rowLink` / `rowAction` open a row; `hideBelow` drops secondary columns on narrower screens                                                          |
+| `DataTable`, `CellSub`                                            | DataTable.tsx        | Sorting/selection are reported, never applied locally; `rowLink` / `rowAction` open a row; every column shows at every width — below 1280px the table scrolls sideways in its own box                       |
 | `Pagination`                                                      | Pagination.tsx       | Page numbers only, API-agnostic                                                                                                                                                                             |
 | `Badge`, `StatusDot`, `Tag`, `Tone`                               | Badge.tsx            | Tone vocabulary shared by the whole product                                                                                                                                                                 |
 | `EmptyState`, `ErrorState`, `Skeleton`, `SkeletonRows`            | States.tsx           | Every list needs all three                                                                                                                                                                                  |
@@ -120,10 +120,15 @@ to show a format. Shared primitives set a placeholder only where they know what 
 Every table offers its row actions one way — the Coding rules pattern, shared in `components/ui/RowActions.tsx`:
 
 - **Active** (`activeColumn`): a column with a compact `Switch` per row, named "{row}: active". On = Active,
-  off = Inactive. Only for an entity whose model has `is_active`. A change goes through the feature's own
-  update with only that field changed; it says nothing on success and `statusChangeFailed` toasts a failure.
-  Whether it asks first is the feature's: Locations and Users confirm (the prototype does); the rest change at
-  once, as Coding rules does. The create/edit dialog keeps its own Active switch.
+  off = Inactive. Only for an entity whose model has `is_active`. **Every switch asks first** (decided
+  2026-10-07): `StatusChangeDialog` — "Deactivate {row}? Its status becomes Inactive." / "Reactivate {row}?"
+  — or the feature's own confirmation where it says more (Locations, Users, Patients). Nothing changes on
+  the click. Confirming runs the feature's update with only that field changed, the button busy and the
+  dialog open until the server has saved it; then the switch shows the new status at once — the feature's
+  status mutation writes it into its cached lists on success (Organizations' `useSetOrganizationActive` is
+  the reference) and re-reads them in the background — and the toast says so in the server's words
+  (`statusChanged`), or why not (`statusChangeFailed`). Not optimistic: nothing is shown before the server
+  says yes. The create/edit dialog keeps its own Active switch.
 - **Actions** (`actionsColumn`, `RowActionButton`): the last column, right-aligned, small icon buttons — Edit
   (pencil) and, where the feature supports it, Delete (trash, red) — named for the row ("Edit Harborline"),
   with the verb as tooltip. Only the actions a feature has; a read-only table has no actions column.
@@ -173,22 +178,24 @@ is the billing entity…".
 prototype's (768px, `md`). A component changes its layout or its interaction where the current one stops
 working — it never scales, zooms or shrinks type to fit.
 
-| Where          | Phone (< 640 / < 768 for navigation)                                                                     | Tablet (768–1023)               | Desktop (≥ 1024) |
-| -------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------- |
-| Navigation     | Brand top bar (menu · logo · account) and the rail as a left drawer, Admin sections nested (`MobileBar`) | Collapsed rail                  | Rail, expandable |
-| Admin sections | In the drawer                                                                                            | Row of pills                    | Sticky column    |
-| Page header    | Stacked; actions full width                                                                              | Actions right, wrap when needed | Same             |
-| Tables         | Priority columns: one main cell carrying secondary values on a sub-line; the row opens the record        | More columns (`hideBelow`)      | All columns      |
-| Dialogs        | Bottom sheet, body scrolls, footer buttons stacked full width, primary on top                            | Centred                         | Centred          |
-| Confirmations  | Centred card, buttons stacked full width                                                                 | Side by side                    | Side by side     |
-| Forms          | One column (`FormGrid` spans from `sm`)                                                                  | Grid                            | Grid             |
+| Where          | Phone (< 640 / < 768 for navigation)                                                                     | Tablet (768–1023)               | Desktop (≥ 1024)             |
+| -------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------- |
+| Navigation     | Brand top bar (menu · logo · account) and the rail as a left drawer, Admin sections nested (`MobileBar`) | Collapsed rail                  | Rail, expandable             |
+| Admin sections | In the drawer                                                                                            | Row of pills                    | Sticky column                |
+| Page header    | Stacked; actions full width                                                                              | Actions right, wrap when needed | Same                         |
+| Tables         | All columns; the table scrolls sideways in its own box (min ≈ 8rem a column)                             | Same                            | All columns, fit from 1280px |
+| Dialogs        | Bottom sheet, body scrolls, footer buttons stacked full width, primary on top                            | Centred                         | Centred                      |
+| Confirmations  | Centred card, buttons stacked full width                                                                 | Side by side                    | Side by side                 |
+| Forms          | One column (`FormGrid` spans from `sm`)                                                                  | Grid                            | Grid                         |
 
 - Structure that differs (the rail vs the bar and drawer) is chosen with `useMediaQuery` so only one exists
   in the page; anything that only moves or resizes stays in Tailwind classes.
 - Tap targets: 44px for primary touch controls; a control drawn smaller (an icon button, a text link, a sort
   header) carries an invisible `::after` hit box instead of growing visibly.
 - Page padding is 16px on a phone, 32px from 640px, 44px from 1024px (`.page-x`).
-- No page ever scrolls sideways; a table may, only if its columns cannot be prioritised.
+- No page ever scrolls sideways; a table does, inside its own box, rather than hide columns (user decision
+  2026-10-08). Table cells wrap with `break-words`, never `[overflow-wrap:anywhere]`, so a word is not split
+  to squeeze a column.
 - Tests render at 1280px; a test about the phone layout calls `setViewportWidth` (`src/test/viewport.ts`).
 
 ## Deliberately absent

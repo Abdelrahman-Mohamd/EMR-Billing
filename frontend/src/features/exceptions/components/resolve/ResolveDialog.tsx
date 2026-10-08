@@ -103,8 +103,8 @@ export function ResolveDialog({ exception, onClose }: { exception: BillingExcept
       return <ProviderNpiFix exception={exception} provider={provider} onDone={done} onClose={onClose} />
     }
     case 'fee': {
-      const code = codes.codes.find((entry) => entry.code === fix.procedureCode)
-      if (code === undefined) return <Unavailable loading={!codes.ready} onClose={onClose} />
+      const code = codes.data?.find((entry) => entry.code === fix.procedureCode)
+      if (code === undefined) return <Unavailable loading={codes.isPending} onClose={onClose} />
       const insurance = insurances.data?.find((entry) => entry.id === fix.insuranceId)
       if (fix.insuranceId !== null && insurances.isPending) return <Unavailable loading onClose={onClose} />
       return (

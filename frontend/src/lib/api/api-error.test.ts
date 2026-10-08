@@ -7,6 +7,9 @@ describe('ApiError', () => {
     expect(new ApiError({ kind: 'server', message: 'x' }).isRetryable).toBe(true)
     expect(new ApiError({ kind: 'forbidden', message: 'x' }).isRetryable).toBe(false)
     expect(new ApiError({ kind: 'validation', message: 'x' }).isRetryable).toBe(false)
+    // A 503 from the server is worth retrying; a call that was never sent (no endpoint yet) is not.
+    expect(new ApiError({ kind: 'unavailable', message: 'x', status: 503 }).isRetryable).toBe(true)
+    expect(new ApiError({ kind: 'unavailable', message: 'x' }).isRetryable).toBe(false)
   })
 
   it('never shows a user the server text for an unexpected failure', () => {

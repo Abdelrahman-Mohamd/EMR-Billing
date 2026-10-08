@@ -16,6 +16,100 @@ import type { Visit } from '../schemas/visit'
 // claims api, and the practices and providers lists the pickers read. Patients
 // and procedure codes are the development samples those features load in
 // tests (the case "R shoulder 2026" of Nadia Okonkwo, code 97110 …).
+// The other features' in-memory lists start empty; seed the records these
+// tests read, through each store's own test reset (faked by path — never
+// imported, as lint requires).
+const seed = vi.hoisted(() => {
+  const patient = (id: string, firstName: string, lastName: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    practiceId: 1,
+    billingId: 10400,
+    emrId: 56362000,
+    firstName,
+    middleName: '',
+    lastName,
+    dob: '1980-01-01',
+    gender: 'Female',
+    ssn: '',
+    phoneCell: '718-555-0100',
+    phoneHome: '',
+    email: '',
+    address: { line1: '1 Court Street', line2: '', city: 'Brooklyn', state: 'NY', zip: '11201' },
+    guarantor: null,
+    notes: '',
+    isActive: true,
+    ...extra,
+  })
+  const patientCase = (patientId: string, name: string, extra: Record<string, unknown> = {}) => ({
+    id: `${patientId}-case`,
+    patientId,
+    name,
+    referrerId: 1,
+    primaryCoverageId: `${patientId}-cov-1`,
+    secondaryCoverageId: null,
+    injuryType: '',
+    injuryDate: '',
+    accidentState: '',
+    employmentStatus: '',
+    startOfCare: '2026-09-14',
+    dischargeDate: '',
+    isActive: true,
+    diagnoses: [],
+    ...extra,
+  })
+  const coverage = (patientId: string, insuranceId: number) => ({
+    id: `${patientId}-cov-1`,
+    patientId,
+    insuranceId,
+    memberId: 'W0001',
+    groupNumber: '0001',
+    claimNumber: '',
+    subscriber: null,
+    employer: null,
+  })
+  const code = (value: string, description: string, extra: Record<string, unknown> = {}) => ({
+    id: Number(value.replace(/\D/g, '')),
+    code: value,
+    description,
+    procedureType: 'therapeutic',
+    procedureTypeLabel: 'Therapeutic',
+    isTimed: true,
+    modifierOverride: false,
+    modifiers: [],
+    defaultFee: 35,
+    isActive: true,
+    ...extra,
+  })
+  return { patient, patientCase, coverage, code }
+})
+const { SEED_RECORDS, SEED_CODES } = vi.hoisted(() => ({
+  SEED_RECORDS: {
+    patients: [seed.patient('p1', 'Nadia', 'Okonkwo')],
+    cases: [
+      seed.patientCase('p1', 'R shoulder 2026', {
+        diagnoses: [
+          { code: 'M75.101', description: 'Unspecified rotator cuff tear of right shoulder, not traumatic' },
+          { code: 'M25.511', description: 'Pain in right shoulder' },
+        ],
+      }),
+    ],
+    coverages: [seed.coverage('p1', 3)],
+  },
+  SEED_CODES: [
+    seed.code('97110', 'Therapeutic exercise'),
+    seed.code('97140', 'Manual therapy techniques', { modifierOverride: true, modifiers: ['GP', '59'] }),
+    seed.code('97530', 'Therapeutic activities'),
+  ],
+}))
+vi.mock('@/features/patients/data/patient-records-store', async (importOriginal) => {
+  const actual = await importOriginal<{ resetPatientRecords: (records: object) => void }>()
+  actual.resetPatientRecords(SEED_RECORDS)
+  return actual
+})
+vi.mock('@/features/admin-procedure-codes/api/procedure-codes-api', () => ({
+  listProcedureCodes: () => Promise.resolve(SEED_CODES),
+}))
+
 vi.mock('../api/visits-api', () => ({ listVisits: vi.fn(), createVisit: vi.fn(), addChargeLine: vi.fn() }))
 const listClaimsMock = vi.hoisted(() => vi.fn())
 const createClaimMock = vi.hoisted(() => vi.fn())
@@ -26,6 +120,23 @@ vi.mock('@/features/claims/api/claims-api', () => ({
 const practicesMock = vi.hoisted(() => vi.fn<() => Promise<Practice[]>>())
 vi.mock('@/features/admin-practices/api/practices-api', () => ({
   listPractices: practicesMock,
+  // A practice in full, with its locations: the same fixtures.
+  // Every location, as the list has them: the same fixtures.
+  listLocations: async () =>
+    (await practicesMock()).flatMap((practice) =>
+      practice.locations.map(({ id, practiceId, code, name, isActive }) => ({
+        id,
+        practiceId,
+        code,
+        name,
+        isActive,
+      })),
+    ),
+  getPractice: async (id: number) => {
+    const found = (await practicesMock()).find((practice) => practice.id === id)
+    if (found === undefined) throw new Error(`No practice ${id} in this test`)
+    return found
+  },
   createPractice: vi.fn(),
   updatePractice: vi.fn(),
   createLocation: vi.fn(),
@@ -70,11 +181,11 @@ const provider = (id: number, firstName: string, lastName: string, credential: s
     lastName,
     credential,
     specialty: 'PHYSICAL THERAPIST',
-    providerType: 'Billing',
+    type: 'billing',
+    typeLabel: 'Billing',
     npi: '1356482917',
     taxonomyCode: '225100000X',
     stateLicense: '',
-    claimHold: { from: null, until: null, reason: '', locationIds: [], insuranceIds: [] },
     isActive: true,
   }) as unknown as Provider
 

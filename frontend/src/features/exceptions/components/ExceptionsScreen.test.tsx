@@ -6,10 +6,8 @@ import { routeTree } from '@/routeTree.gen'
 import { ApiError } from '@/lib/api/api-error'
 import { useToastStore } from '@/stores/toast-store'
 import { createTestQueryClient, renderWithProviders } from '@/test/render'
-import { useFeeSchedules } from '@/features/admin-fee-schedules'
 import type { Insurance } from '@/features/admin-insurances'
 import type { Practice } from '@/features/admin-practices'
-import { useProcedureCodes } from '@/features/admin-procedure-codes'
 import type { Provider } from '@/features/admin-providers'
 import type { ReferringPhysician } from '@/features/admin-referring-physicians'
 import { usePatientRecords } from '@/features/patients'
@@ -20,6 +18,123 @@ import type { BillingException } from '../model/billing-exception'
 // The patients, procedure codes and fee schedules they fix are the
 // development samples those features load in tests; the lists that come from
 // an api are faked by path, never imported.
+// The other features' in-memory lists start empty; seed the records these
+// tests read, through each store's own test reset (faked by path — never
+// imported, as lint requires).
+const seed = vi.hoisted(() => {
+  const patient = (id: string, firstName: string, lastName: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    practiceId: 1,
+    billingId: 10400,
+    emrId: 56362000,
+    firstName,
+    middleName: '',
+    lastName,
+    dob: '1980-01-01',
+    gender: 'Female',
+    ssn: '',
+    phoneCell: '718-555-0100',
+    phoneHome: '',
+    email: '',
+    address: { line1: '1 Court Street', line2: '', city: 'Brooklyn', state: 'NY', zip: '11201' },
+    guarantor: null,
+    notes: '',
+    isActive: true,
+    ...extra,
+  })
+  const patientCase = (patientId: string, name: string, extra: Record<string, unknown> = {}) => ({
+    id: `${patientId}-case`,
+    patientId,
+    name,
+    referrerId: 1,
+    primaryCoverageId: `${patientId}-cov-1`,
+    secondaryCoverageId: null,
+    injuryType: '',
+    injuryDate: '',
+    accidentState: '',
+    employmentStatus: '',
+    startOfCare: '2026-09-14',
+    dischargeDate: '',
+    isActive: true,
+    diagnoses: [],
+    ...extra,
+  })
+  const coverage = (patientId: string, insuranceId: number) => ({
+    id: `${patientId}-cov-1`,
+    patientId,
+    insuranceId,
+    memberId: 'W0001',
+    groupNumber: '0001',
+    claimNumber: '',
+    subscriber: null,
+    employer: null,
+  })
+  const code = (value: string, description: string, extra: Record<string, unknown> = {}) => ({
+    id: Number(value.replace(/\D/g, '')),
+    code: value,
+    description,
+    procedureType: 'therapeutic',
+    procedureTypeLabel: 'Therapeutic',
+    isTimed: true,
+    modifierOverride: false,
+    modifiers: [],
+    defaultFee: 35,
+    isActive: true,
+    ...extra,
+  })
+  return { patient, patientCase, coverage, code }
+})
+const { SEED_RECORDS, SEED_CODES } = vi.hoisted(() => ({
+  SEED_RECORDS: {
+    patients: [
+      seed.patient('p10', 'Victor', 'Moreau', { phoneCell: '000-000-0000' }),
+      seed.patient('p11', 'Grace', 'Holloway', {
+        address: { line1: '44 Hudson Place', line2: '', city: 'Brooklyn', state: 'NY', zip: '07030' },
+      }),
+      seed.patient('p12', 'Dmitri', 'Volkov'),
+      seed.patient('p14', 'Thomas', 'Reilly'),
+      seed.patient('p21', 'Rachel', 'Adler'),
+      seed.patient('p25', 'Maximilian Alexander', 'Castellanos-Whitmore', {
+        address: {
+          line1: '240 Prospect Park Southwest',
+          line2: '',
+          city: 'Brooklyn',
+          state: 'NY',
+          zip: '11218',
+        },
+      }),
+    ],
+    cases: [
+      seed.patientCase('p10', 'Plantar fasciitis'),
+      seed.patientCase('p12', 'Chronic low back', { referrerId: 5 }),
+      seed.patientCase('p14', 'R knee OA'),
+    ],
+    coverages: [seed.coverage('p10', 3), seed.coverage('p12', 3), seed.coverage('p14', 3)],
+  },
+  SEED_CODES: [
+    seed.code('97033', 'Iontophoresis', {
+      defaultFee: 0,
+      procedureType: 'modality',
+      procedureTypeLabel: 'Modality',
+    }),
+  ],
+}))
+vi.mock('@/features/patients/data/patient-records-store', async (importOriginal) => {
+  const actual = await importOriginal<{ resetPatientRecords: (records: object) => void }>()
+  actual.resetPatientRecords(SEED_RECORDS)
+  return actual
+})
+const setDefaultFeeMock = vi.hoisted(() => vi.fn())
+const createFeeRowMock = vi.hoisted(() => vi.fn())
+vi.mock('@/features/admin-fee-schedules/api/fee-schedules-api', () => ({
+  listFeeRows: () => Promise.resolve([]),
+  createFeeRow: createFeeRowMock,
+}))
+vi.mock('@/features/admin-procedure-codes/api/procedure-codes-api', () => ({
+  listProcedureCodes: () => Promise.resolve(SEED_CODES),
+  setProcedureCodeDefaultFee: setDefaultFeeMock,
+}))
+
 const practicesMock = vi.hoisted(() => vi.fn<() => Promise<Practice[]>>())
 const insurancesMock = vi.hoisted(() => vi.fn<() => Promise<Insurance[]>>())
 const providersMock = vi.hoisted(() => vi.fn<() => Promise<Provider[]>>())
@@ -41,12 +156,14 @@ vi.mock('@/features/admin-insurances/api/insurances-api', () => ({
 vi.mock('@/features/admin-providers/api/providers-api', () => ({
   listProviders: providersMock,
   createProvider: vi.fn(),
-  updateProvider: updateProviderMock,
+  updateProvider: vi.fn(),
+  correctProviderNpi: updateProviderMock,
 }))
 vi.mock('@/features/admin-referring-physicians/api/referring-physicians-api', () => ({
   listReferringPhysicians: referrersMock,
   createReferringPhysician: vi.fn(),
-  updateReferringPhysician: updateReferrerMock,
+  updateReferringPhysician: vi.fn(),
+  correctReferringPhysicianNpi: updateReferrerMock,
 }))
 
 const practice = (id: number, name: string): Practice => ({
@@ -67,22 +184,45 @@ const aetna = { id: 3, practiceId: 1, name: 'Aetna' } as unknown as Insurance
 const caleb: Provider = {
   id: 6,
   practiceId: 1,
+  practiceName: 'Harborline Physical Therapy',
   code: '327',
   firstName: 'Caleb',
   lastName: 'Wright',
   credential: 'PT',
   specialty: 'PHYSICAL THERAPIST',
-  providerType: 'Billing',
+  type: 'billing',
+  typeLabel: 'Billing',
   npi: '',
   taxonomyCode: '225100000X',
   stateLicense: 'NY 048115',
-  claimHold: { from: null, until: null, reason: '', locationIds: [], insuranceIds: [] },
   isActive: true,
 }
 
 const referrers: ReferringPhysician[] = [
-  { id: 1, practiceId: 1, code: 'PN01', name: 'Priya Natarajan, MD', type: 'DN', npi: '1720394851' },
-  { id: 5, practiceId: 1, code: 'LV05', name: 'Leonard Voss, MD', type: 'DN', npi: '9999999999' },
+  {
+    id: 1,
+    practiceId: 1,
+    code: 'PN01',
+    name: 'Priya Natarajan, MD',
+    type: 'DN',
+    typeLabel: 'Referring',
+    npi: '1720394851',
+    phone: '',
+    fax: '',
+    isActive: true,
+  },
+  {
+    id: 5,
+    practiceId: 1,
+    code: 'LV05',
+    name: 'Leonard Voss, MD',
+    type: 'DN',
+    typeLabel: 'Referring',
+    npi: '9999999999',
+    phone: '8005550199',
+    fax: '',
+    isActive: true,
+  },
 ]
 
 /** One exception, open, on a session of the given sample patient. */
@@ -164,9 +304,11 @@ beforeEach(() => {
     .mockResolvedValue([practice(1, 'Harborline Physical Therapy'), practice(2, 'North Shore Rehab')])
   insurancesMock.mockReset().mockResolvedValue([aetna])
   providersMock.mockReset().mockResolvedValue([caleb])
-  updateProviderMock.mockReset().mockImplementation((id: number) => Promise.resolve({ ...caleb, id }))
+  updateProviderMock.mockReset().mockResolvedValue('Provider updated successfully')
+  setDefaultFeeMock.mockReset().mockResolvedValue('Procedure code updated successfully')
+  createFeeRowMock.mockReset().mockResolvedValue('Fee schedule created successfully')
   referrersMock.mockReset().mockResolvedValue(referrers)
-  updateReferrerMock.mockReset().mockImplementation((id: number) => Promise.resolve({ ...referrers[1], id }))
+  updateReferrerMock.mockReset().mockResolvedValue('Referring physician updated successfully')
   resetBillingExceptions([LENGTH, NPI, FEE, REFERRER, ADDRESS, PHONE, PAYMENT])
 })
 afterEach(() => {
@@ -389,13 +531,8 @@ describe('Exceptions — resolving', () => {
     await userEvent.type(npi, '1609873452')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(updateReferrerMock).toHaveBeenCalledWith(5, {
-      practiceId: '1',
-      code: 'LV05',
-      name: 'Leonard Voss, MD',
-      type: 'DN',
-      npi: '1609873452',
-    })
+    // The NPI alone: the rest of the profile (its phone, its status) stays as it is.
+    expect(updateReferrerMock).toHaveBeenCalledWith(5, '1609873452')
     expect(toasts()).toEqual([
       expect.objectContaining({ title: 'Referring physician fixed — exception resolved' }),
     ])
@@ -435,10 +572,8 @@ describe('Exceptions — resolving', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(updateProviderMock).toHaveBeenLastCalledWith(
-      6,
-      expect.objectContaining({ npi: '1528461903', firstName: 'Caleb' }),
-    )
+    // The NPI alone: the rest of the provider stays as it is.
+    expect(updateProviderMock).toHaveBeenLastCalledWith(6, '1528461903')
     expect(toasts()).toEqual([expect.objectContaining({ title: 'Provider NPI saved — exception resolved' })])
   }, 15_000)
 
@@ -459,12 +594,16 @@ describe('Exceptions — resolving', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(toasts()).toEqual([expect.objectContaining({ title: '97033 priced — exception resolved' })])
 
-    const codes = renderHook(() => useProcedureCodes()).result.current
-    expect(codes.codes.find((code) => code.code === '97033')?.defaultFee).toBe(18.5)
-    const fees = renderHook(() => useFeeSchedules()).result.current
-    expect(fees.rows.find((row) => row.insuranceId === 3 && row.procedureCode === '97033')).toEqual(
-      expect.objectContaining({ billed: 22 }),
-    )
+    // The default fee alone, on the server's code.
+    expect(setDefaultFeeMock).toHaveBeenCalledWith(97033, 18.5)
+    // The payer's row, for this year, on the server.
+    const year = new Date().getFullYear()
+    expect(createFeeRowMock).toHaveBeenCalledWith(3, {
+      procedureCodeId: '97033',
+      billed: '22',
+      from: `${year}-01-01`,
+      to: `${year}-12-31`,
+    })
   }, 20_000)
 
   it('completes a missing case field, and a subscriber’s details', async () => {

@@ -62,47 +62,33 @@ export function PayloadLogSection({
     {
       key: 'location',
       header: 'Location',
-      hideBelow: 'xl',
-      cell: (payload) => <span className="[overflow-wrap:anywhere]">{locationName(payload.locationId)}</span>,
+      cell: (payload) => <span className="break-words">{locationName(payload.locationId)}</span>,
     },
     {
       key: 'patient',
       header: 'Patient',
       primary: true,
       cell: (payload) => (
-        <span className="block [overflow-wrap:anywhere]">
+        <span className="block break-words">
           <span className="xl:whitespace-nowrap">{payload.patient}</span>
           {/* The Internal Record ID — the EMR's id for this patient's note — rides under the
-              patient at every width, leaving the detail room to read; below 1280px, the location too. */}
+              patient, leaving the detail room to read. */}
           <CellSub>
-            <span className="xl:hidden">
-              {locationName(payload.locationId)}
-              <span aria-hidden="true"> · </span>
-            </span>
             <span className="sr-only">Internal Record ID </span>
             <span className="whitespace-nowrap tabular-nums">{payload.recordId}</span>
           </CellSub>
-          {/* …and, on a phone, the result and detail too. */}
-          <span className="sm:hidden">
-            <span className="mt-1 block">
-              <Badge tone={RESULT_TONE[payload.result]}>{payload.result}</Badge>
-            </span>
-            <CellSub>{payload.detail}</CellSub>
-          </span>
         </span>
       ),
     },
     {
       key: 'result',
       header: 'Result',
-      hideOnMobile: true,
       cell: (payload) => <Badge tone={RESULT_TONE[payload.result]}>{payload.result}</Badge>,
     },
     {
       key: 'detail',
       header: 'Detail',
-      hideOnMobile: true,
-      cell: (payload) => <span className="block [overflow-wrap:anywhere]">{payload.detail}</span>,
+      cell: (payload) => <span className="block break-words">{payload.detail}</span>,
     },
   ]
 

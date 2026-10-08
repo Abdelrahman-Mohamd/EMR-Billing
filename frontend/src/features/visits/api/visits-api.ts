@@ -14,14 +14,13 @@ import {
  *
  * **No endpoints exist yet.** The request bodies are known (the payload
  * examples for creating a visit and a charge line); paths, methods and
- * responses are not, so none are written. In development and tests the calls
- * go to an in-memory mock that plays the server (ADR 0006); in any other build
- * they reject as `unavailable`.
+ * responses are not, so none are written. Until they exist, the calls reject
+ * as `unavailable` and the screens show their load-failed state.
  *
  * Assumed until the contract says otherwise: one list of every visit the user
  * can see, with its charge lines, filtered on screen; creating a visit (with
- * its lines) and adding a line to a visit — and nothing else. No payload exists
- * for changing or removing a visit or a line, so neither is built.
+ * its lines) and adding a line to a visit — and nothing else. No payload
+ * exists for changing or removing a visit or a line, so neither is built.
  */
 export interface VisitsApi {
   list: (signal?: AbortSignal) => Promise<unknown>
@@ -41,10 +40,8 @@ const notConnected = (): Promise<never> =>
 
 const live: VisitsApi = { list: notConnected, create: notConnected, addChargeLine: notConnected }
 
-async function backend(): Promise<VisitsApi> {
-  // Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-  if (__MOCK_DATA__) return (await import('./visits-api.mock')).mockVisitsApi
-  return live
+function backend(): Promise<VisitsApi> {
+  return Promise.resolve(live)
 }
 
 export async function listVisits(signal?: AbortSignal): Promise<Visit[]> {

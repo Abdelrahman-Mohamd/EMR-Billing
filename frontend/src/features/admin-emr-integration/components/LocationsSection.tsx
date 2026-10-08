@@ -60,42 +60,20 @@ export function LocationsSection({
       header: 'Location',
       primary: true,
       cell: (row) => (
-        <span className="block [overflow-wrap:anywhere]">
+        <span className="block break-words">
           {row.location.name}
-          <CellSub>
-            {row.location.code}
-            {/* Until its column appears (1280px), the Unique Location ID rides under the location. */}
-            {row.integration.uniqueLocationId !== '' && (
-              <span className="xl:hidden">
-                <span aria-hidden="true"> · </span>
-                <span className="whitespace-nowrap">{row.integration.uniqueLocationId}</span>
-              </span>
-            )}
-          </CellSub>
-          {/* On a phone, where their columns are hidden, the link and election ride under it too. */}
-          <span className="mt-1.5 flex flex-wrap gap-1.5 md:hidden">
-            <Badge tone={LINK_TONE[row.integration.link]}>{row.integration.link}</Badge>
-            {electionBadge(row)}
-          </span>
-          {row.last !== undefined && (
-            <span className="xl:hidden">
-              <CellSub>
-                Last payload {formatWhen(row.last.at).label} · {row.last.result}
-              </CellSub>
-            </span>
-          )}
+          <CellSub>{row.location.code}</CellSub>
         </span>
       ),
     },
     {
       key: 'uid',
       header: 'Unique Location ID',
-      hideBelow: 'xl',
       cell: ({ integration }) =>
         integration.uniqueLocationId === '' ? (
           <span className="text-n400">—</span>
         ) : (
-          <span className="text-ink font-medium [overflow-wrap:anywhere] tabular-nums">
+          <span className="text-ink font-medium break-words tabular-nums">
             {integration.uniqueLocationId}
           </span>
         ),
@@ -103,7 +81,6 @@ export function LocationsSection({
     {
       key: 'link',
       header: 'Link',
-      hideBelow: 'md',
       cell: ({ integration }) => (
         <span className="block">
           <Badge tone={LINK_TONE[integration.link]}>{integration.link}</Badge>
@@ -118,11 +95,10 @@ export function LocationsSection({
         </span>
       ),
     },
-    { key: 'election', header: 'Billing election', hideBelow: 'md', cell: electionBadge },
+    { key: 'election', header: 'Billing election', cell: electionBadge },
     {
       key: 'last',
       header: 'Last payload',
-      hideBelow: 'xl',
       cell: ({ last }) =>
         last === undefined ? (
           <span className="text-n400">—</span>

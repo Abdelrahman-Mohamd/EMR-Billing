@@ -2,29 +2,28 @@ import { Ban, RotateCcw } from 'lucide-react'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import { ConfirmDialog } from '@/components/ui/Dialog'
-import { useUpdateUser } from '../queries/use-users'
+import { useSetUserActive } from '../queries/use-users'
 import type { User } from '../schemas/user'
 
 /**
  * The prototype's row action on a user: Deactivate, or Reactivate, after a
- * confirmation. It changes `is_active` and nothing else — sent as a normal
- * user update, since no separate status endpoint is known.
+ * confirmation. It changes `is_active` and nothing else — a save carrying the
+ * user's name and email as they are, and no password. The switch shows the new
+ * status as soon as the server has saved it.
  *
  * Deliberately not claimed: the prototype's "they can no longer sign in" —
  * what an inactive user can still do, and whether their sessions end, is not
  * defined. The server decides.
  */
 export function UserStatusDialog({ user, onClose }: { user: User; onClose: () => void }) {
-  const update = useUpdateUser()
+  const update = useSetUserActive()
   const deactivating = user.isActive
 
   const confirm = async () => {
     try {
-      await update.mutateAsync({
-        id: user.id,
-        values: { name: user.name, email: user.email, isActive: !user.isActive },
-      })
-      toast.success(deactivating ? `${user.name} deactivated` : `${user.name} reactivated`)
+      const message = await update.mutateAsync({ user, isActive: !user.isActive })
+      // The server's words; ours only when it sent none.
+      toast.success(message ?? (deactivating ? `${user.name} deactivated` : `${user.name} reactivated`))
     } catch (error) {
       toast.error(
         deactivating ? 'The user was not deactivated' : 'The user was not reactivated',

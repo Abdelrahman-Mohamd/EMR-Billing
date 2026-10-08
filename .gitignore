@@ -10,3 +10,16 @@ Desktop.ini
 # local scratch
 *.tmp
 scratchpad/
+
+# logs
+*.log
+npm-debug.log*
+
+# tool caches and output
+*.tsbuildinfo
+.eslintcache
+test-results/
+playwright-report/
+
+# Claude Code: personal settings (shared settings stay committed)
+.claude/settings.local.json

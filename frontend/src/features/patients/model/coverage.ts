@@ -34,6 +34,9 @@ export interface Coverage {
 
 export const SUBSCRIBER_RELATIONSHIPS = ['Self', 'Spouse', 'Child', 'Other'] as const
 
-/** The insurance types for which the prototype asks for a claim number. */
-export const CLAIM_NUMBER_TYPES = ['PIP', 'Workers Comp'] as const
-export const WORKERS_COMP = 'Workers Comp'
+/**
+ * The insurance types for which the prototype asks for a claim number — as the
+ * server's type codes: Auto / PIP (`AM`) and Workers' Comp (`WC`).
+ */
+export const CLAIM_NUMBER_TYPES = ['AM', 'WC'] as const
+export const WORKERS_COMP = 'WC'

@@ -1,33 +1,85 @@
 import { z } from 'zod'
 
 /**
- * An organization, as the frontend knows it today.
+ * An organization, as the backend sends it (contracts confirmed 2026-10-07):
  *
- * PRD V2 §10.2 defines the `company` table as `name` (unique) and `is_active`,
- * and nothing else; the meeting of 2026-09-23 confirmed that a System Admin
- * creates organizations. The current backend payload agrees:
- * `{ "name": "PTc Health Group", "is_active": true }`. That is the whole model
- * here. What an organization *changes* — for access, for reports, for the
- * practices in it — is still open (Q-032), so nothing depends on it.
+ * - `GET /organizations?page=N` → `{ data: { data: [{ id, name, is_active,
+ *   practices_count, created_at }], links, meta: { current_page, last_page,
+ *   per_page: 15, from, to, total } } }`;
+ * - `GET /organizations/{id}` → `{ data: { id, name, is_active, practices: [],
+ *   created_at } }` (an unknown id: `404`);
+ * - `POST /organizations` and `PUT /organizations/{id}` take `{ name,
+ *   is_active }` and answer `{ success, message, data: null }` — nothing to
+ *   read back; `DELETE /organizations/{id}` removes one.
  *
- * A practice points at its organization through `organization_id`, a number in
- * the practice payload, so organization ids are numbers.
+ * PRD V2 §10.2 defines the `company` table as `name` (unique) and `is_active`;
+ * the meeting of 2026-09-23 confirmed that a System Admin creates
+ * organizations. What an organization *changes* — for access, for reports —
+ * is still open (Q-032), so nothing depends on it.
  *
- * Wire format (snake_case) is parsed and mapped to this camelCase shape in one
- * place, the schema below; screens never see the wire shape.
+ * A practice points at its organization through `organization_id`, a number,
+ * so organization ids are numbers. The detail's `practices` are not read: no
+ * practice has been seen in one, so their shape is not known.
+ *
+ * Wire format (snake_case) is parsed and mapped to camelCase here, in one
+ * place; screens never see the wire shape.
  */
 export const organizationResponseSchema = z
   .object({
-    // Assumption: a saved organization comes back as its payload plus its id.
     id: z.number().int(),
     name: z.string(),
     is_active: z.boolean(),
+    practices_count: z.number().int().nonnegative(),
+    created_at: z.string(),
   })
-  .transform((wire) => ({ id: wire.id, name: wire.name, isActive: wire.is_active }))
+  .transform((wire) => ({
+    id: wire.id,
+    name: wire.name,
+    isActive: wire.is_active,
+    practicesCount: wire.practices_count,
+    createdAt: wire.created_at,
+  }))
 
 export type Organization = z.output<typeof organizationResponseSchema>
 
-/** The request body for create and update — the known payload, exactly. */
+export const organizationPageResponseSchema = z
+  .object({
+    data: z.object({
+      data: z.array(organizationResponseSchema),
+      meta: z.object({
+        current_page: z.number().int().positive(),
+        last_page: z.number().int().positive(),
+        from: z.number().int().nullable().optional(),
+        to: z.number().int().nullable().optional(),
+        total: z.number().int().nonnegative(),
+      }),
+    }),
+  })
+  .transform(({ data }) => ({
+    organizations: data.data,
+    page: data.meta.current_page,
+    pageCount: data.meta.last_page,
+    total: data.meta.total,
+    from: data.meta.from ?? 0,
+    to: data.meta.to ?? 0,
+  }))
+
+export type OrganizationPage = z.output<typeof organizationPageResponseSchema>
+
+/** One organization as the edit form needs it: what it can change. */
+export const organizationDetailResponseSchema = z
+  .object({
+    data: z.object({
+      id: z.number().int(),
+      name: z.string(),
+      is_active: z.boolean(),
+    }),
+  })
+  .transform(({ data }) => ({ id: data.id, name: data.name, isActive: data.is_active }))
+
+export type OrganizationDetail = z.output<typeof organizationDetailResponseSchema>
+
+/** The request body for create and update — the confirmed payload, exactly. */
 export interface OrganizationPayload {
   name: string
   is_active: boolean

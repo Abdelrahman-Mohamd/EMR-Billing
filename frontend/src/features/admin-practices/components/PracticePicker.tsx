@@ -2,13 +2,13 @@ import { Link } from '@tanstack/react-router'
 import { CircleCheck } from 'lucide-react'
 import { StatusDot } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils/cn'
-import type { Practice } from '../schemas/practice'
+import type { PracticeSummary } from '../schemas/practice'
 
 /**
  * Choose which practice to see: one tile per practice, full width, wrapping.
  *
  * A tile carries only what tells practices apart — name, code, how many
- * active locations — and Inactive when it applies. Every identifier (NPI, Tax
+ * locations (the list's count) — and Inactive when it applies. Every identifier (NPI, Tax
  * ID, taxonomy) is in the selected practice's details, not repeated here.
  *
  * Each tile is a link (`?practice=<id>`), so choosing is navigation: the back
@@ -19,7 +19,7 @@ export function PracticePicker({
   practices,
   selectedId,
 }: {
-  practices: readonly Practice[]
+  practices: readonly PracticeSummary[]
   selectedId: number
 }) {
   return (
@@ -30,7 +30,6 @@ export function PracticePicker({
       <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(18rem,100%),1fr))] gap-3">
         {practices.map((practice) => {
           const selected = practice.id === selectedId
-          const activeLocations = practice.locations.filter((location) => location.isActive).length
           return (
             <li key={practice.id} className="flex">
               <Link
@@ -57,7 +56,9 @@ export function PracticePicker({
                   <span className="text-micro text-n500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="tabular-nums">{practice.code}</span>
                     <span aria-hidden="true">·</span>
-                    <span>{activeLocations === 1 ? '1 location' : `${activeLocations} locations`}</span>
+                    <span>
+                      {practice.locationsCount === 1 ? '1 location' : `${practice.locationsCount} locations`}
+                    </span>
                     {!practice.isActive && <StatusDot tone="inert">Inactive</StatusDot>}
                   </span>
                 </span>

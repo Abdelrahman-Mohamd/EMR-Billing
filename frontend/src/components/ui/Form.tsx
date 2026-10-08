@@ -9,7 +9,7 @@ import {
   type UseFormReturn,
 } from 'react-hook-form'
 import { cn } from '@/lib/utils/cn'
-import { isApiError } from '@/lib/api/api-error'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { Field, type FieldProps } from './Field'
 
 /**
@@ -107,8 +107,10 @@ export function FormActions({ children, className }: { children: ReactNode; clas
 
 /**
  * Put a rejected request's field errors back on the fields that caused them,
- * and return anything left over as one message for a banner. The first field
- * put back gets focus, as a failed client-side check does.
+ * and return anything left over as one message for a banner — the server's
+ * own words. The first field put back gets focus, as a failed client-side
+ * check does. A rejection naming no field (a 400 with a message) is all
+ * banner.
  *
  * Server validation is authoritative: the schema in the browser is there to
  * save a round trip, not to decide (docs/SECURITY.md §7).
@@ -119,6 +121,7 @@ export function applyServerErrors<TValues extends FieldValues>(
 ): string | null {
   if (!isApiError(error)) return 'Something went wrong. Please try again.'
   if (error.kind !== 'validation') return null
+  if (error.fieldErrors.length === 0) return userMessage(error)
 
   const known = new Set(Object.keys(form.getValues()))
   const unmatched: string[] = []

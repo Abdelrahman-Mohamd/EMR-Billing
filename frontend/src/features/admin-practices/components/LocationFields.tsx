@@ -57,6 +57,7 @@ export function LocationFields({
       <FormField
         name={`${path}placeOfService`}
         label="Default place of service"
+        required
         span={6}
         // PRD V2 BR47: a charge line's place of service defaults from its location.
         // The allowed codes are not confirmed yet (Q-079); see model/place-of-service.ts.
@@ -68,7 +69,6 @@ export function LocationFields({
             onChange={field.onChange}
             options={placeOfServiceOptions(typeof field.value === 'string' ? field.value : null)}
             placeholder="Select place of service"
-            clearable
             disabled={readOnly}
           />
         )}

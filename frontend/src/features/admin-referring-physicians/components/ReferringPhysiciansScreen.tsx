@@ -4,28 +4,35 @@ import { Plus, UserRound } from 'lucide-react'
 import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
-import { RowActionButton, actionsColumn } from '@/components/ui/RowActions'
+import { ConfirmDialog } from '@/components/ui/Dialog'
+import { RowActionButton, StatusChangeDialog, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { PracticeSelect, usePractices } from '@/features/admin-practices'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { isValidNpi } from '@/lib/validation/npi'
-import { physicianTypeLabel } from '../model/physician-type'
-import { useReferringPhysicians } from '../queries/use-referring-physicians'
-import type { ReferringPhysician } from '../schemas/referring-physician'
+import { toast } from '@/stores/toast-store'
+import {
+  useDeleteReferringPhysician,
+  useReferringPhysicians,
+  useSetReferringPhysicianActive,
+} from '../queries/use-referring-physicians'
+import { showPhone, type ReferringPhysician } from '../schemas/referring-physician'
 import { ReferringPhysicianDialog } from './ReferringPhysicianDialog'
 
 /**
  * Admin → Referring physicians: the directory, and the dialog that adds or
  * edits one. Laid out as the prototype's list — physician, type, NPI (marked
- * when invalid) — with the payload's code and practice shown, and the
- * prototype's phone · fax and Cases columns left out (not in the payload).
+ * when invalid), phone · fax — with the backend's code, practice and Active
+ * switch (asks first), and Edit and Delete. The prototype's Cases count is not
+ * in the contract, so it is left out.
  *
  * The prototype shows only the working practice's physicians (its practice
  * switcher). There is no switcher here yet, so the list shows every practice's
  * physicians with a practice filter, kept in the URL (`?practice=<id>`).
  *
- * The list is not paged: no API defines paging, and a directory per practice
- * is a manageable size. It is sorted here, by name, as the prototype sorts it.
+ * Every physician is read (all of the server's pages) and filtered and sorted
+ * here, by name, as the prototype sorts it.
  */
 export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
@@ -33,6 +40,11 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
   const practices = usePractices()
   /** `undefined`: no dialog. `null`: adding. A physician: editing them. */
   const [editing, setEditing] = useState<ReferringPhysician | null | undefined>(undefined)
+  /** The row whose Active switch was flipped, waiting for confirmation. */
+  const [statusOf, setStatusOf] = useState<ReferringPhysician | null>(null)
+  const [deleting, setDeleting] = useState<ReferringPhysician | null>(null)
+  const setActive = useSetReferringPhysicianActive()
+  const remove = useDeleteReferringPhysician()
   const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
 
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
@@ -57,38 +69,11 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
       header: 'Physician',
       primary: true,
       sortable: true,
-      cell: (physician) => (
-        <span className="block [overflow-wrap:anywhere]">
-          {physician.name}
-          {/* On a phone, where their columns are hidden, the code and an invalid-NPI mark ride under the name. */}
-          {/* Under the name while their own columns are hidden: the code and
-              practice on a phone, the invalid-NPI mark until the NPI column
-              appears. */}
-          <span className="sm:hidden">
-            <CellSub>
-              {physician.code}
-              {practiceName(physician.practiceId) !== undefined && (
-                <>
-                  <span aria-hidden="true"> · </span>
-                  {practiceName(physician.practiceId)}
-                </>
-              )}
-            </CellSub>
-          </span>
-          {!isValidNpi(physician.npi) && (
-            <span className="lg:hidden">
-              <StatusDot tone="critical" className="mt-0.5 flex font-normal">
-                Invalid NPI
-              </StatusDot>
-            </span>
-          )}
-        </span>
-      ),
+      cell: (physician) => <span className="block break-words">{physician.name}</span>,
     },
     {
       key: 'code',
       header: 'Code',
-      hideOnMobile: true,
       cell: (physician) => (
         <span className="text-ink font-medium whitespace-nowrap tabular-nums">{physician.code}</span>
       ),
@@ -98,7 +83,7 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
       header: 'Type (Box 17)',
       cell: (physician) => (
         <Tag tone={physician.type === 'DQ' ? 'attention' : 'brand'} className="whitespace-nowrap">
-          {physicianTypeLabel(physician.type)}
+          {physician.typeLabel === '' ? physician.type : `${physician.type} · ${physician.typeLabel}`}
         </Tag>
       ),
     },
@@ -106,7 +91,6 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
       key: 'npi',
       header: 'NPI',
       // From 1024px; until then an invalid NPI is marked under the name.
-      hideBelow: 'lg',
       cell: (physician) =>
         isValidNpi(physician.npi) ? (
           <span className="whitespace-nowrap tabular-nums">{physician.npi}</span>
@@ -124,13 +108,40 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
     {
       key: 'practice',
       header: 'Practice',
-      hideOnMobile: true,
-      cell: (physician) => (
-        <span className="[overflow-wrap:anywhere]">{practiceName(physician.practiceId) ?? '—'}</span>
-      ),
+      cell: (physician) => <span className="break-words">{practiceName(physician.practiceId) ?? '—'}</span>,
     },
+    {
+      key: 'contact',
+      header: 'Phone · fax',
+      cell: (physician) =>
+        physician.phone === '' && physician.fax === '' ? (
+          <span className="text-n400">—</span>
+        ) : (
+          <span className="block whitespace-nowrap tabular-nums">
+            {physician.phone === '' ? '—' : showPhone(physician.phone)}
+            {physician.fax !== '' && <CellSub>Fax {showPhone(physician.fax)}</CellSub>}
+          </span>
+        ),
+    },
+    activeColumn<ReferringPhysician>({
+      isActive: (physician) => physician.isActive,
+      label: (physician) => physician.name,
+      // Asks first (StatusChangeDialog below).
+      onChange: (physician) => setStatusOf(physician),
+    }),
     actionsColumn<ReferringPhysician>((physician) => (
-      <RowActionButton action="edit" label={`Edit ${physician.name}`} onClick={() => setEditing(physician)} />
+      <>
+        <RowActionButton
+          action="edit"
+          label={`Edit ${physician.name}`}
+          onClick={() => setEditing(physician)}
+        />
+        <RowActionButton
+          action="delete"
+          label={`Delete ${physician.name}`}
+          onClick={() => setDeleting(physician)}
+        />
+      </>
     )),
   ]
 
@@ -205,6 +216,35 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
           onClose={() => setEditing(undefined)}
         />
       )}
+      {statusOf !== null && (
+        <StatusChangeDialog
+          name={statusOf.name}
+          isActive={statusOf.isActive}
+          onConfirm={() => setActive.mutateAsync({ id: statusOf.id, isActive: !statusOf.isActive })}
+          onClose={() => setStatusOf(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title={`Delete ${deleting?.name ?? ''}?`}
+        confirmLabel="Delete physician"
+        tone="destructive"
+        onConfirm={async () => {
+          if (deleting === null) return
+          try {
+            const message = await remove.mutateAsync(deleting.id)
+            toast.success(message ?? `${deleting.name} deleted`)
+          } catch (error) {
+            toast.error(
+              `${deleting.name} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
+        }}
+      />
     </PageContainer>
   )
 }

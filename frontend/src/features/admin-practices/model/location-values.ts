@@ -2,10 +2,7 @@ import type { LocationFormValues } from '../schemas/practice-form'
 import type { Location } from '../schemas/practice'
 
 /**
- * A saved location as location-form values: what the edit dialog starts from,
- * and what the row's Deactivate / Reactivate sends back with only `isActive`
- * changed — there is no separate status endpoint, so a status change is a
- * normal location update.
+ * A saved location as location-form values: what the edit dialog starts from.
  */
 export function locationToFormValues(location: Location): LocationFormValues {
   return {

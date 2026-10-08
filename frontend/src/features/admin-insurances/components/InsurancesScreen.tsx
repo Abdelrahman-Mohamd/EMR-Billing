@@ -1,45 +1,62 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ExternalLink, Landmark, Plus } from 'lucide-react'
+import { Landmark, Plus } from 'lucide-react'
 import { Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
-import { RowActionButton, actionsColumn, activeColumn, statusChangeFailed } from '@/components/ui/RowActions'
+import { ConfirmDialog } from '@/components/ui/Dialog'
+import { RowActionButton, StatusChangeDialog, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { PracticeSelect, usePractices } from '@/features/admin-practices'
-import { useReleaseBuckets } from '@/features/admin-release-buckets'
-import { effectiveRules, hasOverrides, insuranceLabel } from '../model/rules'
-import { useInsuranceClasses, useInsurances, useUpdateInsurance } from '../queries/use-insurances'
-import { toInsuranceFormValues, type Insurance } from '../schemas/insurance'
+import { isApiError, userMessage } from '@/lib/api/api-error'
+import { toast } from '@/stores/toast-store'
+import { effectiveBooleans, hasOverrides, insuranceLabel } from '../model/rules'
+import {
+  useDeleteInsurance,
+  useInsuranceClasses,
+  useInsurances,
+  useSetInsuranceActive,
+} from '../queries/use-insurances'
+import type { Insurance } from '../schemas/insurance'
 import { InsuranceDialog } from './InsuranceDialog'
 
 /**
  * Setup → Insurances: the list and the dialog that adds or edits one. Laid
- * out as the updated prototype's list — payer (code and name, class and type),
- * payer ID with the portal link, the effective billing rules, insurance hold
- * and audit, SLA, status — with a practice filter kept in the URL
- * (`?practice=<id>`), as for referring physicians. Unfiltered, each payer's
- * practice is named under it; there is no room for a column of its own.
+ * out as the updated prototype's list, with what the list endpoint carries:
+ * payer (code and name; class and type; practice), payer ID, the effective
+ * billing rules, insurance hold (with its bucket) and audit, the Active switch
+ * (asks first), Edit and Delete. A practice filter is kept in the URL
+ * (`?practice=<id>`).
  *
- * Not paged or searched: the prototype does neither. Sorted by code, as the
- * prototype sorts it. Status is changed in the dialog, not from the row.
+ * Not in the list endpoint, so not in the list: the payer portal link, the
+ * payment SLA and the claim format — they are in the insurance's own record,
+ * which the dialog reads.
+ *
+ * Effective billing rules: each yes/no rule is the insurance's own value, else
+ * its class's (PRD V2 §10.3: COALESCE(insurance, class)) — the class defaults
+ * from the class list.
+ *
+ * Every insurance is read (all of the server's pages) and filtered and sorted
+ * here: the prototype neither pages nor searches. Sorted by code.
  */
 export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
   const insurances = useInsurances()
-  const update = useUpdateInsurance()
+  const setActive = useSetInsuranceActive()
+  const remove = useDeleteInsurance()
   const classes = useInsuranceClasses()
-  const buckets = useReleaseBuckets()
   const practices = usePractices()
   /** `undefined`: no dialog. `null`: adding. An insurance: editing it. */
   const [editing, setEditing] = useState<Insurance | null | undefined>(undefined)
+  /** The row whose Active switch was flipped, waiting for confirmation. */
+  const [statusOf, setStatusOf] = useState<Insurance | null>(null)
+  const [deleting, setDeleting] = useState<Insurance | null>(null)
   const [sort, setSort] = useState<Sort>({ key: 'code', direction: 'asc' })
 
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
   const classOf = (insurance: Insurance) =>
     classes.data?.find((insuranceClass) => insuranceClass.id === insurance.insuranceClassId)
-  const bucketName = (id: number | null) => buckets.data?.find((bucket) => bucket.id === id)?.name
   const filter = practiceFilter === undefined ? null : String(practiceFilter)
   const setFilter = (value: string | null) =>
     void navigate({
@@ -50,15 +67,19 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
 
   const rows = (insurances.data ?? [])
     .filter((insurance) => practiceFilter === undefined || insurance.practiceId === practiceFilter)
-    .sort((a, b) => {
-      // An insurance without a payment SLA sorts after those with one.
-      const order =
-        sort.key === 'sla'
-          ? (a.slaDays ?? Number.POSITIVE_INFINITY) - (b.slaDays ?? Number.POSITIVE_INFINITY) ||
-            a.code - b.code
-          : a.code - b.code
-      return sort.direction === 'asc' ? order : -order
-    })
+    .sort((a, b) => (sort.direction === 'asc' ? a.code - b.code : b.code - a.code))
+
+  const confirmDelete = async (insurance: Insurance) => {
+    try {
+      const message = await remove.mutateAsync(insurance.id)
+      toast.success(message ?? `${insuranceLabel(insurance)} deleted`)
+    } catch (error) {
+      toast.error(
+        `${insuranceLabel(insurance)} was not deleted`,
+        isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+      )
+    }
+  }
 
   const columns: ReadonlyArray<Column<Insurance>> = [
     {
@@ -68,72 +89,44 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
       sortable: true,
       // Room for "1002 – Empire BlueCross BlueShield" on two lines, not four.
       width: '15rem',
-      cell: (insurance) => {
-        const insuranceClass = classOf(insurance)
-        return (
-          <span className="block [overflow-wrap:anywhere]">
-            {insuranceLabel(insurance)}
-            <CellSub>
-              {insuranceClass?.name ?? 'No class'}
-              <span aria-hidden="true"> · </span>
-              {insurance.insuranceType}
-            </CellSub>
-            {/* Every practice listed: say whose payer it is. Filtered to one, that is already known. */}
-            {practiceFilter === undefined && practiceName(insurance.practiceId) !== undefined && (
-              <CellSub>{practiceName(insurance.practiceId)}</CellSub>
-            )}
-            {/* Until the hold column appears, audit is marked under the payer. */}
-            {insurance.auditRequired && (
-              <span className="mt-1 flex lg:hidden">
-                <Tag tone="attention">Audit required</Tag>
-              </span>
-            )}
-          </span>
-        )
-      },
-    },
-    {
-      key: 'payerId',
-      header: 'Payer ID',
-      hideBelow: 'md',
-      interactive: true,
       cell: (insurance) => (
-        <span className="block">
-          <span className="whitespace-nowrap">{insurance.payerId}</span>
-          {insurance.portalUrl !== '' && (
-            <CellSub>
-              <a
-                href={insurance.portalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                // The after: box widens the hit area to a comfortable touch target.
-                className="text-brand-deep hover:text-ink relative inline-flex items-center gap-1 whitespace-nowrap no-underline after:absolute after:-inset-x-1 after:-inset-y-2.5 after:content-['']"
-              >
-                Payer portal
-                <ExternalLink size={12} aria-hidden="true" />
-                <span className="sr-only">(opens in a new tab)</span>
-              </a>
-            </CellSub>
+        <span className="block break-words">
+          {insuranceLabel(insurance)}
+          <CellSub>
+            {insurance.insuranceClassName}
+            <span aria-hidden="true"> · </span>
+            {insurance.insuranceTypeLabel}
+          </CellSub>
+          {/* Whose payer it is — always, filtered or not, so a row keeps its height. */}
+          {practiceName(insurance.practiceId) !== undefined && (
+            <CellSub>{practiceName(insurance.practiceId)}</CellSub>
           )}
         </span>
       ),
     },
     {
+      key: 'payerId',
+      header: 'Payer ID',
+      cell: (insurance) =>
+        insurance.payerId === '' ? (
+          <span className="text-n400">—</span>
+        ) : (
+          <span className="whitespace-nowrap">{insurance.payerId}</span>
+        ),
+    },
+    {
       key: 'rules',
       header: 'Effective billing rules',
-      hideBelow: 'xl',
       cell: (insurance) => {
         const insuranceClass = classOf(insurance)
         if (insuranceClass === undefined) return <span className="text-n500">—</span>
-        const effective = Object.fromEntries(
-          effectiveRules(insuranceClass, insurance.rules).map((rule) => [rule.key, rule.value]),
-        )
+        const effective = effectiveBooleans(insuranceClass, insurance.rules)
         return (
           <span className="flex flex-wrap gap-1">
-            {effective.authorizationRequired === 'Yes' && <Tag>Auth required</Tag>}
-            {effective.injuryDateRequired === 'Yes' && <Tag>Injury date required</Tag>}
-            {effective.applySpecialtyModifiers === 'Yes' && <Tag>Specialty modifiers</Tag>}
-            {insurance.claimFormat === 'CMS1500' && <Tag>Paper CMS-1500</Tag>}
+            {effective.authorizationRequired && <Tag>Auth required</Tag>}
+            {effective.injuryDateRequired && <Tag>Injury date required</Tag>}
+            {effective.applySpecialtyModifiers && <Tag>Specialty modifiers</Tag>}
+            {!effective.acceptAssignment && <Tag tone="attention">No assignment</Tag>}
             {hasOverrides(insurance.rules) && <span className="text-micro text-n500">· overrides class</span>}
           </span>
         )
@@ -142,13 +135,12 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
     {
       key: 'hold',
       header: 'Insurance hold',
-      hideBelow: 'lg',
       cell: (insurance) => (
         <span className="flex flex-col items-start gap-1">
           {insurance.insuranceHold ? (
             <span>
               <Tag tone="attention">Manual release</Tag>
-              <CellSub>{bucketName(insurance.releaseBucketId) ?? 'No bucket'}</CellSub>
+              <CellSub>{insurance.releaseBucketName ?? 'No bucket'}</CellSub>
             </span>
           ) : (
             <span className="text-n500">Automatic</span>
@@ -157,35 +149,25 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
         </span>
       ),
     },
-    {
-      key: 'sla',
-      header: 'SLA',
-      sortable: true,
-      hideBelow: 'lg',
-      cell: (insurance) =>
-        insurance.slaDays === null ? (
-          <span className="text-n400">—</span>
-        ) : (
-          <span className="whitespace-nowrap tabular-nums">{insurance.slaDays} days</span>
-        ),
-    },
     activeColumn<Insurance>({
       isActive: (insurance) => insurance.isActive,
       label: (insurance) => insuranceLabel(insurance),
-      // The insurance's own update, with only `is_active` changed.
-      onChange: (insurance, isActive) =>
-        update.mutate(
-          { id: insurance.id, values: { ...toInsuranceFormValues(insurance), isActive } },
-          { onError: (error) => statusChangeFailed(insuranceLabel(insurance), isActive, error) },
-        ),
-      pending: (insurance) => update.isPending && update.variables.id === insurance.id,
+      // Asks first (StatusChangeDialog below).
+      onChange: (insurance) => setStatusOf(insurance),
     }),
     actionsColumn<Insurance>((insurance) => (
-      <RowActionButton
-        action="edit"
-        label={`Edit ${insuranceLabel(insurance)}`}
-        onClick={() => setEditing(insurance)}
-      />
+      <>
+        <RowActionButton
+          action="edit"
+          label={`Edit ${insuranceLabel(insurance)}`}
+          onClick={() => setEditing(insurance)}
+        />
+        <RowActionButton
+          action="delete"
+          label={`Delete ${insuranceLabel(insurance)}`}
+          onClick={() => setDeleting(insurance)}
+        />
+      </>
     )),
   ]
 
@@ -260,6 +242,24 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
           onClose={() => setEditing(undefined)}
         />
       )}
+      {statusOf !== null && (
+        <StatusChangeDialog
+          name={insuranceLabel(statusOf)}
+          isActive={statusOf.isActive}
+          onConfirm={() => setActive.mutateAsync({ id: statusOf.id, isActive: !statusOf.isActive })}
+          onClose={() => setStatusOf(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title={`Delete ${deleting === null ? '' : insuranceLabel(deleting)}?`}
+        confirmLabel="Delete insurance"
+        tone="destructive"
+        onConfirm={() => (deleting === null ? undefined : confirmDelete(deleting))}
+      />
     </PageContainer>
   )
 }

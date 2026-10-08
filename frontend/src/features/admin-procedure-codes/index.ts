@@ -1,9 +1,9 @@
 /**
  * Public surface of Setup → Procedure codes. Routes import from here only
- * (docs/FRONTEND_ARCHITECTURE.md §3). Frontend only for now — no backend.
+ * (docs/FRONTEND_ARCHITECTURE.md §3).
  */
 export { ProcedureCodesScreen } from './components/ProcedureCodesScreen'
-// Fee schedules price these codes. Frontend only, like the screen: the codes
-// live in this browser tab until a backend exists.
-export { useProcedureCodes } from './data/procedure-code-store'
-export type { ProcedureCode } from './model/procedure-code'
+// Fee schedules, coding rules, visits and Exceptions read the shared list;
+// Exceptions sets a code's missing default fee.
+export { useProcedureCodes, useSetProcedureCodeDefaultFee } from './queries/use-procedure-codes'
+export type { ProcedureCode } from './schemas/procedure-code'

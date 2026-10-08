@@ -6,6 +6,7 @@ import { Form, FormField, applyServerErrors } from '@/components/ui/Form'
 import { Notice } from '@/components/ui/Notice'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { resetPassword } from '../api/auth-api'
+import { INVALID_CODE } from '../model/messages'
 import { resetPasswordSchema, type ResetPasswordValues } from '../schemas/password-schemas'
 import { AuthEmailRow } from './AuthEmailRow'
 import { AuthSubmitButton } from './AuthSubmitButton'
@@ -39,12 +40,15 @@ export function NewPasswordForm({
     try {
       await resetPassword(email, otp, values)
     } catch (error) {
-      // Messages about the password land on its fields; one about the email
-      // or the code has no field here and shows above the form.
+      // Messages about the password land on its fields. A refused code (it can
+      // expire between the steps; the server names no field) has no field
+      // here and shows above the form, in the server's words.
       setFailure(
-        isApiError(error) && error.kind === 'validation'
-          ? applyServerErrors(form, error)
-          : userMessage(error),
+        isApiError(error) && error.kind === 'validation' && error.fieldErrors.length === 0
+          ? (error.serverMessage ?? `${INVALID_CODE} Request a new one.`)
+          : isApiError(error) && error.kind === 'validation'
+            ? applyServerErrors(form, error)
+            : userMessage(error),
       )
       return
     }

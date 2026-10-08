@@ -14,8 +14,27 @@ import { notLinked, type Payload } from '../model/integration'
 // state. The practices list it reads is another feature's integration point:
 // faked by path, never imported (lint forbids it).
 const practicesMock = vi.hoisted(() => vi.fn<() => Promise<Practice[]>>())
+// Signed in as Dana Whitfield (who the request is recorded against).
+vi.mock('@/features/auth/api/auth-api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getCurrentUser: () =>
+    Promise.resolve({
+      id: 1,
+      name: 'Dana Whitfield',
+      email: 'd.whitfield@example.test',
+      isActive: true,
+      createdAt: '2026-10-05T19:23:35.000000Z',
+      updatedAt: '2026-10-05T19:23:35.000000Z',
+    }),
+}))
 vi.mock('@/features/admin-practices/api/practices-api', () => ({
   listPractices: practicesMock,
+  // A practice in full, with its locations: the same fixtures.
+  getPractice: async (id: number) => {
+    const found = (await practicesMock()).find((practice) => practice.id === id)
+    if (found === undefined) throw new Error(`No practice ${id} in this test`)
+    return found
+  },
   createPractice: vi.fn(),
   updatePractice: vi.fn(),
   createLocation: vi.fn(),
@@ -258,7 +277,7 @@ describe('Admin → EMR integration', () => {
     const parkSlope = rowOf(table, 'Park Slope')
     expect(parkSlope).toHaveTextContent('Requested')
     expect(parkSlope).toHaveTextContent('EMR-LOC-4472')
-    // The signed-in person (the development session) asked, today.
+    // The signed-in person asked, today.
     await waitFor(() =>
       expect(parkSlope).toHaveTextContent(`By Dana Whitfield · ${formatIsoDate(todayIso())}`),
     )

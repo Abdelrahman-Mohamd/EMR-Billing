@@ -35,9 +35,8 @@ vi.mock('@/features/admin-insurances/api/insurance-classes-api', () => ({
   createInsuranceClass: vi.fn(),
   updateInsuranceClass: vi.fn(),
 }))
-vi.mock('@/features/admin-procedure-codes/data/procedure-code-store', () => ({
-  useProcedureCodes: () => ({ ready: true, codes: codesMock(), save: vi.fn() }),
-  resetProcedureCodes: vi.fn(),
+vi.mock('@/features/admin-procedure-codes/api/procedure-codes-api', () => ({
+  listProcedureCodes: () => Promise.resolve(codesMock()),
 }))
 
 const practice = (id: number, name: string): Practice => ({
@@ -202,9 +201,45 @@ describe('Admin → Coding rules', () => {
     })
     expect(toggle).toHaveAttribute('aria-checked', 'true')
     await userEvent.click(toggle)
-    expect(toggle).toHaveAttribute('aria-checked', 'false')
-    await userEvent.click(toggle)
+    // Asks first; cancelling changes nothing.
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog', { name: 'Deactivate Rule Drop 97010?' })).getByRole(
+        'button',
+        {
+          name: 'Cancel',
+        },
+      ),
+    )
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
     expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(toggle)
+    // Asks first.
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog', { name: /^(Deactivate|Reactivate) / })).getByRole(
+        'button',
+        {
+          name: /^(Deactivate|Reactivate)$/,
+        },
+      ),
+    )
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    await userEvent.click(toggle)
+    // Asks first.
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog', { name: /^(Deactivate|Reactivate) / })).getByRole(
+        'button',
+        {
+          name: /^(Deactivate|Reactivate)$/,
+        },
+      ),
+    )
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'))
+    // Each change says so.
+    expect(useToastStore.getState().toasts.map((toast) => [toast.tone, toast.title])).toEqual([
+      ['success', 'Rule Drop 97010 deactivated'],
+      ['success', 'Rule Drop 97010 activated'],
+    ])
   })
 
   it('creates a Replace rule for an insurance, with the prototype’s checks', async () => {

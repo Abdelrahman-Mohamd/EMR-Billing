@@ -1,71 +1,107 @@
-import { z } from 'zod'
-import { ApiError, renameFieldErrors } from '@/lib/api/api-error'
+import { renameFieldErrors } from '@/lib/api/api-error'
+import { request } from '@/lib/api/http-client'
+import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
 import {
   PROVIDER_FORM_FIELD_FOR,
-  providerResponseSchema,
+  providerDetailResponseSchema,
+  providerPageResponseSchema,
   toProviderPayload,
+  toProviderUpdatePayload,
   type Provider,
   type ProviderFormValues,
   type ProviderPayload,
+  type ProviderUpdatePayload,
 } from '../schemas/provider'
 
 /**
- * Providers' only door to a server.
- *
- * **No endpoints and no payload exist yet.** The body sent is provisional
- * (see `schemas/provider.ts`); paths, methods and responses are not known, so
- * none are written. In development and tests the calls go to an in-memory
- * mock that plays the server (ADR 0006); in any other build they reject as
- * `unavailable`.
- *
- * The claim hold travels with the provider, as the prototype saves it in the
- * same form; whether the backend wants it as part of the provider or as its
- * own resource is not known, and this file is where that would change.
- *
- * Assumed until the contract says otherwise: one list of every provider the
- * user can see, filtered on screen; create and update, and nothing else — the
- * prototype deactivates a provider and offers no delete, so none is built.
+ * Providers' only door to a server. **Live** (contracts confirmed 2026-10-08),
+ * carrying the session's token: `GET /providers?page=N`, `GET /providers/{id}`,
+ * `POST /providers`, `PUT /providers/{id}` and `DELETE`. Only `page` is sent
+ * to the list. Writes resolve with the server's message, which the screens
+ * show. Shapes in schemas/provider.ts.
  */
 export interface ProvidersApi {
-  list: (signal?: AbortSignal) => Promise<unknown>
-  create: (payload: ProviderPayload) => Promise<unknown>
-  update: (id: number, payload: ProviderPayload) => Promise<unknown>
+  list: (page: number, signal?: AbortSignal) => Promise<{ providers: Provider[]; pageCount: number }>
+  get: (id: number, signal?: AbortSignal) => Promise<Provider>
+  create: (payload: ProviderPayload) => Promise<ServerMessage>
+  update: (
+    id: number,
+    payload: ProviderUpdatePayload | { is_active: boolean } | { npi: string },
+  ) => Promise<ServerMessage>
+  remove: (id: number) => Promise<ServerMessage>
 }
 
-const notConnected = (): Promise<never> =>
-  Promise.reject(
-    new ApiError({
-      kind: 'unavailable',
-      message: 'Providers are not available right now.',
-      detail:
-        'No provider endpoints exist yet. features/admin-providers/api/providers-api.ts is the integration point.',
+const live: ProvidersApi = {
+  list: (page, signal) =>
+    request({
+      method: 'GET',
+      path: '/providers',
+      searchParams: { page },
+      schema: providerPageResponseSchema,
+      ...(signal ? { signal } : {}),
     }),
-  )
-
-const live: ProvidersApi = { list: notConnected, create: notConnected, update: notConnected }
-
-async function backend(): Promise<ProvidersApi> {
-  // Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-  if (__MOCK_DATA__) return (await import('./providers-api.mock')).mockProvidersApi
-  return live
+  get: (id, signal) =>
+    request({
+      method: 'GET',
+      path: `/providers/${id}`,
+      schema: providerDetailResponseSchema,
+      ...(signal ? { signal } : {}),
+    }),
+  create: (payload) =>
+    request({ method: 'POST', path: '/providers', body: payload, schema: serverMessageSchema }),
+  update: (id, payload) =>
+    request({ method: 'PUT', path: `/providers/${id}`, body: payload, schema: serverMessageSchema }),
+  remove: (id) => request({ method: 'DELETE', path: `/providers/${id}`, schema: serverMessageSchema }),
 }
 
-async function save(call: (api: ProvidersApi) => Promise<unknown>): Promise<Provider> {
+function backend(): Promise<ProvidersApi> {
+  return Promise.resolve(live)
+}
+
+async function send(call: (api: ProvidersApi) => Promise<ServerMessage>): Promise<ServerMessage> {
   try {
-    return providerResponseSchema.parse(await call(await backend()))
+    return await call(await backend())
   } catch (error) {
     throw renameFieldErrors(error, PROVIDER_FORM_FIELD_FOR)
   }
 }
 
+/**
+ * Every provider — this screen filters them by practice, and visits and
+ * Exceptions look providers up by id. The list is paged by the server, so this
+ * reads page 1, then the rest at once.
+ */
 export async function listProviders(signal?: AbortSignal): Promise<Provider[]> {
-  return z.array(providerResponseSchema).parse(await (await backend()).list(signal))
+  const api = await backend()
+  const first = await api.list(1, signal)
+  const rest = await Promise.all(
+    Array.from({ length: first.pageCount - 1 }, (_, index) => api.list(index + 2, signal)),
+  )
+  return [first, ...rest].flatMap((page) => page.providers)
 }
 
-export function createProvider(values: ProviderFormValues): Promise<Provider> {
-  return save((api) => api.create(toProviderPayload(values)))
+export async function getProvider(id: number, signal?: AbortSignal): Promise<Provider> {
+  return (await backend()).get(id, signal)
 }
 
-export function updateProvider(id: number, values: ProviderFormValues): Promise<Provider> {
-  return save((api) => api.update(id, toProviderPayload(values)))
+export function createProvider(values: ProviderFormValues): Promise<ServerMessage> {
+  return send((api) => api.create(toProviderPayload(values)))
+}
+
+export function updateProvider(id: number, values: ProviderFormValues): Promise<ServerMessage> {
+  return send((api) => api.update(id, toProviderUpdatePayload(values)))
+}
+
+/** Activates or deactivates a provider: a save carrying `is_active` alone. */
+export function setProviderActive(id: number, isActive: boolean): Promise<ServerMessage> {
+  return send((api) => api.update(id, { is_active: isActive }))
+}
+
+/** Corrects a provider's NPI alone — the Exceptions fix; nothing else changes. */
+export function correctProviderNpi(id: number, npi: string): Promise<ServerMessage> {
+  return send((api) => api.update(id, { npi }))
+}
+
+export function deleteProvider(id: number): Promise<ServerMessage> {
+  return send((api) => api.remove(id))
 }

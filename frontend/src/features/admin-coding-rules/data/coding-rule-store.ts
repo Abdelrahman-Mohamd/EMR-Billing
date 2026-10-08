@@ -9,9 +9,7 @@ import type { CodingRule } from '../model/coding-rule'
  *
  * - Changes last until the page reloads. No claim is scrubbed by them: the
  *   rules engine is the server's.
- * - In development and tests it starts with the prototype's rules
- *   (`sample-coding-rules.ts`, loaded only when `__MOCK_DATA__` is true, so a
- *   production build never contains them); otherwise it starts empty.
+ * - It starts empty: there is no sample data.
  * - The screens only use `useCodingRules()`. When a backend exists, that hook
  *   is replaced by server-state hooks (docs/FRONTEND_ARCHITECTURE.md §5) and
  *   this file is deleted — the screens do not change.
@@ -21,27 +19,19 @@ import type { CodingRule } from '../model/coding-rule'
  * Same pattern as the roles, procedure codes and fee schedules stores.
  */
 interface Snapshot {
-  /** False only while the development sample is still loading. */
+  /** Always true: the list is in memory. Kept so the screens read it as they will a query. */
   ready: boolean
   /** In the order they were added, as the prototype lists them. */
   rules: readonly CodingRule[]
 }
 
-let snapshot: Snapshot = { ready: !__MOCK_DATA__, rules: [] }
+let snapshot: Snapshot = { ready: true, rules: [] }
 const listeners = new Set<() => void>()
 let nextId = 1
 
 function publish(next: Snapshot): void {
   snapshot = next
   for (const listener of listeners) listener()
-}
-
-// Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-if (__MOCK_DATA__) {
-  void import('./sample-coding-rules').then(({ SAMPLE_CODING_RULES }) => {
-    // Something may have been added while the sample loaded; keep it.
-    if (!snapshot.ready) publish({ ready: true, rules: [...SAMPLE_CODING_RULES, ...snapshot.rules] })
-  })
 }
 
 function subscribe(listener: () => void): () => void {

@@ -8,10 +8,21 @@ describe('user payloads', () => {
     ).toStrictEqual({ name: 'Ada Lin', email: 'ada@example.test', password: 'pw-1', is_active: false })
   })
 
-  it('saves an existing user without any password field', () => {
-    const payload = toUpdateUserPayload({ name: 'Ada Lin', email: 'ada@example.test', isActive: true })
+  it('saves without a password when none was typed, so the current one stays', () => {
+    const payload = toUpdateUserPayload({
+      name: 'Ada Lin',
+      email: 'ada@example.test',
+      password: '',
+      isActive: true,
+    })
     expect(payload).toStrictEqual({ name: 'Ada Lin', email: 'ada@example.test', is_active: true })
     expect(payload).not.toHaveProperty('password')
+  })
+
+  it('saves with a new password when one was typed', () => {
+    expect(
+      toUpdateUserPayload({ name: 'Ada Lin', email: 'ada@example.test', password: 'pw-2', isActive: true }),
+    ).toStrictEqual({ name: 'Ada Lin', email: 'ada@example.test', password: 'pw-2', is_active: true })
   })
 })
 

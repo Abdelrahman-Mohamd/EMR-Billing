@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { CheckCircle2, Circle, DollarSign, Plus } from 'lucide-react'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { formatIsoDate } from '@/lib/utils/dates'
 import { formatMoney } from '@/lib/utils/money'
+import { toast } from '@/stores/toast-store'
 import { Button, buttonClass } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
@@ -15,42 +17,41 @@ import { EmptyState, ErrorState } from '@/components/ui/States'
 import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { insuranceLabel, useInsurances } from '@/features/admin-insurances'
 import { usePractices } from '@/features/admin-practices'
-import { useProcedureCodes, type ProcedureCode } from '@/features/admin-procedure-codes'
-import { useFeeSchedules } from '../data/fee-schedule-store'
-import type { FeeRow } from '../model/fee-row'
+import { useProcedureCodes } from '@/features/admin-procedure-codes'
+import { useDeleteFeeRow, useFeeSchedules } from '../queries/use-fee-schedules'
+import type { FeeRow } from '../schemas/fee-row'
 import { FeeRowDialog } from './FeeRowDialog'
 import { PriceLookup } from './PriceLookup'
 
 /** The prototype pages an insurance's rows 15 at a time. */
 const PAGE_SIZE = 15
 
-interface Row extends FeeRow {
-  /** The code's record, when the procedure codes list still has it. */
-  code: ProcedureCode | undefined
-}
-
 /**
  * Setup → Fee schedules, as the prototype has it: pick an insurance and see
  * its fee rows — code, billed per unit, the code's default fee for comparison,
- * the dates it is in effect — each with Edit and Delete; "Add fee row"; and,
- * beside the list, the Price lookup. Before there is an insurance and a
- * procedure code to price, it says what is needed instead.
+ * the dates it is in effect (or no end date) — each with Edit and Delete; "Add
+ * fee row"; and, beside the list, the Price lookup. Before there is an
+ * insurance and a procedure code to price, it says what is needed instead.
  *
- * **Frontend only.** There is no backend for fee schedules: the rows live in
- * this browser tab (`data/fee-schedule-store.ts`); the screen shows no message
- * about it. The
- * insurances come from the insurances list, the codes from the procedure codes
- * list — both through their own features.
+ * Every row is read (all of the server's pages) and shown one insurance at a
+ * time, sorted and paged here as the prototype does. A row comes with its
+ * code's text, description and default fee. The insurances come from the
+ * insurances list, the codes for a new row from the procedure codes list —
+ * both through their own features.
  *
  * The chosen insurance is kept in the URL (`?insurance=<id>`, an opaque id).
  * With none chosen, the first insurance is shown, as the prototype does.
  */
+/** A row as an action names it: its code, and its start when the code is priced more than once. */
+const rowName = (row: FeeRow) => `${row.procedureCode} (from ${formatIsoDate(row.from)})`
+
 export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: number | undefined }) {
   const navigate = useNavigate()
   const insurances = useInsurances()
   const practices = usePractices()
   const procedureCodes = useProcedureCodes()
   const fees = useFeeSchedules()
+  const remove = useDeleteFeeRow()
   /** `undefined`: no dialog. `null`: adding. A row: editing it. */
   const [editing, setEditing] = useState<FeeRow | null | undefined>(undefined)
   const [deleting, setDeleting] = useState<FeeRow | null>(null)
@@ -60,8 +61,8 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
   const payers = [...(insurances.data ?? [])].sort((a, b) => a.practiceId - b.practiceId || a.code - b.code)
   const insurance = payers.find((payer) => payer.id === insuranceFilter) ?? payers[0]
-  const codes = procedureCodes.codes
-  const loading = insurances.isPending || !procedureCodes.ready || !fees.ready
+  const codes = procedureCodes.data ?? []
+  const loading = insurances.isPending || procedureCodes.isPending || fees.isPending
   const canPrice = payers.length > 0 && codes.length > 0
 
   const choose = (value: string | null) => {
@@ -73,12 +74,13 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
     })
   }
 
-  const rows: Row[] = (insurance === undefined ? [] : fees.rows)
+  const rows: FeeRow[] = (insurance === undefined ? [] : (fees.data ?? []))
     .filter((row) => row.insuranceId === insurance?.id)
-    .map((row) => ({ ...row, code: codes.find((code) => code.code === row.procedureCode) }))
     .sort((a, b) => {
       const order =
-        sort.key === 'billed' ? a.billed - b.billed : a.procedureCode.localeCompare(b.procedureCode)
+        sort.key === 'billed'
+          ? a.billed - b.billed
+          : a.procedureCode.localeCompare(b.procedureCode) || a.from.localeCompare(b.from)
       return sort.direction === 'asc' ? order : -order
     })
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
@@ -89,7 +91,7 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
       ? `${rows.length} ${rows.length === 1 ? 'fee row' : 'fee rows'}`
       : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, rows.length)} of ${rows.length} fee rows`
 
-  const columns: ReadonlyArray<Column<Row>> = [
+  const columns: ReadonlyArray<Column<FeeRow>> = [
     {
       key: 'code',
       header: 'Code',
@@ -100,14 +102,8 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
         <span className="block xl:min-w-32">
           <span className="font-medium whitespace-nowrap">{row.procedureCode}</span>
           <CellSub>
-            <span className="break-words">{row.code?.description ?? 'Not in the procedure codes list'}</span>
+            <span className="break-words">{row.description}</span>
           </CellSub>
-          {/* Until their columns appear, the default fee and dates ride under the code. */}
-          <span className="md:hidden">
-            <CellSub>
-              {formatIsoDate(row.from)} – {formatIsoDate(row.to)}
-            </CellSub>
-          </span>
         </span>
       ),
     },
@@ -122,35 +118,31 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
     {
       key: 'default',
       header: 'Default fee',
-      hideOnMobile: true,
       cell: (row) => (
-        <span className="text-n500 whitespace-nowrap tabular-nums">
-          {row.code === undefined ? '—' : formatMoney(row.code.defaultFee)}
-        </span>
+        <span className="text-n500 whitespace-nowrap tabular-nums">{formatMoney(row.defaultFee)}</span>
       ),
     },
     {
       key: 'effective',
       header: 'Effective',
-      hideBelow: 'md',
       cell: (row) => (
         // Each date stays whole; the range may wrap between them.
         <span>
           <span className="whitespace-nowrap">{formatIsoDate(row.from)} –</span>{' '}
-          <span className="whitespace-nowrap">{formatIsoDate(row.to)}</span>
+          <span className="whitespace-nowrap">{row.to === null ? 'no end date' : formatIsoDate(row.to)}</span>
         </span>
       ),
     },
-    actionsColumn<Row>((row) => (
+    actionsColumn<FeeRow>((row) => (
       <>
         <RowActionButton
           action="edit"
-          label={`Edit the ${row.procedureCode} row`}
+          label={`Edit the ${rowName(row)} row`}
           onClick={() => setEditing(row)}
         />
         <RowActionButton
           action="delete"
-          label={`Delete the ${row.procedureCode} row`}
+          label={`Delete the ${rowName(row)} row`}
           onClick={() => setDeleting(row)}
         />
       </>
@@ -165,8 +157,15 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
   }))
 
   const body = () => {
-    if (insurances.isError) {
-      return <ErrorState onRetry={() => void insurances.refetch()} />
+    if (insurances.isError || fees.isError) {
+      return (
+        <ErrorState
+          onRetry={() => {
+            if (insurances.isError) void insurances.refetch()
+            if (fees.isError) void fees.refetch()
+          }}
+        />
+      )
     }
     if (!loading && !canPrice) {
       return (
@@ -243,7 +242,7 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
             caption={insurance === undefined ? 'Fee rows' : `Fee rows for ${insurance.name}`}
             columns={columns}
             rows={pageRows}
-            getRowId={(row) => row.procedureCode}
+            getRowId={(row) => String(row.id)}
             loading={loading}
             sort={sort}
             onSortChange={(next) => {
@@ -273,7 +272,7 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
           <PriceLookup
             insurances={insuranceOptions}
             codes={codes}
-            rows={fees.rows}
+            rows={fees.data}
             initialInsuranceId={insurance?.id ?? null}
           />
         )}
@@ -305,13 +304,11 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
 
       {editing !== undefined && insurance !== undefined && (
         <FeeRowDialog
-          key={editing?.procedureCode ?? 'new'}
+          key={editing?.id ?? 'new'}
           insuranceId={insurance.id}
           insuranceName={insurance.name}
           row={editing}
           codes={codes}
-          takenCodes={rows.map((row) => row.procedureCode)}
-          onSave={fees.save}
           onClose={() => setEditing(undefined)}
         />
       )}
@@ -320,13 +317,21 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
         onOpenChange={(open) => {
           if (!open) setDeleting(null)
         }}
-        title={`Delete the ${deleting?.procedureCode ?? ''} row?`}
+        title={`Delete the ${deleting === null ? '' : rowName(deleting)} row?`}
         description="The code falls back to its default fee for this payer."
         confirmLabel="Delete row"
         tone="destructive"
-        onConfirm={() => {
-          if (deleting !== null) fees.remove(deleting)
-          setDeleting(null)
+        onConfirm={async () => {
+          if (deleting === null) return
+          try {
+            const message = await remove.mutateAsync(deleting.id)
+            toast.success(message ?? 'Fee row deleted')
+          } catch (error) {
+            toast.error(
+              'The fee row was not deleted',
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
         }}
       />
     </PageContainer>

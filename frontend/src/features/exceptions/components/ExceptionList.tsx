@@ -107,7 +107,6 @@ export function ExceptionList({
       key: 'level',
       header: 'Level',
       sortable: true,
-      hideOnMobile: true,
       cell: (exception) => (
         <span className="flex items-center gap-2.5">
           {open && (
@@ -130,16 +129,8 @@ export function ExceptionList({
       primary: true,
       cell: (exception) => (
         <span className="block min-w-0">
-          {/* On a phone the level rides above the trigger. */}
-          <span className="mb-1 block sm:hidden">{levelTag(exception)}</span>
           <span className="break-words">{exception.trigger}</span>
           <CellSub>{exception.detail}</CellSub>
-          {/* Until the Record column appears, the record rides under the particulars. */}
-          <span className="md:hidden">
-            <CellSub>
-              {recordName(exception)} · {recordSub(exception)}
-            </CellSub>
-          </span>
         </span>
       ),
     },
@@ -147,12 +138,11 @@ export function ExceptionList({
       key: 'record',
       header: 'Record',
       sortable: true,
-      hideBelow: 'md',
       cell: (exception) => (
         <span className="block min-w-0">
           <span className="text-ink block font-medium break-words">{recordName(exception)}</span>
           <CellSub>
-            <span className="[overflow-wrap:anywhere]">{recordSub(exception)}</span>
+            <span className="break-words">{recordSub(exception)}</span>
           </CellSub>
         </span>
       ),
@@ -161,7 +151,6 @@ export function ExceptionList({
       key: 'detected',
       header: 'Detected',
       sortable: true,
-      hideBelow: 'lg',
       cell: (exception) => (
         <span className="whitespace-nowrap">{formatWhen(exception.detectedAt).label}</span>
       ),
@@ -171,7 +160,6 @@ export function ExceptionList({
           {
             key: 'owner',
             header: 'Owner',
-            hideBelow: 'xl',
             cell: (exception) =>
               exception.owner === null ? <span className="text-n500">Unassigned</span> : exception.owner,
           },
@@ -179,7 +167,6 @@ export function ExceptionList({
             key: 'due',
             header: 'Due',
             sortable: true,
-            hideBelow: 'lg',
             cell: (exception) =>
               exception.due === null ? (
                 <span className="text-n400">—</span>

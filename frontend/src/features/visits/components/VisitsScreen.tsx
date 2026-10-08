@@ -75,11 +75,7 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
       cell: (visit) => (
         <span className="block min-w-0">
           <span className="break-words">{refs.patientListName(visit.caseId)}</span>
-          <CellSub>
-            {refs.caseName(visit.caseId)}
-            {/* Until their columns appear, the date and codes ride under the case. */}
-            <span className="sm:hidden"> · {formatIsoDate(visit.dateOfService)}</span>
-          </CellSub>
+          <CellSub>{refs.caseName(visit.caseId)}</CellSub>
         </span>
       ),
     },
@@ -87,7 +83,6 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
       key: 'date',
       header: 'Date of service',
       sortable: true,
-      hideOnMobile: true,
       cell: (visit) => (
         <span className="whitespace-nowrap tabular-nums">{formatIsoDate(visit.dateOfService)}</span>
       ),
@@ -95,13 +90,11 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
     {
       key: 'location',
       header: 'Location',
-      hideBelow: 'md',
       cell: (visit) => refs.locationName(visit.locationId),
     },
     {
       key: 'provider',
       header: 'Treating provider',
-      hideBelow: 'lg',
       cell: (visit) => refs.providerName(visit.treatingProviderId),
     },
     {

@@ -40,7 +40,8 @@ frontend is not rewritten later._
   http client is the only code that depends on this.
 - **If tokens are unavoidable:** keep the access token in memory only (a module variable, not a store, never
   persisted), keep the refresh token in an httpOnly cookie, and accept that a full page reload requires a
-  silent refresh. A token in `localStorage` is a one-line XSS-to-account-takeover, and is not acceptable here.
+  silent refresh. A token in `localStorage` is a one-line XSS-to-account-takeover. **Overridden for this
+  backend by the user's decision of 2026-10-07 — see "The token is kept in `localStorage`" below.**
 - **Never** put a token in a URL, a query parameter or a fragment.
 - Session expiry is handled centrally: a `401` triggers one redirect to sign-in with a return path, clears
   the query cache (§5) and does not retry.
@@ -62,8 +63,33 @@ frontend is not rewritten later._
   that only this browser was signed out.
 - Who is signed in comes from one query (`useCurrentUser`), cleared with everything else on sign-in and
   sign-out; no second copy is kept in a store.
-- Nothing from an auth response is used yet: how the session is carried (this section's cookie, or a token),
-  and whether verifying a code or resetting a password returns anything, are not known.
+- **Sign-in is live (2026-10-07):** `POST /auth/login` returns `{ data: { user, access_token, token_type } }`.
+  The backend issues a Bearer token, not a cookie. The token is kept by `lib/auth/session.ts` (in
+  `localStorage` — see below), sent by the http client as `Authorization: Bearer …` with
+  `credentials: 'omit'` (the server allows `*` origins, which browsers refuse for cookie-carrying requests),
+  never logged or put in a URL. A `401` on a request that carried the token clears it; the route guard
+  (`routes/_app.tsx`, active only with a backend configured) then sends the user to sign in.
+- **The token is kept in `localStorage` (the user's decision, 2026-10-07)**, so a reload or a new tab stays
+  signed in. Accepted risk: any script running in the page (an XSS, a compromised dependency, a browser
+  extension) can read it and use the account until it is revoked or expires — this section's preference for
+  memory or an httpOnly cookie stands as the safer design. What limits it: `lib/auth/session.ts` is the only
+  code that touches storage (lint allows `localStorage` in that one file); it stores the token and its type,
+  nothing else — never the user or any PHI; sign-out and a `401` remove it; other tabs follow through the
+  `storage` event; when storage is blocked the session lives in memory for the tab. A restored token is
+  checked with `GET /auth/me` by the route guard before the app shows, and a refused one goes to sign in.
+  Still needed from the backend: a token lifetime and idle expiry (staging's is not known), and a strict CSP
+  on the hosting — the main defence for a token in storage; no `dangerouslySetInnerHTML` (lint) is the
+  frontend's part.
+- **Sign-out is live (2026-10-07):** `POST /auth/logout` with the token revokes it (staging: `200`, then the
+  same token gets `401`); the token and user are forgotten in this browser whatever the answer. A `401` counts
+  as signed out (the token was already not accepted); a failure to reach the server is reported as "signed out
+  of this browser" only.
+- **Forgot password is live (2026-10-07):** send-otp, verify-otp and reset under `/auth/forgot-password/`.
+  The send step's answer is the same whether or not the email has an account (as the screen's wording);
+  a refused code is shown in our words, never the server's.
+- **Change password is live (2026-10-07):** `POST /auth/change-password`, with the token; a refused current
+  password is shown in our words on its field.
+- **Gaps for the backend:** no token lifetime is stated; no "who am I" or refresh (a reload signs out).
 
 ## 3. Authorization
 
@@ -134,8 +160,15 @@ mutations on `POST`/`PUT`/`PATCH`/`DELETE` — never a `GET` that changes data.
 
 - **No PHI in any log**, including `console.warn`/`console.error`, an error tracker, analytics, or a breadcrumb.
   Log ids, kinds and counts — not names, not payloads, not query results.
-- Users see `userMessage(error)`: a short, actionable sentence. Never a stack, a SQL fragment, an internal
-  hostname, or a raw 500 body.
+- Users see `userMessage(error)`: **the server's own message when it sent one** (the user's decision,
+  2026-10-07 — it says what the problem is: "A practice must have at least one location; this is its last
+  one."), and a successful write's toast is the server's `message` too ("Practice created successfully";
+  `lib/api/server-message.ts`). Our wording is only the fallback when the server sends none. Kept out, so
+  never shown: any 5xx text (with debugging on it can carry an exception, even query data) and Laravel's
+  technical texts ("No query results for model …", "The route … could not be found") — those get our
+  sentence for their kind (`lib/api/http-client.ts`). Never a stack, a SQL fragment, an internal hostname, or
+  a raw 500 body. What the server's messages say is the server's responsibility: it must not put PHI or
+  internals in a 4xx message.
 - `ApiError.detail` is for developers and never rendered.
 - A correlation id (`x-request-id`) is the safe thing to show a user to quote to support.
 - Production builds ship **hidden** source maps (`sourcemap: 'hidden'`): uploadable to an error tracker, not

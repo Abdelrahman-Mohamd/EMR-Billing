@@ -1,39 +1,56 @@
-import { ApiError } from '@/lib/api/api-error'
-import { auditPageResponseSchema, type AuditLogQuery, type AuditPage } from '../schemas/audit-entry'
+import { request } from '@/lib/api/http-client'
+import {
+  auditEntryDetailResponseSchema,
+  auditPageResponseSchema,
+  type AuditEntryDetail,
+  type AuditLogQuery,
+  type AuditPage,
+} from '../schemas/audit-entry'
 
 /**
- * The audit log's only door to a server. Read-only: the prototype offers no
- * way to change an entry, so nothing here can.
+ * The audit log's only door to a server. Read-only: nothing here can change
+ * an entry.
  *
- * **No endpoint, parameters or response exist yet.** The screen hands over an
- * `AuditLogQuery` (search, modules, page) and expects one page back; how that
- * becomes a request is written here once the contract is known. Searching,
- * filtering and paging are the server's, so the browser never loads the whole
- * history. In development and tests the call goes to an in-memory mock that
- * plays the server (ADR 0006); in any other build it rejects as `unavailable`.
+ * **Live** (contracts confirmed 2026-10-07), carrying the session's token:
+ * - `GET /activity-logs?page=N` answers one page of 15 entries, newest first,
+ *   with Laravel's `meta` for the pager. Only `page` is sent: no search or
+ *   filter parameter is part of the contract, so none is used.
+ * - `GET /activity-logs/{id}` answers one entry; an unknown id is a `404`.
+ *
+ * See schemas/audit-entry.ts for both shapes. With no backend configured (the
+ * tests), the calls reject as `unavailable` without being sent.
  */
 export interface AuditLogApi {
-  list: (query: AuditLogQuery, signal?: AbortSignal) => Promise<unknown>
+  list: (query: AuditLogQuery, signal?: AbortSignal) => Promise<AuditPage>
+  get: (id: string, signal?: AbortSignal) => Promise<AuditEntryDetail>
 }
 
-const notConnected = (): Promise<never> =>
-  Promise.reject(
-    new ApiError({
-      kind: 'unavailable',
-      message: 'The audit log is not available right now.',
-      detail:
-        'No audit log endpoint exists yet. features/admin-audit-log/api/audit-log-api.ts is the integration point.',
+const live: AuditLogApi = {
+  list: (query, signal) =>
+    request({
+      method: 'GET',
+      path: '/activity-logs',
+      searchParams: { page: query.page },
+      schema: auditPageResponseSchema,
+      ...(signal ? { signal } : {}),
     }),
-  )
+  get: (id, signal) =>
+    request({
+      method: 'GET',
+      path: `/activity-logs/${encodeURIComponent(id)}`,
+      schema: auditEntryDetailResponseSchema,
+      ...(signal ? { signal } : {}),
+    }),
+}
 
-const live: AuditLogApi = { list: notConnected }
-
-async function backend(): Promise<AuditLogApi> {
-  // Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-  if (__MOCK_DATA__) return (await import('./audit-log-api.mock')).mockAuditLogApi
-  return live
+function backend(): Promise<AuditLogApi> {
+  return Promise.resolve(live)
 }
 
 export async function listAuditEntries(query: AuditLogQuery, signal?: AbortSignal): Promise<AuditPage> {
-  return auditPageResponseSchema.parse(await (await backend()).list(query, signal))
+  return (await backend()).list(query, signal)
+}
+
+export async function getAuditEntry(id: string, signal?: AbortSignal): Promise<AuditEntryDetail> {
+  return (await backend()).get(id, signal)
 }

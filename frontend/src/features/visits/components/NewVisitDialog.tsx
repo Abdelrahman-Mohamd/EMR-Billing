@@ -60,9 +60,7 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
   const chosenCase = records.cases.find((item) => item.id === chosenCaseId)
   const patient = records.patients.find((item) => item.id === chosenCase?.patientId)
   const practiceId = patient?.practiceId
-  const locations = (refs.practices.find((practice) => practice.id === practiceId)?.locations ?? []).filter(
-    (location) => location.isActive,
-  )
+  const locations = refs.locationsOf(practiceId).filter((location) => location.isActive)
   const providers = refs.providers.filter(
     (provider) => provider.practiceId === practiceId && provider.isActive,
   )

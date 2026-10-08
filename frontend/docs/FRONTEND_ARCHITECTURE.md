@@ -250,19 +250,18 @@ Rules:
   `kind`; it never parses a message or a status code.
 - Every request carries an `AbortSignal` from TanStack Query and a 20 s timeout.
 
-**Provisional (no backend exists):** cookie-based session (`credentials: 'include'`), FastAPI-style
-`{ detail }` error bodies, and `x-request-id` for correlation are assumptions taken from the sibling EMR
-backend. They are confined to `lib/api/` so that a different contract changes that folder and nothing else.
+**The backend (2026-10-07):** a Laravel API at `VITE_API_BASE_URL` (`.env`: staging,
+`https://api.example.test/api/v1`). The session is a Bearer token kept in `localStorage`
+(`lib/auth/session.ts`; docs/SECURITY.md §2), sent as `Authorization: Bearer …` with `credentials: 'omit'`; errors are
+`{ message, errors? }` (Laravel), with FastAPI's `{ detail }` still read. `x-request-id` remains an assumption.
+All of it is confined to `lib/api/` and `lib/auth/`.
 
-**Until there is a backend**, a feature's `api/` module resolves to a mock implementation behind the same
-function signatures. The mock lives next to the real one (`claims-api.mock.ts`), returns data that satisfies
-the same Zod schemas, and is loaded only through `if (__MOCK_DATA__) … await import('./claims-api.mock')`,
-tested in the api file itself. `__MOCK_DATA__` is a build-time constant (`vite.config.ts`, declared in
-`src/lib/api/mock-data.d.ts`): true in the dev server, in tests, and in a build made with
-`VITE_DATA_SOURCE=mock`; false otherwise, and then the mock is never emitted. Outside a mock build the
-functions reject as `unavailable` rather than guess at an endpoint. Consumers cannot tell the difference,
-which is the point: swapping in the real endpoint is a change inside `api/`. _(ADR 0006;
-`features/admin-organizations/api/` is the first example.)_
+**No mock data (user, 2026-10-07).** `npm run dev` talks to the backend in `.env`, with no extra setup. A
+feature's `api/` module calls `request()` for the endpoints that are confirmed (so far: `POST /auth/login`,
+`POST /auth/logout`); every other call rejects as `unavailable` rather than guess at an endpoint, and the
+screen shows its load-failed state until the endpoint is wired — a change inside `api/` only. In-memory
+features (no API yet) start empty. Tests run with no backend configured (`test.env` in `vite.config.ts`): nothing is sent, and
+a test fakes what it needs. _(ADR 0006, the former mock-first layer, is superseded.)_
 
 **Wire shape vs. screen shape.** The backend speaks snake_case (`is_active`, `organization_id`); the app is
 camelCase. The two meet in one place per feature and nowhere else:
@@ -272,9 +271,8 @@ camelCase. The two meet in one place per feature and nowhere else:
 - `schemas/<entity>.ts` — the response schema, which parses the wire shape and `.transform`s it into the
   camelCase type the screens use (`z.output<…>`).
 
-The development mock plays the **server**: it receives the real payload and answers in wire format, so the
-mapping and the parsing both run in development exactly as they will in production. Optional fields are left
-out of a payload when empty, as the examples do. _(`features/admin-practices` is the reference.)_
+Optional fields are left out of a payload when empty, as the examples do. _(`features/admin-practices` is
+the reference.)_
 
 ---
 
@@ -379,14 +377,14 @@ Anything not on this list needs the four-question justification in
 
 These cannot be answered responsibly yet. They are called out here so nobody invents an answer quietly.
 
-| Open                                | Blocked on               | What we did instead                                                                                                                                                                             |
-| ----------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth mechanism (cookie vs token)    | Backend + infrastructure | Cookie assumed, isolated in `lib/api`; no token storage                                                                                                                                         |
-| Auth endpoints, session, "who am I" | Backend; client (Q-025)  | Payloads known (sign in, change password, forgot-password send/verify/reset); sign-out and "who am I" have none. All built against `features/auth/api/auth-api.ts`, dev mock only; no guard yet |
-| Permission matrix shape             | Backend RBAC model       | `can()` designed, not implemented                                                                                                                                                               |
-| Error body contract                 | Backend                  | FastAPI-style assumed, normalized in one file                                                                                                                                                   |
-| Pagination style (page vs cursor)   | Backend                  | Table contract designed around either                                                                                                                                                           |
-| File upload / export endpoints      | Backend                  | Nothing built                                                                                                                                                                                   |
-| Deployment target & CSP headers     | Infrastructure           | Requirements listed in SECURITY.md for whoever owns it                                                                                                                                          |
-| Error/monitoring service            | Infrastructure decision  | `sourcemap: 'hidden'` ready; no SDK installed                                                                                                                                                   |
-| i18n                                | Product decision         | Not built; strings inline in English                                                                                                                                                            |
+| Open                                | Blocked on               | What we did instead                                                                                                                                                                                              |
+| ----------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth mechanism (cookie vs token)    | Backend + infrastructure | Cookie assumed, isolated in `lib/api`; no token storage                                                                                                                                                          |
+| Auth endpoints, session, "who am I" | Backend; client (Q-025)  | Sign in, sign out, who am I (`GET /auth/me`), change password and forgot password are live; Bearer token in `localStorage`, checked with `/auth/me` by the route guard in `routes/_app.tsx`; no refresh endpoint |
+| Permission matrix shape             | Backend RBAC model       | `can()` designed, not implemented                                                                                                                                                                                |
+| Error body contract                 | Backend                  | FastAPI-style assumed, normalized in one file                                                                                                                                                                    |
+| Pagination style (page vs cursor)   | Backend                  | Table contract designed around either                                                                                                                                                                            |
+| File upload / export endpoints      | Backend                  | Nothing built                                                                                                                                                                                                    |
+| Deployment target & CSP headers     | Infrastructure           | Requirements listed in SECURITY.md for whoever owns it                                                                                                                                                           |
+| Error/monitoring service            | Infrastructure decision  | `sourcemap: 'hidden'` ready; no SDK installed                                                                                                                                                                    |
+| i18n                                | Product decision         | Not built; strings inline in English                                                                                                                                                                             |

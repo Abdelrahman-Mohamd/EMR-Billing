@@ -1,4 +1,7 @@
-import { ApiError, renameFieldErrors } from '@/lib/api/api-error'
+import { ApiError, isApiError, renameFieldErrors } from '@/lib/api/api-error'
+import { request } from '@/lib/api/http-client'
+import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { clearSession, hasSession, setSession } from '@/lib/auth/session'
 import type {
   ChangePasswordRequest,
   ResetPasswordRequest,
@@ -7,7 +10,12 @@ import type {
   VerifyOtpRequest,
 } from '../schemas/auth-payloads'
 import type { ChangePasswordValues, ResetPasswordValues, SendCodeValues } from '../schemas/password-schemas'
-import { currentUserSchema, type CurrentUser } from '../schemas/current-user'
+import {
+  loginResponseSchema,
+  meResponseSchema,
+  type CurrentUser,
+  type LoginResult,
+} from '../schemas/current-user'
 import type { SignInValues } from '../schemas/sign-in-schema'
 import {
   FORM_FIELD_FOR,
@@ -23,90 +31,150 @@ import {
  * change password, and the three forgot-password steps (send code, verify
  * code, reset password).
  *
- * **Known:** the request bodies, exactly (`schemas/auth-payloads.ts`). Sign
- * out and "who am I" have no known payload or endpoint at all.
- * **Not known yet, so not written:** the endpoint paths, the response bodies,
- * how the session is carried (cookie or token), and whether verifying a code
- * or resetting a password returns anything. Every call therefore resolves with
- * nothing and nothing from a response is used. In development and tests the
- * calls go to a mock that plays the server (`auth-api.mock.ts`); in any other
- * build they reject as `unavailable`. When the endpoints are known, `live`
- * becomes five `request()` calls and nothing outside this file changes.
+ * **Sign in is live** (contract confirmed 2026-10-07): `POST /auth/login` with
+ * `{ email, password }` → `{ data: { user, access_token, token_type } }`. The
+ * token is kept in memory (`lib/auth/session.ts`) and sent by the http client
+ * as `Authorization: Bearer …`, so after a page reload the user signs in
+ * again. **Who is signed in is live** (2026-10-07): `GET /auth/me`, carrying
+ * the token, → `{ data: user }`; without a valid token, `401`. **Sign out is
+ * live** (2026-10-07): `POST /auth/logout`, carrying the token, revokes it on
+ * the server (observed on staging: 200, then that token gets 401); the token
+ * is then forgotten here whatever the answer. **Forgot password is live** (2026-10-07):
+ * `POST /auth/forgot-password/send-otp` `{ email }`, `…/verify-otp`
+ * `{ email, otp }` and `…/reset` `{ email, otp, password,
+ * password_confirmation }`; only their status is relied on. A wrong or expired
+ * code is answered `400 { message: "Invalid OTP." }`, with no field, which the
+ * screens put on the code; field errors come as a 422. **Change password is
+ * live** (2026-10-07): `POST /auth/change-password` `{ current_password,
+ * new_password, new_password_confirmation }`, carrying the token; a wrong
+ * current password is answered `400` with no field, which the dialog puts on
+ * that field.
+ *
+ * The calls go to the backend in `.env`; with none configured (the tests),
+ * they reject as `unavailable` without being sent.
  *
  * Passwords and codes pass straight through: never logged, stored, cached or
  * put in a URL. The screens call these functions directly rather than through
  * `useMutation`, which would keep them in the query cache (see SignInForm).
  */
 export interface AuthApi {
-  signIn: (payload: SignInRequest) => Promise<unknown>
-  changePassword: (payload: ChangePasswordRequest) => Promise<unknown>
-  sendOtp: (payload: SendOtpRequest) => Promise<unknown>
-  verifyOtp: (payload: VerifyOtpRequest) => Promise<unknown>
-  resetPassword: (payload: ResetPasswordRequest) => Promise<unknown>
-  currentUser: (signal?: AbortSignal) => Promise<unknown>
-  signOut: () => Promise<unknown>
+  signIn: (payload: SignInRequest) => Promise<LoginResult>
+  me: () => Promise<CurrentUser>
+  changePassword: (payload: ChangePasswordRequest) => Promise<ServerMessage>
+  sendOtp: (payload: SendOtpRequest) => Promise<ServerMessage>
+  verifyOtp: (payload: VerifyOtpRequest) => Promise<ServerMessage>
+  resetPassword: (payload: ResetPasswordRequest) => Promise<ServerMessage>
+  signOut: () => Promise<ServerMessage>
 }
-
-const notConnected = (): Promise<never> =>
-  Promise.reject(
-    new ApiError({
-      kind: 'unavailable',
-      message: 'This service is not available right now.',
-      detail:
-        'Authentication endpoints are not known yet (only their payloads). features/auth/api/auth-api.ts is the integration point.',
-    }),
-  )
 
 const live: AuthApi = {
-  signIn: notConnected,
-  changePassword: notConnected,
-  sendOtp: notConnected,
-  verifyOtp: notConnected,
-  resetPassword: notConnected,
-  currentUser: notConnected,
-  signOut: notConnected,
+  signIn: (payload) =>
+    request({ method: 'POST', path: '/auth/login', body: payload, schema: loginResponseSchema }),
+  me: () => request({ method: 'GET', path: '/auth/me', schema: meResponseSchema }),
+  // Change password (confirmed 2026-10-07), with the signed-in session's token.
+  // A wrong current password is answered `400 { message }` with no field.
+  changePassword: (payload) =>
+    request({ method: 'POST', path: '/auth/change-password', body: payload, schema: serverMessageSchema }),
+  // Forgot password (confirmed 2026-10-07). Only the status is relied on: send-otp
+  // answers `{ success, message, data: null }` whether or not the email has an
+  // account, and nothing in the other two answers is needed.
+  sendOtp: (payload) =>
+    request({
+      method: 'POST',
+      path: '/auth/forgot-password/send-otp',
+      body: payload,
+      schema: serverMessageSchema,
+    }),
+  verifyOtp: (payload) =>
+    request({
+      method: 'POST',
+      path: '/auth/forgot-password/verify-otp',
+      body: payload,
+      schema: serverMessageSchema,
+    }),
+  resetPassword: (payload) =>
+    request({
+      method: 'POST',
+      path: '/auth/forgot-password/reset',
+      body: payload,
+      schema: serverMessageSchema,
+    }),
+  // Only the status is relied on; the body (`{ success, message, data: null }`) is not read.
+  signOut: () => request({ method: 'POST', path: '/auth/logout', schema: serverMessageSchema }),
 }
 
-async function backend(): Promise<AuthApi> {
-  // Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-  if (__MOCK_DATA__) return (await import('./auth-api.mock')).mockAuthApi
-  return live
+function backend(): Promise<AuthApi> {
+  return Promise.resolve(live)
 }
 
-async function send(call: (api: AuthApi) => Promise<unknown>): Promise<void> {
+/** Sends a call; resolves with the server's message, which the screens show. */
+async function send(call: (api: AuthApi) => Promise<ServerMessage>): Promise<ServerMessage> {
   try {
-    await call(await backend())
+    return await call(await backend())
   } catch (error) {
     throw renameFieldErrors(error, FORM_FIELD_FOR)
   }
 }
 
-export function signIn(values: SignInValues): Promise<void> {
-  return send((api) => api.signIn(toSignInRequest(values)))
+/**
+ * Signs in: sends exactly `{ email, password }`, keeps the returned token for
+ * every later request, and resolves with the user — never with the token.
+ */
+export async function signIn(values: SignInValues): Promise<CurrentUser> {
+  let result: LoginResult
+  try {
+    result = await (await backend()).signIn(toSignInRequest(values))
+  } catch (error) {
+    throw renameFieldErrors(error, FORM_FIELD_FOR)
+  }
+  setSession({ accessToken: result.accessToken, tokenType: result.tokenType })
+  return result.user
 }
 
-export function changePassword(values: ChangePasswordValues): Promise<void> {
+export function changePassword(values: ChangePasswordValues): Promise<ServerMessage> {
   return send((api) => api.changePassword(toChangePasswordRequest(values)))
 }
 
-export function sendOtp(values: SendCodeValues): Promise<void> {
+export function sendOtp(values: SendCodeValues): Promise<ServerMessage> {
   return send((api) => api.sendOtp(toSendOtpRequest(values)))
 }
 
-export function verifyOtp(email: string, otp: string): Promise<void> {
+export function verifyOtp(email: string, otp: string): Promise<ServerMessage> {
   return send((api) => api.verifyOtp(toVerifyOtpRequest(email, otp)))
 }
 
-export function resetPassword(email: string, otp: string, values: ResetPasswordValues): Promise<void> {
+export function resetPassword(
+  email: string,
+  otp: string,
+  values: ResetPasswordValues,
+): Promise<ServerMessage> {
   return send((api) => api.resetPassword(toResetPasswordRequest(email, otp, values)))
 }
 
-/** Who is signed in. The only response in this file that is read (see its schema). */
-export async function getCurrentUser(signal?: AbortSignal): Promise<CurrentUser> {
-  return currentUserSchema.parse(await (await backend()).currentUser(signal))
+/**
+ * Who is signed in, asked of the server with the session's token. Without a
+ * session nothing is sent: `unauthenticated`. A token the server no longer
+ * accepts (`401`) ends the session in the http client.
+ */
+export async function getCurrentUser(): Promise<CurrentUser> {
+  if (!hasSession()) throw new ApiError({ kind: 'unauthenticated', message: 'Sign in to continue.' })
+  return (await backend()).me()
 }
 
-/** Ends the session on the server. What it clears there is the server's business. */
-export function signOut(): Promise<void> {
-  return send((api) => api.signOut())
+/**
+ * Signs out: asks the server to revoke the token, then — whatever it answered —
+ * forgets the token in this browser. Rejects only when the server
+ * could not confirm it (so the account menu can say only this browser was
+ * signed out); a `401` means the token was already not accepted, which is
+ * signed out too.
+ */
+export async function signOut(): Promise<ServerMessage> {
+  try {
+    return await send((api) => api.signOut())
+  } catch (error) {
+    if (!(isApiError(error) && error.kind === 'unauthenticated')) throw error
+    return null
+  } finally {
+    clearSession()
+  }
 }

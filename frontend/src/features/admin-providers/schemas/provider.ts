@@ -1,27 +1,29 @@
 import { z } from 'zod'
 import { isDummyNpi } from '@/lib/validation/npi'
-import type { ClaimHold } from '../model/claim-hold'
 
 /**
- * A provider as the screens see it, parsed from the wire.
+ * A provider, as the backend sends and takes them (contracts confirmed
+ * 2026-10-08, tried on staging):
  *
- * **Provisional contract.** No backend payload exists for providers. The
- * fields are the updated prototype's provider form, field for field, under
- * the PRD V2 column names of `provider` (§10.3) where V2 has one: code
- * (labelled Provider ID), first and last name, credential, specialty, NPI,
- * taxonomy code, state license, claim hold until and reason, active — plus
- * `provider_type` (client, 2026-09-30). Named here because V2 has no column:
- * `practice_id` (a provider belongs to a practice in the prototype),
- * `claim_hold_from`, `claim_hold_location_ids` and `claim_hold_insurance_ids`
- * (the hold's window and scope, client 2026-09-23). When the real payload
- * arrives, this file and `api/` change — nothing else.
+ * - `GET /providers?page=N` → Laravel pagination of `{ id, practice_id, code,
+ *   first_name, last_name, type, type_label, credential, specialty, npi,
+ *   taxonomy_code, state_license, is_active, practice, created_at }`;
+ *   `GET /providers/{id}` → the same;
+ * - `POST /providers` `{ practice_id, code, first_name, last_name, credential,
+ *   specialty, npi, taxonomy_code, state_license }`; `PUT /providers/{id}` —
+ *   the same without `practice_id` (refused: a provider never moves practice);
+ *   `DELETE`. Writes answer `{ success, message, data: null }`.
  *
- * Not here, on purpose: payer enrollment / credentialing (removed by the
- * client, 2026-09-30), and the prototype's "draft from EMR" profiles, which
- * only an EMR import creates.
+ * Seen on staging: required are the practice, code, first and last name and
+ * NPI; credential, specialty, taxonomy code and state license are optional
+ * (`null` or `""` clears them). `type` is `rendering` or `billing` — rendering
+ * when left out, `null` refused; `is_active` is taken on both writes although
+ * not in the example. The NPI is ten digits and not a placeholder; the
+ * taxonomy code is ten characters (225100000X); the code and the NPI are each
+ * unique. Specialty is free text. A `PUT` changes only the fields it carries.
  *
- * Assumed until a contract says otherwise: a saved provider comes back as its
- * payload plus a numeric `id`; an empty optional text is sent as `null`.
+ * The prototype's claim hold (from, until, reason, and the locations and
+ * payers it covers) is not in the contract, so it is not here.
  */
 const text = z
   .string()
@@ -36,63 +38,69 @@ export const providerResponseSchema = z
     code: z.string(),
     first_name: z.string(),
     last_name: z.string(),
-    credential: text,
-    specialty: z.string(),
     // A string, not an enum: a value the frontend does not know yet must not
-    // make the whole list fail to load.
-    provider_type: z.string(),
+    // make the whole list fail to load. Known values: model/provider-options.ts.
+    type: z.string(),
+    type_label: text,
+    credential: text,
+    specialty: text,
     npi: z.string(),
-    taxonomy_code: z.string(),
+    taxonomy_code: text,
     state_license: text,
-    claim_hold_from: z.string().nullable(),
-    claim_hold_until: z.string().nullable(),
-    claim_hold_reason: text,
-    claim_hold_location_ids: z.array(z.number().int()),
-    claim_hold_insurance_ids: z.array(z.number().int()),
     is_active: z.boolean(),
+    practice: z.object({ name: z.string() }).nullable().optional(),
   })
   .transform((wire) => ({
     id: wire.id,
     practiceId: wire.practice_id,
+    /** The practice's name, as the provider comes with it; empty if it did not. */
+    practiceName: wire.practice?.name ?? '',
     code: wire.code,
     firstName: wire.first_name,
     lastName: wire.last_name,
+    type: wire.type,
+    /** The type as the server words it: "Rendering", "Billing". */
+    typeLabel: wire.type_label,
     credential: wire.credential,
     specialty: wire.specialty,
-    providerType: wire.provider_type,
     npi: wire.npi,
     taxonomyCode: wire.taxonomy_code,
     stateLicense: wire.state_license,
-    claimHold: {
-      from: wire.claim_hold_from,
-      until: wire.claim_hold_until,
-      reason: wire.claim_hold_reason,
-      locationIds: wire.claim_hold_location_ids,
-      insuranceIds: wire.claim_hold_insurance_ids,
-    } satisfies ClaimHold,
     isActive: wire.is_active,
   }))
 
 export type Provider = z.output<typeof providerResponseSchema>
 
-/** The request body for create and update (provisional — see above). */
-export interface ProviderPayload {
-  practice_id: number
+export const providerPageResponseSchema = z
+  .object({
+    data: z.object({
+      data: z.array(providerResponseSchema),
+      meta: z.object({ current_page: z.number().int().positive(), last_page: z.number().int().positive() }),
+    }),
+  })
+  .transform(({ data }) => ({ providers: data.data, pageCount: data.meta.last_page }))
+
+export const providerDetailResponseSchema = z
+  .object({ data: providerResponseSchema })
+  .transform((wire) => wire.data)
+
+/** Saving a provider (`PUT`): every field but `practice_id`. */
+export interface ProviderUpdatePayload {
   code: string
   first_name: string
   last_name: string
+  type: string
   credential: string | null
-  specialty: string
-  provider_type: string
+  specialty: string | null
   npi: string
-  taxonomy_code: string
+  taxonomy_code: string | null
   state_license: string | null
-  claim_hold_from: string | null
-  claim_hold_until: string | null
-  claim_hold_reason: string | null
-  claim_hold_location_ids: number[]
-  claim_hold_insurance_ids: number[]
   is_active: boolean
+}
+
+/** Creating a provider (`POST`): with the practice they belong to. */
+export interface ProviderPayload extends ProviderUpdatePayload {
+  practice_id: number
 }
 
 /** Backend field → form field, so a server's field error lands on the right input. */
@@ -100,18 +108,14 @@ export const PROVIDER_FORM_FIELD_FOR: Readonly<Record<string, string>> = {
   practice_id: 'practiceId',
   first_name: 'firstName',
   last_name: 'lastName',
-  provider_type: 'providerType',
   taxonomy_code: 'taxonomyCode',
   state_license: 'stateLicense',
-  claim_hold_from: 'claimHoldFrom',
-  claim_hold_until: 'claimHoldUntil',
-  claim_hold_reason: 'claimHoldReason',
-  claim_hold_location_ids: 'claimHoldLocationIds',
-  claim_hold_insurance_ids: 'claimHoldInsuranceIds',
   is_active: 'isActive',
 }
 
 const required = (message: string) => z.string().trim().min(1, message)
+// `: boolean` keeps TypeScript from reading the check as a type guard, so the
+// form's values stay `string | null` before and after validation.
 const chosen = (message: string) =>
   z
     .string()
@@ -119,59 +123,32 @@ const chosen = (message: string) =>
     .refine((value): boolean => value !== null, message)
 
 /**
- * What the form accepts — the prototype's checks, and only those:
- * - **Required:** practice, first and last name, Provider ID, specialty,
- *   provider type, NPI and taxonomy code. Credential and state license are
- *   optional.
- * - **NPI:** ten digits and not a placeholder NPI (BR20), as for referring
- *   physicians.
- * - **Claim hold:** a hold exists once it has an end date; then it needs a
- *   start date and a reason, and cannot end before it starts.
- * - **Not checked:** uniqueness of the Provider ID or NPI, taxonomy format,
- *   anything about the type — the server's, or not defined.
+ * What the form accepts — as the server does:
+ * - **Required:** practice, first and last name, Provider ID, NPI and provider
+ *   type (rendering to start; the server refuses none). Credential, specialty,
+ *   taxonomy code and state license are optional.
+ * - **NPI:** ten digits and not a placeholder (BR20; the server refuses them
+ *   too). **Taxonomy code:** nine characters and an X, as for practices.
+ * - **Not checked:** uniqueness of the Provider ID or NPI — the server's.
  */
-export const providerFormSchema = z
-  .object({
-    practiceId: chosen('Select a practice.'),
-    firstName: required('Enter the first name.'),
-    lastName: required('Enter the last name.'),
-    credential: z.string().trim(),
-    code: required('Enter the Provider ID.'),
-    specialty: chosen('Select a specialty.'),
-    providerType: chosen('Select a provider type.'),
-    npi: required('Enter the NPI.').refine(
-      (value) => value === '' || (/^\d{10}$/.test(value) && !isDummyNpi(value)),
-      'Please enter a valid NPI.',
-    ),
-    taxonomyCode: required('Enter the taxonomy code.'),
-    stateLicense: z.string().trim(),
-    /** ISO dates; empty means none. */
-    claimHoldFrom: z.string(),
-    claimHoldUntil: z.string(),
-    claimHoldReason: z.string().trim(),
-    claimHoldLocationIds: z.array(z.string()),
-    claimHoldInsuranceIds: z.array(z.string()),
-    isActive: z.boolean(),
-  })
-  .superRefine((values, context) => {
-    if (values.claimHoldUntil === '') return
-    if (values.claimHoldFrom === '') {
-      context.addIssue({
-        code: 'custom',
-        path: ['claimHoldFrom'],
-        message: 'Enter the date the hold starts.',
-      })
-    } else if (values.claimHoldUntil < values.claimHoldFrom) {
-      context.addIssue({ code: 'custom', path: ['claimHoldUntil'], message: 'Please enter a valid date.' })
-    }
-    if (values.claimHoldReason === '') {
-      context.addIssue({
-        code: 'custom',
-        path: ['claimHoldReason'],
-        message: 'Enter the reason for the hold.',
-      })
-    }
-  })
+export const providerFormSchema = z.object({
+  practiceId: chosen('Select a practice.'),
+  firstName: required('Enter the first name.'),
+  lastName: required('Enter the last name.'),
+  credential: z.string().trim(),
+  code: required('Enter the Provider ID.'),
+  specialty: z.string().nullable(),
+  type: chosen('Select a provider type.'),
+  npi: required('Enter the NPI.')
+    .regex(/^\d{10}$/, 'Please enter a valid NPI.')
+    .refine((value) => !isDummyNpi(value), 'Please enter a valid NPI.'),
+  taxonomyCode: z
+    .string()
+    .trim()
+    .refine((value) => value === '' || /^[0-9A-Z]{9}X$/.test(value), 'Please enter a valid taxonomy code.'),
+  stateLicense: z.string().trim(),
+  isActive: z.boolean(),
+})
 
 export type ProviderFormValues = z.infer<typeof providerFormSchema>
 
@@ -182,18 +159,14 @@ export const NEW_PROVIDER_VALUES: Omit<ProviderFormValues, 'practiceId'> = {
   credential: '',
   code: '',
   specialty: 'PHYSICAL THERAPIST',
-  providerType: null,
+  type: 'rendering',
   npi: '',
   taxonomyCode: '225100000X',
   stateLicense: '',
-  claimHoldFrom: '',
-  claimHoldUntil: '',
-  claimHoldReason: '',
-  claimHoldLocationIds: [],
-  claimHoldInsuranceIds: [],
   isActive: true,
 }
 
+/** A saved provider as the form holds them. */
 export function toProviderFormValues(provider: Provider): ProviderFormValues {
   return {
     practiceId: String(provider.practiceId),
@@ -201,43 +174,36 @@ export function toProviderFormValues(provider: Provider): ProviderFormValues {
     lastName: provider.lastName,
     credential: provider.credential,
     code: provider.code,
-    specialty: provider.specialty,
-    providerType: provider.providerType === '' ? null : provider.providerType,
+    specialty: provider.specialty === '' ? null : provider.specialty,
+    type: provider.type === '' ? null : provider.type,
     npi: provider.npi,
     taxonomyCode: provider.taxonomyCode,
     stateLicense: provider.stateLicense,
-    claimHoldFrom: provider.claimHold.from ?? '',
-    claimHoldUntil: provider.claimHold.until ?? '',
-    claimHoldReason: provider.claimHold.reason,
-    claimHoldLocationIds: provider.claimHold.locationIds.map(String),
-    claimHoldInsuranceIds: provider.claimHold.insuranceIds.map(String),
     isActive: provider.isActive,
   }
 }
 
-const orNull = (value: string) => (value === '' ? null : value)
+const orNull = (value: string | null) => (value === null || value === '' ? null : value)
 
-export function toProviderPayload(values: ProviderFormValues): ProviderPayload {
-  // As the prototype saves it: without an end date there is no hold, so its
-  // other fields are cleared rather than kept half-filled.
-  const held = values.claimHoldUntil !== ''
-  // The schema has refused a missing practice, specialty or type before this runs.
+/** A save: every field but the practice, which a provider never changes. */
+export function toProviderUpdatePayload(values: ProviderFormValues): ProviderUpdatePayload {
+  // The schema has refused a missing type before this runs.
   return {
-    practice_id: Number(values.practiceId),
     code: values.code,
     first_name: values.firstName,
     last_name: values.lastName,
+    type: values.type ?? '',
     credential: orNull(values.credential),
-    specialty: values.specialty ?? '',
-    provider_type: values.providerType ?? '',
+    specialty: orNull(values.specialty),
     npi: values.npi,
-    taxonomy_code: values.taxonomyCode,
+    taxonomy_code: orNull(values.taxonomyCode),
     state_license: orNull(values.stateLicense),
-    claim_hold_from: held ? orNull(values.claimHoldFrom) : null,
-    claim_hold_until: held ? values.claimHoldUntil : null,
-    claim_hold_reason: held ? values.claimHoldReason : null,
-    claim_hold_location_ids: held ? values.claimHoldLocationIds.map(Number) : [],
-    claim_hold_insurance_ids: held ? values.claimHoldInsuranceIds.map(Number) : [],
     is_active: values.isActive,
   }
+}
+
+/** A new provider: with their practice. */
+export function toProviderPayload(values: ProviderFormValues): ProviderPayload {
+  // The schema has refused a missing practice before this runs.
+  return { practice_id: Number(values.practiceId), ...toProviderUpdatePayload(values) }
 }

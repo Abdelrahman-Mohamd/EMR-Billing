@@ -58,9 +58,11 @@ export function LocationDialog({
   const onSubmit = async (values: LocationFormValues) => {
     setFailure(null)
     try {
-      if (location) await update.mutateAsync({ id: location.id, practiceId: practice.id, values })
-      else await create.mutateAsync({ practiceId: practice.id, values })
-      toast.success('Location saved')
+      const message = location
+        ? await update.mutateAsync({ id: location.id, values })
+        : await create.mutateAsync({ practiceId: practice.id, values })
+      // The server's words; ours only when it sent none.
+      toast.success(message ?? 'Location saved')
       onClose()
     } catch (error) {
       const leftover = applyServerErrors(form, error)

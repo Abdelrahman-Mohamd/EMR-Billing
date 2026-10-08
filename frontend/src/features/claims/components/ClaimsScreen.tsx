@@ -87,10 +87,7 @@ export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | unde
         return (
           <span className="block min-w-0">
             <span className="break-words">{refs.patientListName(visit.caseId)}</span>
-            <CellSub>
-              {refs.caseName(visit.caseId)}
-              <span className="sm:hidden"> · {formatIsoDate(visit.dateOfService)}</span>
-            </CellSub>
+            <CellSub>{refs.caseName(visit.caseId)}</CellSub>
           </span>
         )
       },
@@ -99,7 +96,6 @@ export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | unde
       key: 'date',
       header: 'Date of service',
       sortable: true,
-      hideOnMobile: true,
       cell: (claim) => {
         const visit = visitOf(claim)
         return (
@@ -125,13 +121,11 @@ export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | unde
     {
       key: 'modifiers',
       header: 'Modifiers',
-      hideBelow: 'md',
       cell: (claim) => modifiersText(claim) || <span className="text-n400">—</span>,
     },
     {
       key: 'pointers',
       header: 'Diagnosis pointers',
-      hideBelow: 'lg',
       cell: (claim) => {
         const visit = visitOf(claim)
         return (

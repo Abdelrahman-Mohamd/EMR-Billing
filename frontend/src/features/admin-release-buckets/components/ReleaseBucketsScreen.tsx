@@ -3,21 +3,28 @@ import { useNavigate } from '@tanstack/react-router'
 import { Inbox, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
-import { RowActionButton, actionsColumn } from '@/components/ui/RowActions'
+import { ConfirmDialog } from '@/components/ui/Dialog'
+import { RowActionButton, StatusChangeDialog, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { PracticeSelect, usePractices } from '@/features/admin-practices'
-import { useReleaseBuckets } from '../queries/use-release-buckets'
+import { isApiError, userMessage } from '@/lib/api/api-error'
+import { toast } from '@/stores/toast-store'
+import {
+  useDeleteReleaseBucket,
+  useReleaseBuckets,
+  useSetReleaseBucketActive,
+} from '../queries/use-release-buckets'
 import type { ReleaseBucket } from '../schemas/release-bucket'
 import { ReleaseBucketDialog } from './ReleaseBucketDialog'
 
 /**
  * Setup → Release buckets: the list and the dialog that adds or edits one.
  * Laid out as the prototype's list — the bucket's name with its description
- * under it — plus the practice. The prototype's "held insurances", "claims
- * waiting" and status columns are left out: the payload has no status, and
- * the bucket's links to insurances and claims are not defined by the backend
- * yet.
+ * under it, the practice, how many insurances are assigned to it
+ * (`insurances_count`), and the Active switch (asks first) — with Edit and
+ * Delete. What the backend does not carry is left out: the prototype's names
+ * of the held insurances (the list has only their count) and "Claims waiting".
  *
  * As for the other practice-scoped screens, every practice's buckets are
  * listed with a practice filter kept in the URL (`?practice=<id>`). Not paged
@@ -29,6 +36,11 @@ export function ReleaseBucketsScreen({ practiceFilter }: { practiceFilter: numbe
   const practices = usePractices()
   /** `undefined`: no dialog. `null`: adding. A bucket: editing it. */
   const [editing, setEditing] = useState<ReleaseBucket | null | undefined>(undefined)
+  /** The row whose Active switch was flipped, waiting for confirmation. */
+  const [statusOf, setStatusOf] = useState<ReleaseBucket | null>(null)
+  const [deleting, setDeleting] = useState<ReleaseBucket | null>(null)
+  const setActive = useSetReleaseBucketActive()
+  const remove = useDeleteReleaseBucket()
   const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
 
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
@@ -54,28 +66,38 @@ export function ReleaseBucketsScreen({ practiceFilter }: { practiceFilter: numbe
       primary: true,
       sortable: true,
       cell: (bucket) => (
-        <span className="block max-w-prose [overflow-wrap:anywhere]">
+        <span className="block max-w-prose break-words">
           {bucket.name}
           {bucket.description !== '' && <CellSub>{bucket.description}</CellSub>}
-          {/* On a phone, where its column is hidden, the practice rides under the bucket. */}
-          {practiceName(bucket.practiceId) !== undefined && (
-            <span className="sm:hidden">
-              <CellSub>{practiceName(bucket.practiceId)}</CellSub>
-            </span>
-          )}
         </span>
       ),
     },
     {
       key: 'practice',
       header: 'Practice',
-      hideOnMobile: true,
-      cell: (bucket) => (
-        <span className="[overflow-wrap:anywhere]">{practiceName(bucket.practiceId) ?? '—'}</span>
-      ),
+      cell: (bucket) => <span className="break-words">{practiceName(bucket.practiceId) ?? '—'}</span>,
     },
+    {
+      key: 'insurances',
+      header: 'Insurances',
+      align: 'right',
+      cell: (bucket) => <span className="tabular-nums">{bucket.insurancesCount}</span>,
+    },
+    activeColumn<ReleaseBucket>({
+      isActive: (bucket) => bucket.isActive,
+      label: (bucket) => bucket.name,
+      // Asks first (StatusChangeDialog below).
+      onChange: (bucket) => setStatusOf(bucket),
+    }),
     actionsColumn<ReleaseBucket>((bucket) => (
-      <RowActionButton action="edit" label={`Edit ${bucket.name}`} onClick={() => setEditing(bucket)} />
+      <>
+        <RowActionButton action="edit" label={`Edit ${bucket.name}`} onClick={() => setEditing(bucket)} />
+        <RowActionButton
+          action="delete"
+          label={`Delete ${bucket.name}`}
+          onClick={() => setDeleting(bucket)}
+        />
+      </>
     )),
   ]
 
@@ -149,6 +171,41 @@ export function ReleaseBucketsScreen({ practiceFilter }: { practiceFilter: numbe
           onClose={() => setEditing(undefined)}
         />
       )}
+      {statusOf !== null && (
+        <StatusChangeDialog
+          name={statusOf.name}
+          isActive={statusOf.isActive}
+          onConfirm={() => setActive.mutateAsync({ id: statusOf.id, isActive: !statusOf.isActive })}
+          onClose={() => setStatusOf(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title={`Delete ${deleting?.name ?? ''}?`}
+        // What deleting does to its insurances is the server's to decide; only their number is stated.
+        {...(deleting !== null && deleting.insurancesCount > 0
+          ? {
+              description: `${deleting.insurancesCount === 1 ? '1 insurance is' : `${deleting.insurancesCount} insurances are`} assigned to it.`,
+            }
+          : {})}
+        confirmLabel="Delete bucket"
+        tone="destructive"
+        onConfirm={async () => {
+          if (deleting === null) return
+          try {
+            const message = await remove.mutateAsync(deleting.id)
+            toast.success(message ?? `${deleting.name} deleted`)
+          } catch (error) {
+            toast.error(
+              `${deleting.name} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
+        }}
+      />
     </PageContainer>
   )
 }

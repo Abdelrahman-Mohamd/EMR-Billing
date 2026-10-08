@@ -86,13 +86,11 @@ export function VisitDetail({ visitId, claims }: { visitId: number; claims?: (vi
     {
       key: 'modifiers',
       header: 'Modifiers',
-      hideOnMobile: true,
       cell: (line) => modifiersText(line) || <span className="text-n400">—</span>,
     },
     {
       key: 'pointers',
       header: 'Diagnosis pointers',
-      hideBelow: 'md',
       cell: (line) => pointersText(line, visit.caseId, refs) || <span className="text-n400">—</span>,
     },
   ]

@@ -1,48 +1,51 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Plus, Stethoscope } from 'lucide-react'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { isValidNpi } from '@/lib/validation/npi'
+import { toast } from '@/stores/toast-store'
 import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
-import { RowActionButton, actionsColumn, activeColumn, statusChangeFailed } from '@/components/ui/RowActions'
+import { ConfirmDialog } from '@/components/ui/Dialog'
+import { RowActionButton, actionsColumn, StatusChangeDialog, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
-import { useInsurances } from '@/features/admin-insurances'
-import { PracticeSelect, usePractices } from '@/features/admin-practices'
-import { todayIso } from '@/lib/utils/dates'
-import { holdRunning, holdScope, holdWindow } from '../model/claim-hold'
+import { PracticeSelect } from '@/features/admin-practices'
 import { providerName, providerTypeMeaning } from '../model/provider-options'
-import { useProviders, useUpdateProvider } from '../queries/use-providers'
-import { toProviderFormValues, type Provider } from '../schemas/provider'
+import { useDeleteProvider, useProviders, useSetProviderActive } from '../queries/use-providers'
+import type { Provider } from '../schemas/provider'
 import { ProviderDialog } from './ProviderDialog'
 
 /**
  * Setup → Providers: the list and the dialog that adds or edits one. Laid out
  * as the updated prototype's list — Provider ID, provider (name and
- * specialty), NPI (marked when missing or invalid), taxonomy · license, claim
- * hold (window, reason and scope; highlighted while it runs), provider type
- * (with what it means) and status — with a practice filter kept in the URL
- * (`?practice=<id>`), as on the other Setup screens. Unfiltered, each
- * provider's practice is named under them.
+ * specialty), NPI (marked when missing or invalid), taxonomy · license,
+ * provider type (with what it means) and Active (asks first) — with Edit and
+ * Delete, and a practice filter kept in the URL (`?practice=<id>`), as on the
+ * other Setup screens. Unfiltered, each provider's practice is named under
+ * them. The prototype's claim hold column is not in the contract, so it is
+ * left out.
  *
- * Not paged or searched: the prototype does neither. Sorted by Provider ID, as
- * the prototype sorts it; also by name (last name) and by provider type.
- * Status changes in the dialog, not from the row.
+ * Every provider is read (all of the server's pages) and filtered and sorted
+ * here, as the prototype does — not searched. Sorted by Provider ID, as the
+ * prototype sorts it; also by name (last name) and by provider type.
  */
+/** The type as the server words it, or its value when it sent no label. */
+const typeName = (provider: Provider) => provider.typeLabel || provider.type
+
 export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
   const providers = useProviders()
-  const update = useUpdateProvider()
-  const practices = usePractices()
-  const insurances = useInsurances()
+  const setActive = useSetProviderActive()
+  const remove = useDeleteProvider()
   /** `undefined`: no dialog. `null`: adding. A provider: editing them. */
   const [editing, setEditing] = useState<Provider | null | undefined>(undefined)
+  /** The row whose Active switch was flipped, waiting for confirmation. */
+  const [statusOf, setStatusOf] = useState<Provider | null>(null)
+  const [deleting, setDeleting] = useState<Provider | null>(null)
   const [sort, setSort] = useState<Sort>({ key: 'code', direction: 'asc' })
-  const today = todayIso()
 
-  const practiceOf = (provider: Provider) =>
-    practices.data?.find((practice) => practice.id === provider.practiceId)
   const filter = practiceFilter === undefined ? null : String(practiceFilter)
   const setFilter = (value: string | null) =>
     void navigate({
@@ -51,23 +54,11 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
       replace: true,
     })
 
-  const scopeOf = (provider: Provider) => {
-    const locations = practiceOf(provider)?.locations ?? []
-    return holdScope(
-      provider.claimHold.locationIds.map(
-        (id) => locations.find((location) => location.id === id)?.name ?? `Location ${id}`,
-      ),
-      provider.claimHold.insuranceIds.map(
-        (id) => insurances.data?.find((insurance) => insurance.id === id)?.name ?? `Insurance ${id}`,
-      ),
-    )
-  }
-
   const compare = (a: Provider, b: Provider) => {
     const text = (left: string, right: string) =>
       left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true })
     if (sort.key === 'name') return text(a.lastName, b.lastName) || text(a.firstName, b.firstName)
-    if (sort.key === 'providerType') return text(a.providerType, b.providerType)
+    if (sort.key === 'providerType') return text(typeName(a), typeName(b))
     return text(a.code, b.code)
   }
   const rows = (providers.data ?? [])
@@ -75,42 +66,20 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
     .sort((a, b) => (sort.direction === 'asc' ? compare(a, b) : -compare(a, b)))
 
   const typeTag = (provider: Provider) => {
-    const meaning = providerTypeMeaning(provider.providerType)
-    if (meaning === undefined) return <span className="text-n500">Not set</span>
+    const meaning = providerTypeMeaning(provider.type)
     return (
       <span className="block">
-        <Tag tone={provider.providerType === 'Rendering' ? 'attention' : 'inert'}>
-          {provider.providerType}
-        </Tag>
-        <CellSub>{meaning}</CellSub>
+        <Tag tone={provider.type === 'rendering' ? 'attention' : 'inert'}>{typeName(provider)}</Tag>
+        {meaning !== undefined && <CellSub>{meaning}</CellSub>}
       </span>
     )
   }
-  const holdCell = (provider: Provider) =>
-    provider.claimHold.until === null ? (
-      <span className="text-n500">None</span>
-    ) : (
-      <span className="block">
-        <StatusDot
-          tone={holdRunning(provider.claimHold, today) ? 'attention' : 'inert'}
-          className="whitespace-normal"
-        >
-          {holdWindow(provider.claimHold)}
-        </StatusDot>
-        <CellSub>
-          {provider.claimHold.reason}
-          <span aria-hidden="true"> · </span>
-          {scopeOf(provider)}
-        </CellSub>
-      </span>
-    )
 
   const columns: ReadonlyArray<Column<Provider>> = [
     {
       key: 'code',
       header: 'Provider ID',
       sortable: true,
-      hideOnMobile: true,
       cell: (provider) => <span className="text-ink font-medium whitespace-nowrap">{provider.code}</span>,
     },
     {
@@ -120,52 +89,21 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
       sortable: true,
       cell: (provider) => (
         // From 1280px, room for "Aisha Rahman, PT, DPT" on one line beside the hold and type columns.
-        <span className="block [overflow-wrap:anywhere] xl:min-w-44">
+        <span className="block break-words xl:min-w-44">
           {providerName(provider) || '(unnamed)'}
           <CellSub>{provider.specialty || '—'}</CellSub>
-          {practiceFilter === undefined && practiceOf(provider) !== undefined && (
-            <CellSub>{practiceOf(provider)?.name}</CellSub>
-          )}
-          {/* On a phone, where its column is hidden, the Provider ID rides under the name. */}
-          <span className="sm:hidden">
-            <CellSub>{provider.code}</CellSub>
-          </span>
-          {/* Until the type column appears, the type and what it means ride under the name. */}
-          {providerTypeMeaning(provider.providerType) !== undefined && (
-            <span className="xl:hidden">
-              <CellSub>
-                {provider.providerType}
-                <span aria-hidden="true"> · </span>
-                {providerTypeMeaning(provider.providerType)}
-              </CellSub>
-            </span>
-          )}
-          {/* Until the NPI column appears, a missing or invalid NPI is marked here. */}
-          {!isValidNpi(provider.npi) && (
-            <span className="md:hidden">
-              <StatusDot tone="critical" className="mt-0.5 flex font-normal whitespace-normal">
-                {provider.npi === '' ? 'NPI missing' : 'Invalid NPI'}
-              </StatusDot>
-            </span>
-          )}
-          {/* Until the hold column appears, a running hold is marked here. */}
-          {holdRunning(provider.claimHold, today) && (
-            <span className="xl:hidden">
-              <StatusDot tone="attention" className="mt-0.5 flex font-normal whitespace-normal">
-                On claim hold {holdWindow(provider.claimHold)}
-              </StatusDot>
-            </span>
+          {practiceFilter === undefined && provider.practiceName !== '' && (
+            <CellSub>{provider.practiceName}</CellSub>
           )}
         </span>
       ),
     },
     {
       // The prototype's NPI and "Taxonomy · license" columns, as one: there is
-      // no room for both beside the claim hold below 1440px. The lines under
-      // the NPI say which is which.
+      // no room for both beside the type and Active below 1440px. The lines
+      // under the NPI say which is which.
       key: 'npi',
       header: 'NPI',
-      hideBelow: 'md',
       cell: (provider) => (
         <span className="block">
           {isValidNpi(provider.npi) ? (
@@ -180,25 +118,26 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
         </span>
       ),
     },
-    { key: 'hold', header: 'Claim hold', hideBelow: 'xl', cell: holdCell },
-    { key: 'providerType', header: 'Provider type', sortable: true, hideBelow: 'xl', cell: typeTag },
+    { key: 'providerType', header: 'Provider type', sortable: true, cell: typeTag },
     activeColumn<Provider>({
       isActive: (provider) => provider.isActive,
       label: (provider) => providerName(provider),
-      // The provider's own update, with only `is_active` changed.
-      onChange: (provider, isActive) =>
-        update.mutate(
-          { id: provider.id, values: { ...toProviderFormValues(provider), isActive } },
-          { onError: (error) => statusChangeFailed(providerName(provider), isActive, error) },
-        ),
-      pending: (provider) => update.isPending && update.variables.id === provider.id,
+      // Asks first (StatusChangeDialog below).
+      onChange: (provider) => setStatusOf(provider),
     }),
     actionsColumn<Provider>((provider) => (
-      <RowActionButton
-        action="edit"
-        label={`Edit ${providerName(provider)}`}
-        onClick={() => setEditing(provider)}
-      />
+      <>
+        <RowActionButton
+          action="edit"
+          label={`Edit ${providerName(provider)}`}
+          onClick={() => setEditing(provider)}
+        />
+        <RowActionButton
+          action="delete"
+          label={`Delete ${providerName(provider)}`}
+          onClick={() => setDeleting(provider)}
+        />
+      </>
     )),
   ]
 
@@ -273,6 +212,36 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
           onClose={() => setEditing(undefined)}
         />
       )}
+      {statusOf !== null && (
+        <StatusChangeDialog
+          name={providerName(statusOf)}
+          isActive={statusOf.isActive}
+          onConfirm={() => setActive.mutateAsync({ id: statusOf.id, isActive: !statusOf.isActive })}
+          onClose={() => setStatusOf(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title={`Delete ${deleting === null ? '' : providerName(deleting)}?`}
+        confirmLabel="Delete provider"
+        tone="destructive"
+        onConfirm={async () => {
+          if (deleting === null) return
+          const name = providerName(deleting)
+          try {
+            const message = await remove.mutateAsync(deleting.id)
+            toast.success(message ?? `${name} deleted`)
+          } catch (error) {
+            toast.error(
+              `${name} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
+        }}
+      />
     </PageContainer>
   )
 }

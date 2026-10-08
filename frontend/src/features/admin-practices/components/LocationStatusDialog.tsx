@@ -2,13 +2,13 @@ import { Ban, RotateCcw } from 'lucide-react'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import { ConfirmDialog } from '@/components/ui/Dialog'
-import { locationToFormValues } from '../model/location-values'
-import { useUpdateLocation } from '../queries/use-practices'
-import type { Location, Practice } from '../schemas/practice'
+import { useSetLocationActive } from '../queries/use-practices'
+import type { Location } from '../schemas/practice'
 
 /**
  * The prototype's row action on a location: Deactivate, or Reactivate, after
- * a confirmation. It changes `is_active` and nothing else.
+ * a confirmation. It changes `is_active` and nothing else — the save carries
+ * that field alone, and the server keeps the rest as it is.
  *
  * Deliberately left out: the prototype's refusal to deactivate the primary or
  * last active location (the payloads have no primary flag, and V2 only says a
@@ -16,26 +16,16 @@ import type { Location, Practice } from '../schemas/practice'
  * inactive location "can no longer be chosen for new cases or visits" — what
  * inactive means is open (Q-068). The server decides both.
  */
-export function LocationStatusDialog({
-  practice,
-  location,
-  onClose,
-}: {
-  practice: Practice
-  location: Location
-  onClose: () => void
-}) {
-  const update = useUpdateLocation()
+export function LocationStatusDialog({ location, onClose }: { location: Location; onClose: () => void }) {
+  const update = useSetLocationActive()
   const deactivating = location.isActive
 
   const confirm = async () => {
     try {
-      await update.mutateAsync({
-        id: location.id,
-        practiceId: practice.id,
-        values: { ...locationToFormValues(location), isActive: !location.isActive },
-      })
-      toast.success(deactivating ? `${location.name} deactivated` : `${location.name} reactivated`)
+      const message = await update.mutateAsync({ id: location.id, isActive: !location.isActive })
+      toast.success(
+        message ?? (deactivating ? `${location.name} deactivated` : `${location.name} reactivated`),
+      )
     } catch (error) {
       toast.error(
         deactivating ? 'The location was not deactivated' : 'The location was not reactivated',

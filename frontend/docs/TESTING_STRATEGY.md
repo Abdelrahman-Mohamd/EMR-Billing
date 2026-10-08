@@ -101,7 +101,10 @@ feature ([architecture doc § 12](./FRONTEND_ARCHITECTURE.md)).
 network boundary of today — with fakes that say what the server would have answered
 (`vi.mock('../api/organizations-api')`, with a comment). Everything above them runs for real: route, query
 hooks, form, dialog. Never stub a query hook or a component. A separate test covers the api module's own
-behaviour when no mock data is built in (`vi.stubGlobal('__MOCK_DATA__', false)`). When MSW arrives these
+behaviour with no backend configured — the tests' setting (`test.env` in `vite.config.ts`): every unconfirmed call is
+`unavailable`. Another feature's in-memory store is seeded through its own test reset, faked by path
+(`vi.mock('@/features/patients/data/patient-records-store', …)`); the http client itself is tested by faking
+`fetch` (`features/auth/api/auth-api.live.test.ts`). When MSW arrives these
 fakes become request handlers and the tests above them stay as they are.
 
 Rules:

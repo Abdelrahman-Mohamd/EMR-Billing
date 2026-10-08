@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/Input'
 import { Notice } from '@/components/ui/Notice'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { signIn } from '../api/auth-api'
+import { authKeys } from '../queries/use-current-user'
+import type { CurrentUser } from '../schemas/current-user'
 import { signInSchema, type SignInValues } from '../schemas/sign-in-schema'
 import { authActionClass } from './AuthTextButton'
 
@@ -37,11 +39,13 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
 
   const onSubmit = async (values: SignInValues) => {
     setFailure(null)
+    let user: CurrentUser
     try {
-      await signIn(values)
+      user = await signIn(values)
     } catch (error) {
       if (isApiError(error) && error.kind === 'unauthenticated') {
-        setFailure(WRONG_CREDENTIALS)
+        // The server's words ("Invalid credentials"); ours only when it sent none.
+        setFailure(error.serverMessage ?? WRONG_CREDENTIALS)
         // Keep the email, clear the password, and put the cursor where the fix
         // almost always is.
         form.resetField('password')
@@ -56,6 +60,8 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
     }
     // A new session must never be shown what the previous one had cached.
     queryClient.clear()
+    // Who signed in, as the login returned them: the account menu's one source.
+    queryClient.setQueryData(authKeys.currentUser(), user)
     router.history.push(redirectTo)
   }
 

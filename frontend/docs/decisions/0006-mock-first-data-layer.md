@@ -1,6 +1,10 @@
 # 0006 — Mock-first data layer behind the feature API boundary
 
-**Status:** Accepted · 2026-09-25
+**Status:** Superseded · 2026-10-07 — the mock data layer was removed at the user's request: `npm run dev`
+talks to the real backend (`.env`), unconfirmed calls reject as `unavailable`, and tests run without a backend
+(`test.env` in `vite.config.ts`). See FRONTEND_ARCHITECTURE.md § API.
+
+_Originally accepted 2026-09-25:_
 
 ## Context
 

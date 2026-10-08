@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { lookUpPrice, type FeeRow } from './fee-row'
+import { lookUpPrice, type PricedRow } from './fee-row'
 
-const rows: FeeRow[] = [
-  { insuranceId: 1, procedureCode: '97110', billed: 30, from: '2026-01-01', to: '2026-12-31' },
-  { insuranceId: 2, procedureCode: '97110', billed: 40, from: '2026-01-01', to: '2026-06-30' },
+const rows: PricedRow[] = [
+  { insuranceId: 1, procedureCodeId: 7, billed: 30, from: '2026-01-01', to: '2026-12-31' },
+  { insuranceId: 2, procedureCodeId: 7, billed: 40, from: '2026-01-01', to: '2026-06-30' },
+  { insuranceId: 2, procedureCodeId: 7, billed: 45, from: '2027-01-01', to: null },
 ]
-const base = { rows, procedureCode: '97110', defaultFee: 35, units: 2 }
+const base = { rows, procedureCodeId: 7, defaultFee: 35, units: 2 }
 
 describe('price lookup — the prototype’s rule', () => {
   it('uses the payer’s billed price while its row is in effect', () => {
@@ -16,6 +17,10 @@ describe('price lookup — the prototype’s rule', () => {
     })
     // From and to are inclusive.
     expect(lookUpPrice({ ...base, insuranceId: 2, date: '2026-06-30' }).source).toBe('payer')
+  })
+
+  it('runs a row with no end date on', () => {
+    expect(lookUpPrice({ ...base, insuranceId: 2, date: '2031-05-01' })).toMatchObject({ rate: 45 })
   })
 
   it('falls back to the code’s default fee otherwise', () => {

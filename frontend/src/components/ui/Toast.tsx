@@ -45,7 +45,12 @@ function ToastItem({ toast }: { toast: ToastData }) {
     <div
       // An error interrupts; everything else waits for a pause.
       role={toast.tone === 'error' ? 'alert' : 'status'}
-      className="animate-toast-in rounded-card bg-canvas shadow-popover ring-rule-structural pointer-events-auto flex w-[min(400px,calc(100vw-32px))] items-start gap-3 p-3.5 ring-1"
+      className={cn(
+        'animate-toast-in rounded-card bg-canvas shadow-popover ring-rule-structural pointer-events-auto flex w-[min(400px,calc(100vw-32px))] gap-3 p-3.5 ring-1',
+        // A title alone sits level with the icon and the close button; with a
+        // description under it, everything hangs from the top.
+        toast.description === undefined ? 'items-center' : 'items-start',
+      )}
     >
       <span
         aria-hidden="true"

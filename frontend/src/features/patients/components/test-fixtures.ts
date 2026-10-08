@@ -38,20 +38,24 @@ export const insurance = (
   id: number,
   name: string,
   overrides: Partial<Insurance> & { insuranceClassId?: number } = {},
-): Insurance =>
-  ({
-    id,
-    practiceId: 1,
-    insuranceClassId: 1,
-    code: 1000 + id,
-    name,
-    insuranceType: 'Commercial',
-    payerId: `PAY${id}`,
-    rules: noOverrides,
-    insuranceHold: false,
-    isActive: true,
-    ...overrides,
-  }) as Insurance
+): Insurance => ({
+  id,
+  practiceId: 1,
+  insuranceClassId: 1,
+  code: 1000 + id,
+  name,
+  insuranceClassName: `Class ${id}`,
+  insuranceType: 'CI',
+  insuranceTypeLabel: 'Commercial',
+  payerId: `PAY${id}`,
+  releaseBucketId: null,
+  releaseBucketName: null,
+  auditRequired: false,
+  rules: noOverrides,
+  insuranceHold: false,
+  isActive: true,
+  ...overrides,
+})
 
 export const insuranceClass = (id: number, name: string, overrides: Partial<InsuranceClass> = {}) => ({
   id,
@@ -64,6 +68,7 @@ export const insuranceClass = (id: number, name: string, overrides: Partial<Insu
   acceptAssignment: true,
   icdVersion: 'ICD10',
   isActive: true,
+  insurancesCount: 0,
   ...overrides,
 })
 
@@ -73,7 +78,11 @@ export const referrer = (id: number, name: string, npi = '1720394851'): Referrin
   code: `R${id}`,
   name,
   type: 'DN',
+  typeLabel: 'Referring',
   npi,
+  phone: '',
+  fax: '',
+  isActive: true,
 })
 
 export const patient = (

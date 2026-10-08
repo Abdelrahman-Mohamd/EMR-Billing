@@ -21,10 +21,3 @@ export function physicianTypeOptions(current: string | null): readonly SelectOpt
   }
   return [...PHYSICIAN_TYPE_OPTIONS, { value: current, label: current }]
 }
-
-/** The list's short form, as the prototype writes it: "DN · Referring". */
-export function physicianTypeLabel(type: string): string {
-  if (type === 'DN') return 'DN · Referring'
-  if (type === 'DQ') return 'DQ · Supervising'
-  return type
-}

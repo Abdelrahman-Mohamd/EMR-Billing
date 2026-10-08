@@ -1,72 +1,112 @@
 import { useState } from 'react'
 import { Layers, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { DataTable, type Column, type Sort } from '@/components/ui/DataTable'
-import { RowActionButton, actionsColumn, activeColumn, statusChangeFailed } from '@/components/ui/RowActions'
+import { DataTable, type Column } from '@/components/ui/DataTable'
+import { ConfirmDialog } from '@/components/ui/Dialog'
+import { Pagination } from '@/components/ui/Pagination'
+import { RowActionButton, StatusChangeDialog, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
-import { useOrganizations, useUpdateOrganization } from '../queries/use-organizations'
+import { isApiError, userMessage } from '@/lib/api/api-error'
+import { toast } from '@/stores/toast-store'
+import {
+  useDeleteOrganization,
+  useOrganizationsPage,
+  useSetOrganizationActive,
+} from '../queries/use-organizations'
 import type { Organization } from '../schemas/organization'
 import { OrganizationDialog } from './OrganizationDialog'
 
 /**
- * Admin → Organizations: the list, and the dialog that creates or edits one.
+ * Admin → Organizations: the list, the dialog that creates or edits one, and
+ * delete (after a confirmation).
  *
- * What the prototype shows and this screen does not, yet:
- * - the **Practices** and **Count** columns and the practice picker in the
- *   dialog. A practice now carries `organization_id` and is assigned to an
- *   organization from its own form (Admin → Practices & locations). Showing
- *   the practices here is a follow-up; assigning them from this dialog also
- *   needs an answer the payloads do not give — whether it is one request per
- *   practice or a call on the organization.
- * - visibility for System Admin only. The meeting of 2026-09-23 says a System
- *   Admin creates organizations, but there is no permission model to check
- *   against yet (ADR 0007); the server must enforce it regardless.
+ * The list is the server's: 15 a page, in the server's order, with "Showing
+ * 1–15 of N organizations" and a pager. No sort, search or filter parameter is
+ * part of the contract, so the name column does not sort — sorting one page
+ * would misstate the order of the whole list.
  *
- * The list is not paged: organizations are owner groups — a handful, not
- * thousands — and no API defines paging. It is sorted here, by name, because
- * the whole list is on hand.
+ * Practices: the count the list sends (`practices_count`). The prototype also
+ * names them in a column, and picks them in the dialog; the list does not send
+ * their names, and assigning a practice is done from the practice (Admin →
+ * Practices & locations), so neither is built.
+ *
+ * Visibility for System Admin only (the meeting of 2026-09-23) has no
+ * permission model to check against yet (ADR 0007); the server must enforce
+ * it regardless.
  */
 export function OrganizationsScreen() {
-  const organizations = useOrganizations()
-  const update = useUpdateOrganization()
+  const [page, setPage] = useState(1)
+  const organizations = useOrganizationsPage(page)
+  const setActive = useSetOrganizationActive()
+  const remove = useDeleteOrganization()
   /** `undefined`: no dialog. `null`: creating. An organization: editing it. */
   const [editing, setEditing] = useState<Organization | null | undefined>(undefined)
-  const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
+  const [deleting, setDeleting] = useState<Organization | null>(null)
+  /** The organization whose Active switch was flipped, waiting for confirmation. */
+  const [statusOf, setStatusOf] = useState<Organization | null>(null)
 
-  const rows = [...(organizations.data ?? [])].sort((a, b) => {
-    const order = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    return sort.direction === 'asc' ? order : -order
-  })
+  const rows = organizations.data?.organizations ?? []
+  const total = organizations.data?.total ?? 0
+  const pageCount = organizations.data?.pageCount ?? 1
+
+  const confirmDelete = async (organization: Organization) => {
+    try {
+      const message = await remove.mutateAsync(organization.id)
+      toast.success(message ?? `${organization.name} deleted`)
+      // The last row of the last page: step back rather than show an empty page.
+      if (rows.length === 1 && page > 1) setPage(page - 1)
+    } catch (error) {
+      toast.error(
+        `${organization.name} was not deleted`,
+        isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+      )
+    }
+  }
 
   const columns: ReadonlyArray<Column<Organization>> = [
     {
       key: 'name',
       header: 'Organization',
       primary: true,
-      sortable: true,
       // Long names wrap instead of pushing the table wider than the screen.
-      cell: (organization) => <span className="[overflow-wrap:anywhere]">{organization.name}</span>,
+      cell: (organization) => <span className="break-words">{organization.name}</span>,
+    },
+    {
+      key: 'practices',
+      header: 'Practices',
+      align: 'right',
+      // A phone keeps the name, the switch and both actions in view.
+      cell: (organization) => <span className="tabular-nums">{organization.practicesCount}</span>,
     },
     activeColumn<Organization>({
       isActive: (organization) => organization.isActive,
       label: (organization) => organization.name,
-      // The organization's own update, with only `is_active` changed.
-      onChange: (organization, isActive) =>
-        update.mutate(
-          { id: organization.id, input: { name: organization.name, isActive } },
-          { onError: (error) => statusChangeFailed(organization.name, isActive, error) },
-        ),
-      pending: (organization) => update.isPending && update.variables.id === organization.id,
+      // Asks first (StatusChangeDialog below).
+      onChange: (organization) => setStatusOf(organization),
     }),
     actionsColumn<Organization>((organization) => (
-      <RowActionButton
-        action="edit"
-        label={`Edit ${organization.name}`}
-        onClick={() => setEditing(organization)}
-      />
+      <>
+        <RowActionButton
+          action="edit"
+          label={`Edit ${organization.name}`}
+          onClick={() => setEditing(organization)}
+        />
+        <RowActionButton
+          action="delete"
+          label={`Delete ${organization.name}`}
+          onClick={() => setDeleting(organization)}
+        />
+      </>
     )),
   ]
+
+  const summary =
+    pageCount <= 1
+      ? total === 1
+        ? '1 organization'
+        : `${total} organizations`
+      : `Showing ${organizations.data?.from ?? 0}–${organizations.data?.to ?? 0} of ${total} organizations`
 
   return (
     <PageContainer>
@@ -92,8 +132,6 @@ export function OrganizationsScreen() {
         loading={organizations.isPending}
         error={organizations.isError}
         onRetry={() => void organizations.refetch()}
-        sort={sort}
-        onSortChange={setSort}
         empty={
           <EmptyState
             icon={<Layers size={20} />}
@@ -110,7 +148,11 @@ export function OrganizationsScreen() {
             }
           />
         }
-        footer={<span>{rows.length === 1 ? '1 organization' : `${rows.length} organizations`}</span>}
+        footer={
+          total > 0 ? (
+            <Pagination page={page} pageCount={pageCount} onPageChange={setPage} summary={summary} />
+          ) : undefined
+        }
       />
 
       {editing !== undefined && (
@@ -120,6 +162,31 @@ export function OrganizationsScreen() {
           onClose={() => setEditing(undefined)}
         />
       )}
+      {statusOf !== null && (
+        <StatusChangeDialog
+          key={statusOf.id}
+          name={statusOf.name}
+          isActive={statusOf.isActive}
+          onConfirm={() => setActive.mutateAsync({ organization: statusOf, isActive: !statusOf.isActive })}
+          onClose={() => setStatusOf(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title={`Delete ${deleting?.name ?? ''}?`}
+        // What deleting does to its practices is not defined, so only the count is stated.
+        {...(deleting !== null && deleting.practicesCount > 0
+          ? {
+              description: `It groups ${deleting.practicesCount === 1 ? '1 practice' : `${deleting.practicesCount} practices`}.`,
+            }
+          : {})}
+        confirmLabel="Delete organization"
+        tone="destructive"
+        onConfirm={() => (deleting === null ? undefined : confirmDelete(deleting))}
+      />
     </PageContainer>
   )
 }

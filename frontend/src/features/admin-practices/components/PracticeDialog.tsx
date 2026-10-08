@@ -1,7 +1,6 @@
 import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useNavigate } from '@tanstack/react-router'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import { Button } from '@/components/ui/Button'
@@ -33,7 +32,6 @@ import { LocationFields } from './LocationFields'
  */
 export function PracticeDialog({ practice, onClose }: { practice: Practice | null; onClose: () => void }) {
   const formId = useId()
-  const navigate = useNavigate()
   const create = useCreatePractice()
   const update = useUpdatePractice()
   const [failure, setFailure] = useState<string | null>(null)
@@ -77,13 +75,14 @@ export function PracticeDialog({ practice, onClose }: { practice: Practice | nul
     setFailure(null)
     try {
       if (practice) {
-        await update.mutateAsync({ id: practice.id, values })
-        toast.success('Practice saved')
+        const message = await update.mutateAsync({ id: practice.id, values })
+        // The server's words; ours only when it sent none.
+        toast.success(message ?? 'Practice saved')
       } else if ('location' in values) {
-        const created = await create.mutateAsync(values)
-        toast.success(`${created.name} created`)
-        // Open the new practice, so its locations are the ones on screen.
-        void navigate({ to: '/admin/practices', search: { practice: created.id } })
+        // The response carries no record, so the new practice cannot be opened
+        // by its id; the list is read again and shows it.
+        const message = await create.mutateAsync(values)
+        toast.success(message ?? `${values.name.trim()} created`)
       }
       onClose()
     } catch (error) {

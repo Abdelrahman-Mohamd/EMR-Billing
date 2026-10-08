@@ -15,10 +15,7 @@ import {
  * - Changes last until the page reloads. Nothing runs on a schedule here and no
  *   claim is submitted: the scheduled job is the server's. `lastScheduledRun`
  *   is only shown, never set.
- * - In development and tests it starts with the prototype's settings
- *   (`sample-automation.ts`, loaded only when `__MOCK_DATA__` is true, so a
- *   production build never contains them); otherwise with no options, Off,
- *   and no run.
+ * - It starts empty: there is no sample data.
  * - The screens only use `useAutomation()`. When a backend exists, that hook
  *   is replaced by server-state hooks (docs/FRONTEND_ARCHITECTURE.md §5) and
  *   this file is deleted — the screens do not change.
@@ -28,27 +25,20 @@ import {
  * Same pattern as the coding rules, roles and procedure codes stores.
  */
 interface Snapshot {
-  /** False only while the development sample is still loading. */
+  /** Always true: the list is in memory. Kept so the screens read it as they will a query. */
   ready: boolean
   settings: AutomationSettings
 }
 
 const EMPTY: AutomationSettings = { schedule: SUBMIT_MANUALLY, options: [], lastScheduledRun: null }
 
-let snapshot: Snapshot = { ready: !__MOCK_DATA__, settings: EMPTY }
+let snapshot: Snapshot = { ready: true, settings: EMPTY }
 const listeners = new Set<() => void>()
 let nextId = 1
 
 function publish(next: Snapshot): void {
   snapshot = next
   for (const listener of listeners) listener()
-}
-
-// Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-if (__MOCK_DATA__) {
-  void import('./sample-automation').then(({ SAMPLE_AUTOMATION }) => {
-    if (!snapshot.ready) publish({ ready: true, settings: structuredClone(SAMPLE_AUTOMATION) })
-  })
 }
 
 function subscribe(listener: () => void): () => void {

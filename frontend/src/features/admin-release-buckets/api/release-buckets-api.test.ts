@@ -1,61 +1,144 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isApiError } from '@/lib/api/api-error'
-import { mockReleaseBucketsApi } from './release-buckets-api.mock'
-import { createReleaseBucket, listReleaseBuckets, updateReleaseBucket } from './release-buckets-api'
+import { clearSession, setSession } from '@/lib/auth/session'
+import {
+  createReleaseBucket,
+  deleteReleaseBucket,
+  getReleaseBucket,
+  listReleaseBuckets,
+  setReleaseBucketActive,
+  updateReleaseBucket,
+} from './release-buckets-api'
 
-const values = { practiceId: '2', name: 'Manual Release – Review', description: 'Checked before sending.' }
+// The app configured for the staging backend; only the network is faked.
+const BASE = 'https://api.example.test/api/v1'
+vi.mock('@/lib/config/env', () => ({
+  env: {
+    apiBaseUrl: 'https://api.example.test/api/v1',
+    dataSource: 'live',
+    environment: 'staging',
+    isLive: true,
+  },
+}))
 
+/** A bucket in the confirmed shape (2026-10-07). */
+const wire = (id: number) => ({
+  id,
+  practice_id: 1,
+  name: 'Manual Release – WC Payers',
+  description: "Workers' comp payers reviewed before sending",
+  is_active: true,
+  insurances_count: 2,
+  created_at: '2026-10-07T20:12:12.000000Z',
+})
+
+const values = {
+  practiceId: '3',
+  name: 'Manual Release – WC Payers',
+  description: "Workers' comp payers reviewed before sending",
+  isActive: true,
+}
+
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+const done = (message: string) => json(200, { success: true, message, data: null })
+
+const fetchMock = vi.fn<typeof fetch>()
+const call = (index: number) => {
+  const [url, init] = fetchMock.mock.calls[index] ?? []
+  // The client always sends a string URL and a JSON string body.
+  return { url: url as string, init: init ?? {}, headers: new Headers(init?.headers) }
+}
+
+beforeEach(() => {
+  fetchMock.mockReset()
+  vi.stubGlobal('fetch', fetchMock)
+  setSession({ accessToken: 'test-token-123', tokenType: 'Bearer' })
+})
 afterEach(() => {
+  clearSession()
   vi.unstubAllGlobals()
 })
 
-describe('release buckets API without a backend', () => {
-  it('answers every call as unavailable instead of inventing an endpoint', async () => {
-    vi.stubGlobal('__MOCK_DATA__', false)
-    for (const call of [
-      () => listReleaseBuckets(),
-      () => createReleaseBucket(values),
-      () => updateReleaseBucket(1, values),
-    ]) {
-      const error: unknown = await call().catch((caught: unknown) => caught)
-      expect(isApiError(error) && error.kind).toBe('unavailable')
-    }
-  })
-})
-
-describe('release buckets API against the development mock', () => {
-  it('sends the backend exactly { practice_id, name, description } — on create and on update', async () => {
-    const create = vi.spyOn(mockReleaseBucketsApi, 'create')
-    const update = vi.spyOn(mockReleaseBucketsApi, 'update')
-    const created = await createReleaseBucket({ ...values, name: 'Manual Release – Spy' })
-    await updateReleaseBucket(created.id, { ...values, name: 'Manual Release – Spy 2', description: '' })
-    expect(create).toHaveBeenCalledWith({
-      practice_id: 2,
-      name: 'Manual Release – Spy',
-      description: 'Checked before sending.',
+describe('release buckets against the backend', () => {
+  it('reads every page of GET /release-buckets', async () => {
+    const page = (data: unknown[], current: number, last: number) => ({
+      success: true,
+      data: { data, links: {}, meta: { current_page: current, last_page: last, per_page: 15, total: 2 } },
     })
-    expect(update).toHaveBeenCalledWith(created.id, {
-      practice_id: 2,
-      name: 'Manual Release – Spy 2',
-      description: '',
+    fetchMock
+      .mockResolvedValueOnce(json(200, page([wire(1)], 1, 2)))
+      .mockResolvedValueOnce(json(200, page([wire(16)], 2, 2)))
+    const all = await listReleaseBuckets()
+    expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
+      `${BASE}/release-buckets?page=1`,
+      `${BASE}/release-buckets?page=2`,
+    ])
+    expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
+    expect(all[0]).toEqual({
+      id: 1,
+      practiceId: 1,
+      name: 'Manual Release – WC Payers',
+      description: "Workers' comp payers reviewed before sending",
+      isActive: true,
+      insurancesCount: 2,
     })
-    vi.restoreAllMocks()
   })
 
-  it('creates a bucket and reads it back in the screen’s shape', async () => {
-    const created = await createReleaseBucket(values)
-    expect(created).toMatchObject({
-      practiceId: 2,
-      name: 'Manual Release – Review',
-      description: 'Checked before sending.',
-    })
-    expect((await listReleaseBuckets()).some((bucket) => bucket.id === created.id)).toBe(true)
-  })
-
-  it('refuses a name already used in the same practice (V2) as a field error', async () => {
-    const error: unknown = await createReleaseBucket({ ...values, name: 'Manual Release – Northgate' }).catch(
-      (caught: unknown) => caught,
+  it('reads one bucket with GET /release-buckets/{id}, its insurances and practice left aside', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(200, { success: true, data: { ...wire(1), insurances: [], practice: { id: 1, name: 'X' } } }),
     )
-    expect(isApiError(error) && error.fieldErrors.map((fieldError) => fieldError.path)).toEqual(['name'])
+    expect(await getReleaseBucket(1)).toMatchObject({ id: 1, insurancesCount: 2 })
+    expect(call(0).url).toBe(`${BASE}/release-buckets/1`)
+  })
+
+  it('creates with POST, with its practice; saves with PUT, without it', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        json(201, { success: true, message: 'Release bucket created successfully', data: null }),
+      )
+      .mockResolvedValueOnce(done('Release bucket updated successfully'))
+    await expect(createReleaseBucket(values)).resolves.toBe('Release bucket created successfully')
+    await expect(updateReleaseBucket(1, { ...values, description: '' })).resolves.toBe(
+      'Release bucket updated successfully',
+    )
+    expect([call(0).init.method, call(0).url]).toEqual(['POST', `${BASE}/release-buckets`])
+    expect(JSON.parse(call(0).init.body as string)).toEqual({
+      practice_id: 3,
+      name: 'Manual Release – WC Payers',
+      description: "Workers' comp payers reviewed before sending",
+      is_active: true,
+    })
+    expect([call(1).init.method, call(1).url]).toEqual(['PUT', `${BASE}/release-buckets/1`])
+    // No practice_id on a save (refused: a bucket never moves); "" clears the description.
+    expect(JSON.parse(call(1).init.body as string)).toEqual({
+      name: 'Manual Release – WC Payers',
+      description: '',
+      is_active: true,
+    })
+  })
+
+  it('changes status with is_active alone, and deletes with DELETE', async () => {
+    fetchMock
+      .mockResolvedValueOnce(done('Release bucket updated successfully'))
+      .mockResolvedValueOnce(done('Release bucket deleted successfully'))
+    await setReleaseBucketActive(4, false)
+    await expect(deleteReleaseBucket(4)).resolves.toBe('Release bucket deleted successfully')
+    expect(JSON.parse(call(0).init.body as string)).toEqual({ is_active: false })
+    expect([call(1).init.method, call(1).url]).toEqual(['DELETE', `${BASE}/release-buckets/4`])
+  })
+
+  it('puts a taken name on the name field', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(422, {
+        message: 'The name has already been taken.',
+        errors: { name: ['The name has already been taken.'] },
+      }),
+    )
+    const error: unknown = await createReleaseBucket(values).catch((caught: unknown) => caught)
+    expect(isApiError(error) && error.fieldErrors).toEqual([
+      { path: 'name', message: 'The name has already been taken.' },
+    ])
   })
 })

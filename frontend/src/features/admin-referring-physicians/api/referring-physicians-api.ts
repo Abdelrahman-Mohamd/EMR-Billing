@@ -1,67 +1,120 @@
-import { z } from 'zod'
-import { ApiError } from '@/lib/api/api-error'
+import { renameFieldErrors } from '@/lib/api/api-error'
+import { request } from '@/lib/api/http-client'
+import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
 import {
-  referringPhysicianResponseSchema,
+  REFERRING_PHYSICIAN_FORM_FIELD_FOR,
+  referringPhysicianDetailResponseSchema,
+  referringPhysicianPageResponseSchema,
   toReferringPhysicianPayload,
+  toReferringPhysicianUpdatePayload,
   type ReferringPhysician,
   type ReferringPhysicianFormValues,
   type ReferringPhysicianPayload,
+  type ReferringPhysicianUpdatePayload,
 } from '../schemas/referring-physician'
 
 /**
- * Referring physicians' only door to a server.
- *
- * **No endpoints exist yet.** The request body is known (the referring
- * physician payload); paths, methods and responses are not, so none are
- * written. In development and tests the calls go to an in-memory mock that
- * plays the server (ADR 0006); in any other build they reject as
- * `unavailable`.
- *
- * Assumed until the contract says otherwise: one list of every physician the
- * user can see, filtered on screen; create and update, and nothing else — the
- * prototype offers no delete, so none is built.
+ * Referring physicians' only door to a server. **Live** (contracts confirmed
+ * 2026-10-08), carrying the session's token: `GET /referring-physicians?page=N`,
+ * `GET /referring-physicians/{id}`, `POST`, `PUT /referring-physicians/{id}`
+ * and `DELETE`. Only `page` is sent to the list. Writes resolve with the
+ * server's message, which the screens show. Shapes in
+ * schemas/referring-physician.ts.
  */
 export interface ReferringPhysiciansApi {
-  list: (signal?: AbortSignal) => Promise<unknown>
-  create: (payload: ReferringPhysicianPayload) => Promise<unknown>
-  update: (id: number, payload: ReferringPhysicianPayload) => Promise<unknown>
+  list: (
+    page: number,
+    signal?: AbortSignal,
+  ) => Promise<{ physicians: ReferringPhysician[]; pageCount: number }>
+  get: (id: number, signal?: AbortSignal) => Promise<ReferringPhysician>
+  create: (payload: ReferringPhysicianPayload) => Promise<ServerMessage>
+  update: (
+    id: number,
+    payload: ReferringPhysicianUpdatePayload | { is_active: boolean } | { npi: string },
+  ) => Promise<ServerMessage>
+  remove: (id: number) => Promise<ServerMessage>
 }
 
-const notConnected = (): Promise<never> =>
-  Promise.reject(
-    new ApiError({
-      kind: 'unavailable',
-      message: 'Referring physicians are not available right now.',
-      detail:
-        'No referring physician endpoints exist yet. features/admin-referring-physicians/api/referring-physicians-api.ts is the integration point.',
+const live: ReferringPhysiciansApi = {
+  list: (page, signal) =>
+    request({
+      method: 'GET',
+      path: '/referring-physicians',
+      searchParams: { page },
+      schema: referringPhysicianPageResponseSchema,
+      ...(signal ? { signal } : {}),
     }),
-  )
-
-const live: ReferringPhysiciansApi = { list: notConnected, create: notConnected, update: notConnected }
-
-async function backend(): Promise<ReferringPhysiciansApi> {
-  // Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-  if (__MOCK_DATA__) return (await import('./referring-physicians-api.mock')).mockReferringPhysiciansApi
-  return live
+  get: (id, signal) =>
+    request({
+      method: 'GET',
+      path: `/referring-physicians/${id}`,
+      schema: referringPhysicianDetailResponseSchema,
+      ...(signal ? { signal } : {}),
+    }),
+  create: (payload) =>
+    request({ method: 'POST', path: '/referring-physicians', body: payload, schema: serverMessageSchema }),
+  update: (id, payload) =>
+    request({
+      method: 'PUT',
+      path: `/referring-physicians/${id}`,
+      body: payload,
+      schema: serverMessageSchema,
+    }),
+  remove: (id) =>
+    request({ method: 'DELETE', path: `/referring-physicians/${id}`, schema: serverMessageSchema }),
 }
 
+function backend(): Promise<ReferringPhysiciansApi> {
+  return Promise.resolve(live)
+}
+
+async function send(call: (api: ReferringPhysiciansApi) => Promise<ServerMessage>): Promise<ServerMessage> {
+  try {
+    return await call(await backend())
+  } catch (error) {
+    throw renameFieldErrors(error, REFERRING_PHYSICIAN_FORM_FIELD_FOR)
+  }
+}
+
+/**
+ * Every physician — this screen filters them by practice, and a patient's case
+ * picks one. The list is paged by the server, so this reads page 1, then the
+ * rest at once.
+ */
 export async function listReferringPhysicians(signal?: AbortSignal): Promise<ReferringPhysician[]> {
-  return z.array(referringPhysicianResponseSchema).parse(await (await backend()).list(signal))
-}
-
-export async function createReferringPhysician(
-  values: ReferringPhysicianFormValues,
-): Promise<ReferringPhysician> {
-  return referringPhysicianResponseSchema.parse(
-    await (await backend()).create(toReferringPhysicianPayload(values)),
+  const api = await backend()
+  const first = await api.list(1, signal)
+  const rest = await Promise.all(
+    Array.from({ length: first.pageCount - 1 }, (_, index) => api.list(index + 2, signal)),
   )
+  return [first, ...rest].flatMap((page) => page.physicians)
 }
 
-export async function updateReferringPhysician(
+export async function getReferringPhysician(id: number, signal?: AbortSignal): Promise<ReferringPhysician> {
+  return (await backend()).get(id, signal)
+}
+
+export function createReferringPhysician(values: ReferringPhysicianFormValues): Promise<ServerMessage> {
+  return send((api) => api.create(toReferringPhysicianPayload(values)))
+}
+
+export function updateReferringPhysician(
   id: number,
   values: ReferringPhysicianFormValues,
-): Promise<ReferringPhysician> {
-  return referringPhysicianResponseSchema.parse(
-    await (await backend()).update(id, toReferringPhysicianPayload(values)),
-  )
+): Promise<ServerMessage> {
+  return send((api) => api.update(id, toReferringPhysicianUpdatePayload(values)))
+}
+
+/** Activates or deactivates a physician: a save carrying `is_active` alone. */
+export function setReferringPhysicianActive(id: number, isActive: boolean): Promise<ServerMessage> {
+  return send((api) => api.update(id, { is_active: isActive }))
+}
+
+/** Corrects a physician's NPI alone — the Exceptions fix; nothing else changes. */
+export function correctReferringPhysicianNpi(id: number, npi: string): Promise<ServerMessage> {
+  return send((api) => api.update(id, { npi }))
+}
+
+export function deleteReferringPhysician(id: number): Promise<ServerMessage> {
+  return send((api) => api.remove(id))
 }

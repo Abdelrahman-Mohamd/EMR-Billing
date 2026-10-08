@@ -135,7 +135,7 @@ export function InsuranceSection({ patientId }: { patientId: string }) {
                     <p className="text-micro text-n500 mt-1.5">
                       {[
                         insuranceClass?.name ?? '—',
-                        insurance.insuranceType || '—',
+                        insurance.insuranceTypeLabel || '—',
                         `Payer ID ${insurance.payerId || '—'}`,
                         ...(effectiveRule(insurance, practiceClasses, 'authorizationRequired')
                           ? ['Authorization required']

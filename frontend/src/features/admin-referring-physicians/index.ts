@@ -6,5 +6,5 @@ export { ReferringPhysiciansScreen } from './components/ReferringPhysiciansScree
 // A patient's case names its referring physician (Box 17).
 export { useReferringPhysicians } from './queries/use-referring-physicians'
 export type { ReferringPhysician } from './schemas/referring-physician'
-// Exceptions: a dummy referring NPI is corrected on the directory profile.
-export { useUpdateReferringPhysician } from './queries/use-referring-physicians'
+// Exceptions: a dummy referring NPI is corrected on the directory profile (the NPI alone).
+export { useCorrectReferringPhysicianNpi } from './queries/use-referring-physicians'

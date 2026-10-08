@@ -136,13 +136,9 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       primary: true,
       sortable: true,
       cell: ({ patient }) => (
-        <span className="block [overflow-wrap:anywhere]">
+        <span className="block break-words">
           {patient.lastName}, <span className="text-n600 font-normal">{patient.firstName}</span>
           {patient.billingId !== null && <CellSub>Billing ID {patient.billingId}</CellSub>}
-          {/* On a phone, where its column is hidden, the birth date rides under the name. */}
-          <span className="sm:hidden">
-            <CellSub>Born {formatIsoDate(patient.dob)}</CellSub>
-          </span>
         </span>
       ),
     },
@@ -150,7 +146,6 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       key: 'dob',
       header: 'Born',
       sortable: true,
-      hideOnMobile: true,
       cell: ({ patient }) => (
         <span className="whitespace-nowrap tabular-nums">{formatIsoDate(patient.dob)}</span>
       ),
@@ -159,7 +154,6 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       key: 'emrId',
       header: 'EMR ID',
       sortable: true,
-      hideBelow: 'lg',
       cell: ({ patient }) =>
         patient.emrId === null ? (
           <span className="text-n400">—</span>
@@ -171,14 +165,12 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       key: 'cases',
       header: 'Cases',
       sortable: true,
-      hideBelow: 'xl',
       cell: ({ cases }) => <span className="tabular-nums">{cases}</span>,
     },
     {
       key: 'insurance',
       header: 'Primary insurance',
       sortable: true,
-      hideBelow: 'md',
       cell: ({ insurance }) =>
         insurance === '' ? (
           <span className="text-n400">—</span>

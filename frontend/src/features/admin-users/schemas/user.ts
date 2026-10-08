@@ -2,15 +2,21 @@ import { z } from 'zod'
 import { emailSchema } from '@/lib/validation/email'
 
 /**
- * A user, as the current backend payload defines it:
- * `{ name, email, password, is_active }` — nothing more. No role, practice
- * grant, username or service-account flag: the prototype shows them, the
- * payload does not have them.
+ * A user, as the backend sends and takes it (contracts confirmed 2026-10-07):
+ *
+ * - `GET /users?page=N` → Laravel pagination (15 a page) of
+ *   `{ id, name, email, is_active, created_at, updated_at }`;
+ * - `GET /users/{id}` → `{ data: user }` (same fields);
+ * - `POST /users` `{ name, email, password, is_active }`, `PUT /users/{id}` the
+ *   same fields — a save may carry a new `password`, and leaves it out to keep
+ *   the current one — and `DELETE /users/{id}`; each answers
+ *   `{ success, message, data: null }`.
+ *
+ * No role, practice grant, username or service-account flag: the prototype
+ * shows them, the backend does not have them.
  *
  * A response is parsed with **no password in the schema**: if a server ever
  * sent one back, parsing drops it here and it can never reach a screen.
- * Assumed until the contract says otherwise: a saved user comes back as its
- * payload, without the password, plus a numeric `id`.
  */
 export const userResponseSchema = z
   .object({
@@ -23,7 +29,33 @@ export const userResponseSchema = z
 
 export type User = z.output<typeof userResponseSchema>
 
-/** Creating a user — the known payload, exactly. */
+export const userPageResponseSchema = z
+  .object({
+    data: z.object({
+      data: z.array(userResponseSchema),
+      meta: z.object({
+        current_page: z.number().int().positive(),
+        last_page: z.number().int().positive(),
+        from: z.number().int().nullable().optional(),
+        to: z.number().int().nullable().optional(),
+        total: z.number().int().nonnegative(),
+      }),
+    }),
+  })
+  .transform(({ data }) => ({
+    users: data.data,
+    page: data.meta.current_page,
+    pageCount: data.meta.last_page,
+    total: data.meta.total,
+    from: data.meta.from ?? 0,
+    to: data.meta.to ?? 0,
+  }))
+
+export type UserPage = z.output<typeof userPageResponseSchema>
+
+export const userDetailResponseSchema = z.object({ data: userResponseSchema }).transform((wire) => wire.data)
+
+/** Creating a user — the confirmed payload, exactly. */
 export interface CreateUserPayload {
   name: string
   email: string
@@ -31,14 +63,11 @@ export interface CreateUserPayload {
   is_active: boolean
 }
 
-/**
- * Saving an existing user. **Assumed**: the known payload without `password`
- * — the edit form never has one to send (see UserDialog). To be confirmed
- * with the backend.
- */
+/** Saving a user: the same fields; `password` only when a new one was typed. */
 export interface UpdateUserPayload {
   name: string
   email: string
+  password?: string
   is_active: boolean
 }
 
@@ -46,11 +75,12 @@ export interface UpdateUserPayload {
 export const userFormSchema = z.object({
   name: z.string().trim().min(1, 'Enter the user’s name.'),
   email: emailSchema('Enter an email address.'),
+  /** A new password; empty keeps the current one. Not trimmed: a space may be part of it. */
+  password: z.string(),
   isActive: z.boolean(),
 })
 
 export const newUserFormSchema = userFormSchema.extend({
-  // Not trimmed: a space may be part of a password.
   password: z.string().min(1, 'Enter a password.'),
 })
 
@@ -62,5 +92,11 @@ export function toCreateUserPayload(values: NewUserFormValues): CreateUserPayloa
 }
 
 export function toUpdateUserPayload(values: UserFormValues): UpdateUserPayload {
-  return { name: values.name, email: values.email, is_active: values.isActive }
+  return {
+    name: values.name,
+    email: values.email,
+    // Left out when empty: the server keeps the current password.
+    ...(values.password === '' ? {} : { password: values.password }),
+    is_active: values.isActive,
+  }
 }

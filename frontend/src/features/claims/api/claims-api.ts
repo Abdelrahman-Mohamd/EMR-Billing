@@ -6,9 +6,9 @@ import { claimResponseSchema, type Claim, type CreateClaimPayload } from '../sch
  * Claims' only door to a server.
  *
  * **No endpoints exist yet.** The request body is known (the claim payload
- * example); paths, methods and responses are not, so none are written. In
- * development and tests the calls go to an in-memory mock that plays the
- * server (ADR 0006); in any other build they reject as `unavailable`.
+ * example); paths, methods and responses are not, so none are written. Until
+ * they exist, the calls reject as `unavailable` and the screens show their
+ * load-failed state.
  *
  * Assumed until the contract says otherwise: one list of every claim the user
  * can see, filtered on screen, and creating one — nothing else. No payload
@@ -31,10 +31,8 @@ const notConnected = (): Promise<never> =>
 
 const live: ClaimsApi = { list: notConnected, create: notConnected }
 
-async function backend(): Promise<ClaimsApi> {
-  // Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-  if (__MOCK_DATA__) return (await import('./claims-api.mock')).mockClaimsApi
-  return live
+function backend(): Promise<ClaimsApi> {
+  return Promise.resolve(live)
 }
 
 export async function listClaims(signal?: AbortSignal): Promise<Claim[]> {

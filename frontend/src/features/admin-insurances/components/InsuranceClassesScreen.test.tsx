@@ -9,7 +9,10 @@ import { createTestQueryClient, renderWithProviders } from '@/test/render'
 import type { Practice } from '@/features/admin-practices'
 import {
   createInsuranceClass,
+  deleteInsuranceClass,
+  getInsuranceClass,
   listInsuranceClasses,
+  setInsuranceClassActive,
   updateInsuranceClass,
 } from '../api/insurance-classes-api'
 import { listInsurances } from '../api/insurances-api'
@@ -20,8 +23,11 @@ import { insurance, insuranceClass, practice } from './test-fixtures'
 // Only the integration points are faked; everything above them runs for real.
 vi.mock('../api/insurance-classes-api', () => ({
   listInsuranceClasses: vi.fn(),
+  getInsuranceClass: vi.fn(),
   createInsuranceClass: vi.fn(),
   updateInsuranceClass: vi.fn(),
+  setInsuranceClassActive: vi.fn(),
+  deleteInsuranceClass: vi.fn(),
 }))
 vi.mock('../api/insurances-api', () => ({
   listInsurances: vi.fn(),
@@ -40,6 +46,9 @@ vi.mock('@/features/admin-practices/api/practices-api', () => ({
 const listMock = vi.mocked(listInsuranceClasses)
 const createMock = vi.mocked(createInsuranceClass)
 const updateMock = vi.mocked(updateInsuranceClass)
+const getMock = vi.mocked(getInsuranceClass)
+const setActiveMock = vi.mocked(setInsuranceClassActive)
+const deleteMock = vi.mocked(deleteInsuranceClass)
 const insurancesMock = vi.mocked(listInsurances)
 
 let classes: InsuranceClass[]
@@ -47,8 +56,12 @@ let insurances: Insurance[]
 
 beforeEach(() => {
   classes = [
-    insuranceClass(1, 1, 'WC', 'Worker’s Comp', { authorization_required: true, injury_date_required: true }),
-    insuranceClass(2, 1, 'COM', 'Commercial', { accept_assignment: false }),
+    insuranceClass(1, 1, 'WC', 'Worker’s Comp', {
+      authorization_required: true,
+      injury_date_required: true,
+      insurances_count: 1,
+    }),
+    insuranceClass(2, 1, 'COM', 'Commercial', { accept_assignment: false, insurances_count: 2 }),
     insuranceClass(3, 2, 'MED', 'Medicare', { is_active: false }),
   ]
   insurances = [
@@ -61,8 +74,23 @@ beforeEach(() => {
   practicesMock
     .mockReset()
     .mockResolvedValue([practice(1, 'Harborline Physical Therapy'), practice(2, 'Northgate Sports & Spine')])
-  createMock.mockReset().mockImplementation(() => Promise.resolve(classes[0] as InsuranceClass))
-  updateMock.mockReset().mockImplementation(() => Promise.resolve(classes[0] as InsuranceClass))
+  getMock.mockReset().mockImplementation((id) => {
+    const found = classes.find((item) => item.id === id)
+    return found
+      ? Promise.resolve(structuredClone(found))
+      : Promise.reject(new ApiError({ kind: 'not_found', message: 'Not found', status: 404 }))
+  })
+  // As the backend answers: its own message, no record.
+  createMock.mockReset().mockResolvedValue('Insurance class created successfully')
+  updateMock.mockReset().mockResolvedValue('Insurance class updated successfully')
+  setActiveMock.mockReset().mockImplementation((id, isActive) => {
+    classes = classes.map((item) => (item.id === id ? { ...item, isActive } : item))
+    return Promise.resolve('Insurance class updated successfully')
+  })
+  deleteMock.mockReset().mockImplementation((id) => {
+    classes = classes.filter((item) => item.id !== id)
+    return Promise.resolve('Insurance class deleted successfully')
+  })
 })
 afterEach(() => {
   useToastStore.getState().clear()
@@ -101,24 +129,42 @@ describe('Setup → Insurance classes', () => {
     const commercial = within(rows[1] as HTMLElement)
     expect(commercial.getByText('Commercial')).toBeInTheDocument()
     expect(commercial.getByText('No assignment')).toBeInTheDocument()
-    // Two insurances, one of which overrides a rule.
+    // Two insurances, as the class counts them.
     const cells = within(rows[1] as HTMLElement).getAllByRole('cell')
     expect(cells.map((cell) => cell.textContent)).toContain('2')
-    expect(cells.map((cell) => cell.textContent)).toContain('1')
+    // Only what the backend sends: no "With overrides" count.
+    expect(
+      within(await table())
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent),
+    ).not.toContain('With overrides')
     const comp = within(rows[3] as HTMLElement)
     expect(comp.getByText('Auth required')).toBeInTheDocument()
     expect(comp.getByText('Injury date required')).toBeInTheDocument()
     expect(within(rows[2] as HTMLElement).getByRole('switch', { name: /: active$/ })).not.toBeChecked()
   })
 
-  it('changes a class’s status from its row with the Active switch, changing only is_active', async () => {
+  it('changes a class’s status from its row with the Active switch, after asking, changing only is_active', async () => {
     renderAt()
     const rows = within(await table()).getAllByRole('row')
     await userEvent.click(within(rows[2] as HTMLElement).getByRole('switch', { name: /: active$/ }))
-    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1))
-    const [, values] = updateMock.mock.calls[0] ?? []
-    expect(values).toEqual(expect.objectContaining({ isActive: true }))
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(setActiveMock).not.toHaveBeenCalled()
+    // Asks first.
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog', { name: /^(Deactivate|Reactivate) / })).getByRole(
+        'button',
+        {
+          name: /^(Deactivate|Reactivate)$/,
+        },
+      ),
+    )
+    await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith(3, true))
+    expect(updateMock).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(within(rows[2] as HTMLElement).getByRole('switch', { name: /: active$/ })).toBeChecked()
+    expect(useToastStore.getState().toasts).toEqual([
+      expect.objectContaining({ tone: 'success', title: 'Insurance class updated successfully' }),
+    ])
   })
 
   it('shows a loading state, then a failed load with a retry', async () => {
@@ -167,15 +213,13 @@ describe('Setup → Insurance classes', () => {
     })
   })
 
-  it('edits a class: names its insurances, keeps the practice fixed, deactivates from the form', async () => {
+  it('edits a class: says how many insurances it has, keeps the practice fixed, deactivates from the form', async () => {
     renderAt()
     await userEvent.click(await screen.findByRole('button', { name: 'Edit Commercial' }))
     const dialog = screen.getByRole('dialog')
-    expect(
-      within(dialog).getByText(
-        '2 insurances in this class: 1003 – Aetna, 1004 – UnitedHealthcare (overrides).',
-      ),
-    ).toBeInTheDocument()
+    await within(dialog).findByRole('textbox', { name: /^code/i })
+    expect(getMock).toHaveBeenCalledWith(2, expect.anything())
+    expect(within(dialog).getByText('2 insurances are in this class.')).toBeInTheDocument()
     expect(within(dialog).getByRole('combobox', { name: /^practice/i })).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -184,5 +228,42 @@ describe('Setup → Insurance classes', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save class' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(updateMock).toHaveBeenCalledWith(2, expect.objectContaining({ code: 'COM', isActive: false }))
+  })
+
+  it('deletes a class after asking, saying how many insurances it has', async () => {
+    renderAt()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Commercial' }, { timeout: 5000 }))
+    const ask = await screen.findByRole('alertdialog', { name: 'Delete Commercial?' })
+    expect(ask).toHaveTextContent('2 insurances are in this class.')
+    await userEvent.click(within(ask).getByRole('button', { name: 'Delete class' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deleteMock).toHaveBeenCalledWith(2)
+    expect(screen.getByRole('status')).toHaveTextContent('Insurance class deleted successfully')
+    await waitFor(async () => expect(within(await table()).queryByText('Commercial')).not.toBeInTheDocument())
+  })
+
+  it('says why when a delete is refused', async () => {
+    deleteMock.mockRejectedValueOnce(
+      new ApiError({
+        kind: 'validation',
+        message: 'This class still has insurances.',
+        serverMessage: 'This class still has insurances.',
+        status: 422,
+      }),
+    )
+    renderAt()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Commercial' }, { timeout: 5000 }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete class' }),
+    )
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts).toEqual([
+        expect.objectContaining({
+          tone: 'error',
+          title: 'Commercial was not deleted',
+          description: 'This class still has insurances.',
+        }),
+      ]),
+    )
   })
 })

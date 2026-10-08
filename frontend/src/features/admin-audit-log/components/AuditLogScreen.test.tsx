@@ -5,37 +5,58 @@ import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/rea
 import { routeTree } from '@/routeTree.gen'
 import { ApiError } from '@/lib/api/api-error'
 import { createTestQueryClient, renderWithProviders } from '@/test/render'
-import { listAuditEntries } from '../api/audit-log-api'
-import type { AuditEntry } from '../schemas/audit-entry'
+import { getAuditEntry, listAuditEntries } from '../api/audit-log-api'
+import type { AuditEntry, AuditEntryDetail, AuditPage } from '../schemas/audit-entry'
 
 // Only the integration point is faked; the screen, query and table run for real.
-vi.mock('../api/audit-log-api', () => ({ listAuditEntries: vi.fn() }))
+vi.mock('../api/audit-log-api', () => ({ listAuditEntries: vi.fn(), getAuditEntry: vi.fn() }))
 const listMock = vi.mocked(listAuditEntries)
+const getMock = vi.mocked(getAuditEntry)
+
+/** The server's page size. */
+const PER_PAGE = 15
 
 function entry(index: number, overrides: Partial<AuditEntry> = {}): AuditEntry {
   return {
-    id: `au${index}`,
+    id: String(index),
     at: new Date(Date.now() - index * 60 * 60_000).toISOString(),
-    userName: 'Dana Whitfield',
+    userName: 'Super Admin',
     action: `Action ${index}`,
+    event: 'login',
     detail: '',
-    module: 'ADMIN',
+    module: 'auth',
     ...overrides,
   }
 }
 
+const onePage = (entries: AuditEntry[]): AuditPage => ({
+  entries,
+  page: 1,
+  pageCount: 1,
+  total: entries.length,
+  from: 1,
+  to: entries.length,
+})
+
 let total: number
 
+function serverPage(page: number): AuditPage {
+  const start = (page - 1) * PER_PAGE
+  const count = Math.max(0, Math.min(PER_PAGE, total - start))
+  return {
+    entries: Array.from({ length: count }, (_, index) => entry(start + index + 1)),
+    page,
+    pageCount: Math.max(1, Math.ceil(total / PER_PAGE)),
+    total,
+    from: count === 0 ? 0 : start + 1,
+    to: start + count,
+  }
+}
+
 beforeEach(() => {
-  total = 45
-  listMock.mockReset().mockImplementation((query) => {
-    const start = (query.page - 1) * query.pageSize
-    const count = Math.max(0, Math.min(query.pageSize, total - start))
-    return Promise.resolve({
-      entries: Array.from({ length: count }, (_, index) => entry(start + index + 1)),
-      total,
-    })
-  })
+  total = 35
+  listMock.mockReset().mockImplementation((query) => Promise.resolve(serverPage(query.page)))
+  getMock.mockReset()
 })
 
 function renderAt(path = '/admin/audit') {
@@ -49,23 +70,14 @@ function renderAt(path = '/admin/audit') {
   return { router }
 }
 
-const table = () => screen.findByRole('table', { name: 'Audit log' })
+const table = () => screen.findByRole('table', { name: 'Audit log' }, { timeout: 5000 })
 const lastQuery = () => listMock.mock.calls.at(-1)?.[0]
 
 describe('Admin → Audit log', () => {
-  it('lists entries as the prototype does: when, user, action with detail, module — read-only', async () => {
-    listMock.mockResolvedValueOnce({
-      entries: [
-        entry(0, {
-          at: new Date().toISOString(),
-          userName: 'Keisha Morgan',
-          action: 'Appeal submitted',
-          detail: 'Payer portal · Medical necessity letter attached',
-          module: 'DENIALS',
-        }),
-      ],
-      total: 1,
-    })
+  it('lists entries: when, user, action with detail, module — read-only', async () => {
+    listMock.mockResolvedValueOnce(
+      onePage([entry(0, { at: new Date().toISOString(), action: 'Logged in', detail: 'IP 104.232.37.17' })]),
+    )
     renderAt()
     // The first test pays for loading the route's code-split chunk.
     expect(
@@ -80,62 +92,47 @@ describe('Admin → Audit log', () => {
     expect(headers).toEqual(['When', 'User', 'Action', 'Module'])
     const row = within(await table()).getAllByRole('row')[1] as HTMLElement
     await waitFor(() => expect(row).toHaveTextContent(/Today \d{2}:\d{2}/))
-    expect(row).toHaveTextContent('Keisha Morgan')
-    expect(row).toHaveTextContent('Appeal submitted')
-    expect(row).toHaveTextContent('Payer portal · Medical necessity letter attached')
-    expect(within(row).getAllByText('Denial Management').length).toBeGreaterThan(0)
-    // Nothing on an entry can be changed or opened.
-    expect(within(row).queryByRole('button')).not.toBeInTheDocument()
+    expect(row).toHaveTextContent('Super Admin')
+    expect(row).toHaveTextContent('Logged in')
+    expect(row).toHaveTextContent('IP 104.232.37.17')
+    expect(within(row).getAllByText('Authentication').length).toBeGreaterThan(0)
+    // The row opens its details and nothing else: no link, no edit.
+    expect(within(row).getAllByRole('button')).toHaveLength(1)
     expect(within(row).queryByRole('link')).not.toBeInTheDocument()
     expect(screen.getByText('1 entry')).toBeInTheDocument()
+    // No search or module filter: the endpoint has neither.
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Filter by module' })).not.toBeInTheDocument()
   })
 
-  it('asks the server for 20 entries a page and pages through them', async () => {
-    renderAt()
-    expect(await screen.findByText('Showing 1–20 of 45 entries', {}, { timeout: 5000 })).toBeInTheDocument()
-    expect(lastQuery()).toEqual({ search: '', modules: [], page: 1, pageSize: 20 })
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    expect(await screen.findByText('Showing 21–40 of 45 entries')).toBeInTheDocument()
-    expect(lastQuery()).toMatchObject({ page: 2 })
-    await userEvent.click(screen.getByRole('button', { name: 'Page 3' }))
-    expect(await screen.findByText('Showing 41–45 of 45 entries')).toBeInTheDocument()
-  })
-
-  it('searches after typing pauses, and filters by any number of modules, back on page 1', async () => {
-    renderAt()
-    await screen.findByText('Showing 1–20 of 45 entries', {}, { timeout: 5000 })
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await screen.findByText('Showing 21–40 of 45 entries')
-
-    const search = screen.getByRole('searchbox', { name: 'Search action, detail or user' })
-    expect(search).toHaveAttribute('placeholder', 'Search action, detail or user…')
-    await userEvent.type(search, 'appeal')
-    await waitFor(() => expect(lastQuery()).toMatchObject({ search: 'appeal', page: 1 }))
-    // One request for the finished word, not one per letter.
-    expect(listMock.mock.calls.filter(([query]) => query.search !== '' && query.search !== 'appeal')).toEqual(
-      [],
+  it('says when no one was signed in, and shows a log name it does not know as sent, capitalised', async () => {
+    listMock.mockResolvedValueOnce(
+      onePage([
+        entry(0, {
+          userName: '',
+          action: 'Failed login attempt',
+          detail: 'someone@example.test · IP 104.232.37.17',
+        }),
+        entry(1, { module: 'billing' }),
+      ]),
     )
+    renderAt()
+    await waitFor(async () => expect(within(await table()).getAllByRole('row')).toHaveLength(3))
+    const rows = within(await table()).getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('No user')
+    expect(rows[1]).toHaveTextContent('someone@example.test · IP 104.232.37.17')
+    expect(within(rows[2] as HTMLElement).getAllByText('Billing').length).toBeGreaterThan(0)
+  })
 
-    const pills = screen.getByRole('group', { name: 'Filter by module' })
-    expect(
-      within(pills)
-        .getAllByRole('button')
-        .map((pill) => pill.textContent),
-    ).toEqual([
-      'Charges',
-      'Billing',
-      'Payments',
-      'Denial Management',
-      'AR Follow-up',
-      'Patient',
-      'Admin',
-      'EMR Integration',
-      'Month End',
-    ])
-    await userEvent.click(within(pills).getByRole('button', { name: 'Month End' }))
-    await userEvent.click(within(pills).getByRole('button', { name: 'Payments' }))
-    await waitFor(() => expect(lastQuery()).toMatchObject({ modules: ['PAYMENTS', 'MONTHEND'], page: 1 }))
-    expect(within(pills).getByRole('button', { name: 'Payments' })).toHaveAttribute('aria-pressed', 'true')
+  it('pages as the server does, 15 at a time', async () => {
+    renderAt()
+    expect(await screen.findByText('Showing 1–15 of 35 entries', {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(lastQuery()).toEqual({ page: 1 })
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(await screen.findByText('Showing 16–30 of 35 entries')).toBeInTheDocument()
+    expect(lastQuery()).toEqual({ page: 2 })
+    await userEvent.click(screen.getByRole('button', { name: 'Page 3' }))
+    expect(await screen.findByText('Showing 31–35 of 35 entries')).toBeInTheDocument()
   })
 
   it('explains an empty log', async () => {
@@ -144,23 +141,84 @@ describe('Admin → Audit log', () => {
     expect(await screen.findByText('No audit entries yet', {}, { timeout: 5000 })).toBeInTheDocument()
   })
 
-  it('offers to clear the search and filters when nothing matches', async () => {
-    renderAt()
-    await screen.findByText('Showing 1–20 of 45 entries', {}, { timeout: 5000 })
-    total = 0
-    await userEvent.click(screen.getByRole('button', { name: 'Billing' }))
-    expect(await screen.findByText('No entries match')).toBeInTheDocument()
-    total = 45
-    await userEvent.click(screen.getByRole('button', { name: 'Clear search and filters' }))
-    expect(await screen.findByText('Showing 1–20 of 45 entries')).toBeInTheDocument()
-    expect(lastQuery()).toEqual({ search: '', modules: [], page: 1, pageSize: 20 })
-  })
-
   it('shows a loading state, then a failed load with a retry', async () => {
     listMock.mockRejectedValueOnce(new ApiError({ kind: 'unavailable', message: 'Down.' }))
     renderAt()
     expect(await screen.findByRole('status', {}, { timeout: 5000 })).toHaveTextContent('Loading')
     await userEvent.click(await screen.findByRole('button', { name: /try again/i }))
-    expect(await screen.findByText('Showing 1–20 of 45 entries')).toBeInTheDocument()
+    expect(await screen.findByText('Showing 1–15 of 35 entries')).toBeInTheDocument()
+  })
+
+  it('opens an entry in full in a side panel, and goes back to the same page', async () => {
+    const detail: AuditEntryDetail = {
+      ...entry(17, { at: '2026-10-07T15:16:52.000Z', action: 'Updated user' }),
+      user: { name: 'Super Admin', email: 'admin@billing.test' },
+      properties: [{ key: 'ip_address', label: 'IP address', value: '104.232.37.17' }],
+      record: 'User #4',
+      batch: '',
+      changes: [{ field: 'name', label: 'Name', before: 'Old Name', after: 'New Name' }],
+    }
+    getMock.mockResolvedValue(detail)
+    renderAt()
+    await screen.findByText('Showing 1–15 of 35 entries', {}, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await screen.findByText('Showing 16–30 of 35 entries')
+
+    await userEvent.click(screen.getByRole('button', { name: /^Action 17, .*: view details$/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Action 17' })
+    expect(getMock).toHaveBeenCalledWith('17', expect.anything())
+    expect(await within(panel).findByText('admin@billing.test')).toBeInTheDocument()
+    const when = new Date('2026-10-07T15:16:52.000Z')
+    const pad = (value: number) => String(value).padStart(2, '0')
+    expect(panel).toHaveTextContent(
+      `${pad(when.getMonth() + 1)}/${pad(when.getDate())}/${when.getFullYear()} ${pad(when.getHours())}:${pad(when.getMinutes())}:52`,
+    )
+    expect(panel).toHaveTextContent('User #4')
+    expect(panel).toHaveTextContent('IP address')
+    expect(panel).toHaveTextContent('104.232.37.17')
+    expect(within(panel).getByRole('heading', { name: 'Changes' })).toBeInTheDocument()
+    const change = within(within(panel).getByRole('table', { name: 'Changes' })).getAllByRole('row')[1]
+    expect(change).toHaveTextContent('Name')
+    expect(change).toHaveTextContent('Old Name')
+    expect(change).toHaveTextContent('New Name')
+    // Nothing in it can change the entry.
+    expect(
+      within(panel)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['Close'])
+
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByText('Showing 16–30 of 35 entries')).toBeInTheDocument()
+  })
+
+  it('says when an entry is gone, and offers a retry for any other failure', async () => {
+    getMock.mockRejectedValueOnce(new ApiError({ kind: 'not_found', message: 'Not found', status: 404 }))
+    renderAt()
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^Action 1, .*: view details$/ }, { timeout: 5000 }),
+    )
+    expect(
+      await within(await screen.findByRole('dialog')).findByText('This entry could not be found'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    getMock.mockRejectedValueOnce(new ApiError({ kind: 'network', message: 'Failed to fetch' }))
+    getMock.mockResolvedValueOnce({
+      ...entry(2),
+      user: null,
+      properties: [],
+      record: '',
+      batch: '',
+      changes: [],
+    })
+    await userEvent.click(screen.getByRole('button', { name: /^Action 2, .*: view details$/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /try again/i }))
+    const panel = await screen.findByRole('dialog', { name: 'Action 2' })
+    expect(await within(panel).findByText('No user')).toBeInTheDocument()
+    expect(within(panel).queryByRole('heading', { name: 'Changes' })).not.toBeInTheDocument()
   })
 })

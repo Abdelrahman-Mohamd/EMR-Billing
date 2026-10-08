@@ -5,125 +5,118 @@ import {
   providerResponseSchema,
   toProviderFormValues,
   toProviderPayload,
+  toProviderUpdatePayload,
   type ProviderFormValues,
 } from './provider'
 
 const filled: ProviderFormValues = {
   ...NEW_PROVIDER_VALUES,
-  practiceId: '2',
-  firstName: 'Priya',
-  lastName: 'Raman',
-  code: '340',
-  providerType: 'Rendering',
-  npi: '1386950417',
+  practiceId: '1',
+  firstName: 'Mina',
+  lastName: 'Shehata',
+  credential: 'PT',
+  code: '297',
+  npi: '1234567893',
+  stateLicense: 'NY123456',
 }
 
 const errorsOf = (values: ProviderFormValues) => {
   const result = providerFormSchema.safeParse(values)
   return result.success
     ? {}
-    : Object.fromEntries(result.error.issues.map((issue) => [issue.path.join('.'), issue.message]))
+    : // The first message of each field, as the form shows it.
+      Object.fromEntries(result.error.issues.reverse().map((issue) => [issue.path.join('.'), issue.message]))
 }
 
-describe('provider payload (provisional — prototype fields, PRD V2 names)', () => {
-  it('sends the form as the snake_case body, empty optional text as null, no hold without an end date', () => {
+describe('provider payload (contract confirmed 2026-10-08)', () => {
+  it('creates with the confirmed body, the type and status added', () => {
     expect(toProviderPayload(filled)).toEqual({
-      practice_id: 2,
-      code: '340',
-      first_name: 'Priya',
-      last_name: 'Raman',
-      credential: null,
+      practice_id: 1,
+      code: '297',
+      first_name: 'Mina',
+      last_name: 'Shehata',
+      type: 'rendering',
+      credential: 'PT',
       specialty: 'PHYSICAL THERAPIST',
-      provider_type: 'Rendering',
-      npi: '1386950417',
+      npi: '1234567893',
       taxonomy_code: '225100000X',
-      state_license: null,
-      claim_hold_from: null,
-      claim_hold_until: null,
-      claim_hold_reason: null,
-      claim_hold_location_ids: [],
-      claim_hold_insurance_ids: [],
+      state_license: 'NY123456',
       is_active: true,
     })
   })
 
-  it('sends a hold with its window, reason and the ids of the locations and payers it covers', () => {
-    expect(
-      toProviderPayload({
-        ...filled,
-        claimHoldFrom: '2026-10-01',
-        claimHoldUntil: '2026-10-31',
-        claimHoldReason: 'Pending Provider Credentialing',
-        claimHoldLocationIds: ['4'],
-        claimHoldInsuranceIds: ['9', '10'],
-      }),
-    ).toMatchObject({
-      claim_hold_from: '2026-10-01',
-      claim_hold_until: '2026-10-31',
-      claim_hold_reason: 'Pending Provider Credentialing',
-      claim_hold_location_ids: [4],
-      claim_hold_insurance_ids: [9, 10],
+  it('saves without the practice, and sends a cleared optional field as null', () => {
+    const save = toProviderUpdatePayload({
+      ...filled,
+      credential: '',
+      specialty: null,
+      taxonomyCode: '',
+      stateLicense: '',
+    })
+    expect(save).not.toHaveProperty('practice_id')
+    expect(save).toMatchObject({
+      credential: null,
+      specialty: null,
+      taxonomy_code: null,
+      state_license: null,
     })
   })
 
-  it('drops a half-filled hold that has no end date, as the prototype does', () => {
+  it('carries no claim hold, payer enrollment or credentialing field', () => {
     expect(
-      toProviderPayload({
-        ...filled,
-        claimHoldFrom: '2026-10-01',
-        claimHoldReason: 'x',
-        claimHoldLocationIds: ['4'],
-      }),
-    ).toMatchObject({ claim_hold_from: null, claim_hold_reason: null, claim_hold_location_ids: [] })
+      Object.keys(toProviderPayload(filled)).filter((key) => /hold|enrol|credentialing/i.test(key)),
+    ).toEqual([])
   })
 
-  it('carries no payer enrollment or credentialing field', () => {
-    expect(Object.keys(toProviderPayload(filled)).filter((key) => /enrol|credentialing/i.test(key))).toEqual(
-      [],
-    )
-  })
-
-  it('reads a response back into the same form values', () => {
-    expect(
-      toProviderFormValues(providerResponseSchema.parse({ ...toProviderPayload(filled), id: 5 })),
-    ).toEqual(filled)
+  it('reads the server’s provider — nulls as empty, the practice’s name — back into the form', () => {
+    const provider = providerResponseSchema.parse({
+      id: 1,
+      practice_id: 1,
+      code: '297',
+      first_name: 'Mina',
+      last_name: 'Shehata',
+      type: 'rendering',
+      type_label: 'Rendering',
+      credential: null,
+      specialty: null,
+      npi: '1234567893',
+      taxonomy_code: null,
+      state_license: null,
+      is_active: true,
+      practice: { id: 1, name: 'Physical Therapy of The City' },
+      created_at: '2026-10-08T14:35:58.000000Z',
+    })
+    expect(provider).toMatchObject({ practiceName: 'Physical Therapy of The City', typeLabel: 'Rendering' })
+    expect(toProviderFormValues(provider)).toEqual({
+      ...filled,
+      credential: '',
+      specialty: null,
+      taxonomyCode: '',
+      stateLicense: '',
+    })
   })
 })
 
-describe('provider form checks (the prototype’s)', () => {
-  it('requires names, Provider ID, specialty, type, NPI and taxonomy', () => {
-    expect(errorsOf({ ...NEW_PROVIDER_VALUES, practiceId: null, specialty: null, taxonomyCode: '' })).toEqual(
-      {
-        practiceId: 'Select a practice.',
-        firstName: 'Enter the first name.',
-        lastName: 'Enter the last name.',
-        code: 'Enter the Provider ID.',
-        specialty: 'Select a specialty.',
-        providerType: 'Select a provider type.',
-        npi: 'Enter the NPI.',
-        taxonomyCode: 'Enter the taxonomy code.',
-      },
-    )
+describe('provider form checks (the server’s)', () => {
+  it('requires the practice, names, Provider ID, type and NPI — not specialty or taxonomy', () => {
+    expect(
+      errorsOf({ ...NEW_PROVIDER_VALUES, practiceId: null, type: null, specialty: null, taxonomyCode: '' }),
+    ).toEqual({
+      practiceId: 'Select a practice.',
+      firstName: 'Enter the first name.',
+      lastName: 'Enter the last name.',
+      code: 'Enter the Provider ID.',
+      type: 'Select a provider type.',
+      npi: 'Enter the NPI.',
+    })
+    expect(errorsOf(filled)).toEqual({})
   })
 
-  it('refuses an NPI that is not ten digits or is a placeholder', () => {
+  it('refuses an NPI that is not ten digits or is a placeholder, and a malformed taxonomy code', () => {
     expect(errorsOf({ ...filled, npi: '12345' })).toEqual({ npi: 'Please enter a valid NPI.' })
     expect(errorsOf({ ...filled, npi: '9999999999' })).toEqual({ npi: 'Please enter a valid NPI.' })
-  })
-
-  it('needs a start date and a reason once the hold has an end date, and an end on or after the start', () => {
-    expect(errorsOf({ ...filled, claimHoldUntil: '2026-10-31' })).toEqual({
-      claimHoldFrom: 'Enter the date the hold starts.',
-      claimHoldReason: 'Enter the reason for the hold.',
+    expect(errorsOf({ ...filled, taxonomyCode: 'ABC' })).toEqual({
+      taxonomyCode: 'Please enter a valid taxonomy code.',
     })
-    expect(
-      errorsOf({
-        ...filled,
-        claimHoldFrom: '2026-11-01',
-        claimHoldUntil: '2026-10-31',
-        claimHoldReason: 'Leave',
-      }),
-    ).toEqual({ claimHoldUntil: 'Please enter a valid date.' })
-    expect(errorsOf(filled)).toEqual({})
   })
 })

@@ -388,7 +388,7 @@ function TableDemo() {
               </>
             ),
           },
-          { key: 'payer', header: 'Payer', cell: (row) => row.payer, hideOnMobile: true },
+          { key: 'payer', header: 'Payer', cell: (row) => row.payer },
           { key: 'status', header: 'Status', cell: (row) => row.status },
           { key: 'amount', header: 'Amount', align: 'right', sortable: true, cell: (row) => row.amount },
           {

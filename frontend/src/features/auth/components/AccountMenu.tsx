@@ -40,8 +40,9 @@ export function AccountMenu({
   const email = user.data?.email
 
   const confirmSignOut = async () => {
-    const { confirmed } = await signOut()
-    if (confirmed) toast.info('Signed out')
+    const { confirmed, message } = await signOut()
+    // The server's words ("Successfully logged out."); ours only when it sent none.
+    if (confirmed) toast.info(message ?? 'Signed out')
     else {
       toast.warning(
         'Signed out of this browser',

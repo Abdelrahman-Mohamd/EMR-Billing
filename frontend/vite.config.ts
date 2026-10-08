@@ -2,12 +2,11 @@ import { fileURLToPath, URL } from 'node:url'
 // `vitest/config` re-exports Vite's defineConfig with the `test` block typed,
 // so the build config and the test config stay in one file.
 import { defineConfig } from 'vitest/config'
-import { loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
-export default defineConfig(({ command, mode }) => ({
+export default defineConfig({
   plugins: [
     // Generates routeTree.gen.ts from src/routes and splits every route's
     // component into its own chunk (docs/PERFORMANCE.md "Code splitting").
@@ -25,17 +24,6 @@ export default defineConfig(({ command, mode }) => ({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  define: {
-    // Whether features may answer from their in-memory mocks (ADR 0006): on in
-    // the dev server and tests ("serve"), and in a build made explicitly with
-    // VITE_DATA_SOURCE=mock (a demo). A constant replaced in every module, so
-    // in any other build the `if (__MOCK_DATA__)` branch is dead code before
-    // bundling and the mock modules are never emitted. Declared in
-    // src/lib/api/mock-data.d.ts.
-    __MOCK_DATA__: JSON.stringify(
-      command === 'serve' || loadEnv(mode, process.cwd(), 'VITE_').VITE_DATA_SOURCE === 'mock',
-    ),
-  },
   build: {
     // Hidden source maps: uploadable to an error tracker, not served to the
     // browser. See docs/SECURITY.md "Source maps".
@@ -48,5 +36,13 @@ export default defineConfig(({ command, mode }) => ({
     // a test file type-checks like any other module.
     include: ['src/**/*.test.{ts,tsx}'],
     restoreMocks: true,
+    // No backend in tests: an empty API address makes every request be refused
+    // as "unavailable" without being sent, so no test can reach staging (which
+    // `.env` points at). Tests fake what they need — the api module, or `fetch`
+    // for the http client itself.
+    env: { VITE_API_BASE_URL: '', VITE_ENVIRONMENT: 'test' },
+    // Screen tests drive the real router, forms and dialogs key by key; 5 s
+    // (the default) is too tight for them on a busy machine.
+    testTimeout: 15_000,
   },
-}))
+})

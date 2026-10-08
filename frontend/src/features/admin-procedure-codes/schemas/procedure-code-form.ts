@@ -1,31 +1,30 @@
 import { z } from 'zod'
-import { MODIFIER_SLOTS, type ProcedureCode } from '../model/procedure-code'
+import { MODIFIER_SLOTS } from '../model/procedure-code'
+import type { ProcedureCode, ProcedureCodePayload } from './procedure-code'
 
 const required = (message: string) => z.string().trim().min(1, message)
 
 /**
- * What the procedure-code form accepts — the prototype's checks, and only
- * those:
- * - **CPT / HCPCS:** required; five letters or digits; a new code must not
- *   already be in the list ("This code exists."). Fixed once saved.
- * - **Description, default fee and procedure type:** required; the fee is an
- *   amount with at most two decimals.
- * - **Modifiers:** up to four, all optional, at most two characters each (the
- *   inputs' length). No other check — the client asked for none.
- *
- * `existingCodes` is the list to check a new code against; `null` when editing.
+ * What the procedure-code form accepts — as the server does:
+ * - **CPT / HCPCS:** required; five letters or digits (the server narrows it
+ *   to a CPT or HCPCS shape and says so on the field). Can be changed on edit.
+ * - **Description and procedure type:** required.
+ * - **Default fee:** optional (the server keeps 0.00); an amount with at most
+ *   two decimals.
+ * - **Modifiers:** up to four, each two letters or digits; while the override
+ *   is on, at least one.
+ * - **Not checked:** uniqueness of the code — the server's.
  */
-export function procedureCodeFormSchema(existingCodes: readonly string[] | null) {
-  return z.object({
+export const procedureCodeFormSchema = z
+  .object({
     code: required('Enter the code.')
       .toUpperCase()
-      .refine((value) => value === '' || /^[A-Z0-9]{5}$/.test(value), 'Please enter a valid code.')
-      .refine((value) => existingCodes === null || !existingCodes.includes(value), 'This code exists.'),
+      .refine((value) => value === '' || /^[A-Z0-9]{5}$/.test(value), 'Please enter a valid code.'),
     description: required('Enter the description.'),
-    defaultFee: required('Enter the default fee.').refine(
-      (value) => value === '' || /^\d+(\.\d{1,2})?$/.test(value),
-      'Please enter a valid amount.',
-    ),
+    defaultFee: z
+      .string()
+      .trim()
+      .refine((value) => value === '' || /^\d+(\.\d{1,2})?$/.test(value), 'Please enter a valid amount.'),
     procedureType: z
       .string()
       .nullable()
@@ -33,11 +32,26 @@ export function procedureCodeFormSchema(existingCodes: readonly string[] | null)
     isTimed: z.boolean(),
     isActive: z.boolean(),
     modifierOverride: z.boolean(),
-    modifiers: z.array(z.string().trim()).length(MODIFIER_SLOTS),
+    modifiers: z
+      .array(
+        z
+          .string()
+          .trim()
+          .refine((value) => value === '' || /^[A-Za-z0-9]{2}$/.test(value), 'Enter two letters or digits.'),
+      )
+      .length(MODIFIER_SLOTS),
   })
-}
+  .superRefine((values, context) => {
+    if (values.modifierOverride && values.modifiers.every((modifier) => modifier === '')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['modifiers', 0],
+        message: 'Add at least one modifier.',
+      })
+    }
+  })
 
-export type ProcedureCodeFormValues = z.infer<ReturnType<typeof procedureCodeFormSchema>>
+export type ProcedureCodeFormValues = z.infer<typeof procedureCodeFormSchema>
 
 const emptySlots = () => Array.from({ length: MODIFIER_SLOTS }, () => '')
 
@@ -47,7 +61,7 @@ export function newProcedureCodeValues(): ProcedureCodeFormValues {
     code: '',
     description: '',
     defaultFee: '',
-    procedureType: 'Therapeutic',
+    procedureType: 'therapeutic',
     isTimed: false,
     isActive: true,
     modifierOverride: false,
@@ -60,7 +74,7 @@ export function toProcedureCodeFormValues(code: ProcedureCode): ProcedureCodeFor
     code: code.code,
     description: code.description,
     defaultFee: code.defaultFee.toFixed(2),
-    procedureType: code.procedureType,
+    procedureType: code.procedureType === '' ? null : code.procedureType,
     isTimed: code.isTimed,
     isActive: code.isActive,
     modifierOverride: code.modifierOverride,
@@ -68,21 +82,20 @@ export function toProcedureCodeFormValues(code: ProcedureCode): ProcedureCodeFor
   }
 }
 
-/** The saved record. As the prototype saves it: with the override off, no modifiers are kept. */
-export function toProcedureCode(values: ProcedureCodeFormValues): ProcedureCode {
+/** The body for create and save. As the prototype saves it: with the override off, no modifiers are kept. */
+export function toProcedureCodePayload(values: ProcedureCodeFormValues): ProcedureCodePayload {
   return {
     code: values.code,
     description: values.description,
     // The schema has refused a missing type before this runs.
-    procedureType: values.procedureType ?? '',
-    isTimed: values.isTimed,
-    modifierOverride: values.modifierOverride,
+    procedure_type: values.procedureType ?? '',
+    is_timed: values.isTimed,
+    modifier_override: values.modifierOverride,
     modifiers: values.modifierOverride
       ? values.modifiers.map((modifier) => modifier.toUpperCase()).filter((modifier) => modifier !== '')
       : [],
-    defaultFee: Number(values.defaultFee),
-    isActive: values.isActive,
-    // Saving a code the EMR sent clears its "New from EMR" mark, as in the prototype.
-    isNewFromEmr: false,
+    // Empty is no fee: 0, as the server keeps it.
+    default_fee: values.defaultFee === '' ? 0 : Number(values.defaultFee),
+    is_active: values.isActive,
   }
 }

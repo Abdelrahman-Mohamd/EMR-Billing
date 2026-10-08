@@ -40,13 +40,11 @@ export function VisitClaims({ visit }: { visit: Visit }) {
     {
       key: 'modifiers',
       header: 'Modifiers',
-      hideOnMobile: true,
       cell: (claim) => modifiersText(claim) || <span className="text-n400">—</span>,
     },
     {
       key: 'pointers',
       header: 'Diagnosis pointers',
-      hideBelow: 'md',
       cell: (claim) => pointersText(claim, visit.caseId, refs) || <span className="text-n400">—</span>,
     },
   ]

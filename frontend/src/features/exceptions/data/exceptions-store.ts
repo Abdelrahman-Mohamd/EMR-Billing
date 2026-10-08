@@ -8,9 +8,7 @@ import type { BillingException } from '../model/billing-exception'
  * architecture only; the screens show no message about it.
  *
  * - Changes last until the page reloads.
- * - In development and tests it starts with the prototype's exceptions
- *   (`sample-exceptions.ts`, loaded only when `__MOCK_DATA__` is true, so a
- *   production build never contains them); otherwise it starts empty.
+ * - It starts empty: there is no sample data.
  * - Exceptions are raised by the server when a record arrives; nothing here
  *   creates one.
  * - The screens only use `useBillingExceptions()`. When a backend exists, that
@@ -23,24 +21,17 @@ import type { BillingException } from '../model/billing-exception'
  * Same pattern as the patients, procedure codes and coding rules stores.
  */
 interface Snapshot {
-  /** False only while the development sample is still loading. */
+  /** Always true: the list is in memory. Kept so the screens read it as they will a query. */
   ready: boolean
   exceptions: readonly BillingException[]
 }
 
-let snapshot: Snapshot = { ready: !__MOCK_DATA__, exceptions: [] }
+let snapshot: Snapshot = { ready: true, exceptions: [] }
 const listeners = new Set<() => void>()
 
 function publish(next: Snapshot): void {
   snapshot = next
   for (const listener of listeners) listener()
-}
-
-// Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-if (__MOCK_DATA__) {
-  void import('./sample-exceptions').then(({ SAMPLE_EXCEPTIONS }) => {
-    if (!snapshot.ready) publish({ ready: true, exceptions: [...SAMPLE_EXCEPTIONS] })
-  })
 }
 
 function subscribe(listener: () => void): () => void {

@@ -9,9 +9,7 @@ import { roleCodeFrom, type Role } from '../model/role'
  * architecture only; the screen shows no message about it.
  *
  * - Changes last until the page reloads.
- * - In development and tests it starts with the prototype's roles
- *   (`sample-roles.ts`, loaded only when `__MOCK_DATA__` is true, so a
- *   production build never contains them); otherwise it starts empty.
+ * - It starts empty: there is no sample data.
  * - The screens only use `useRoles()`. When a backend exists, that hook is
  *   replaced by server-state hooks (docs/FRONTEND_ARCHITECTURE.md §5) and this
  *   file is deleted — the screens do not change.
@@ -21,25 +19,17 @@ import { roleCodeFrom, type Role } from '../model/role'
  * Same pattern as the procedure codes and fee schedules stores.
  */
 interface Snapshot {
-  /** False only while the development sample is still loading. */
+  /** Always true: the list is in memory. Kept so the screens read it as they will a query. */
   ready: boolean
   roles: readonly Role[]
 }
 
-let snapshot: Snapshot = { ready: !__MOCK_DATA__, roles: [] }
+let snapshot: Snapshot = { ready: true, roles: [] }
 const listeners = new Set<() => void>()
 
 function publish(next: Snapshot): void {
   snapshot = next
   for (const listener of listeners) listener()
-}
-
-// Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-if (__MOCK_DATA__) {
-  void import('./sample-roles').then(({ SAMPLE_ROLES }) => {
-    // Something may have been added while the sample loaded; keep it.
-    if (!snapshot.ready) publish({ ready: true, roles: [...SAMPLE_ROLES, ...snapshot.roles] })
-  })
 }
 
 function subscribe(listener: () => void): () => void {

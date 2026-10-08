@@ -6,7 +6,7 @@ import { Field, FormGrid } from '@/components/ui/Field'
 import { Input } from '@/components/ui/Input'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import type { ProcedureCode } from '@/features/admin-procedure-codes'
-import { lookUpPrice, type FeeRow } from '../model/fee-row'
+import { lookUpPrice, type PricedRow } from '../model/fee-row'
 
 interface InsuranceOption {
   id: number
@@ -28,7 +28,7 @@ export function PriceLookup({
 }: {
   insurances: readonly InsuranceOption[]
   codes: readonly ProcedureCode[]
-  rows: readonly FeeRow[]
+  rows: readonly PricedRow[]
   initialInsuranceId: number | null
 }) {
   const titleId = useId()
@@ -36,20 +36,19 @@ export function PriceLookup({
     initialInsuranceId === null ? null : String(initialInsuranceId),
   )
   // The prototype starts the lookup on 97110 when the list has it.
-  const [code, setCode] = useState<string | null>(
-    codes.find((candidate) => candidate.code === '97110')?.code ?? codes[0]?.code ?? null,
-  )
+  const start = codes.find((candidate) => candidate.code === '97110') ?? codes[0]
+  const [code, setCode] = useState<string | null>(start === undefined ? null : String(start.id))
   const [units, setUnits] = useState('2')
 
   const insurance = insurances.find((candidate) => String(candidate.id) === insuranceId)
-  const procedureCode = codes.find((candidate) => candidate.code === code)
+  const procedureCode = codes.find((candidate) => String(candidate.id) === code)
   const unitCount = Math.max(1, Number(units) || 1)
   const result =
     insurance !== undefined && procedureCode !== undefined
       ? lookUpPrice({
           rows,
           insuranceId: insurance.id,
-          procedureCode: procedureCode.code,
+          procedureCodeId: procedureCode.id,
           defaultFee: procedureCode.defaultFee,
           units: unitCount,
           date: todayIso(),
@@ -58,12 +57,12 @@ export function PriceLookup({
 
   return (
     <Card labelledBy={titleId}>
-      <CardHeader id={titleId} title="Price lookup" />
+      <CardHeader
+        id={titleId}
+        title="Price lookup"
+        info="How a charge line is priced: the payer’s billed price when a row is effective, otherwise the code’s default fee. What a payer allows is known from its remittance."
+      />
       <CardBody>
-        <p className="text-micro text-n500 mb-4 leading-relaxed">
-          How a charge line is priced: the payer’s billed price when a row is effective, otherwise the code’s
-          default fee. What a payer allows is known from its remittance.
-        </p>
         <FormGrid>
           <Field label="Insurance">
             <SearchSelect
@@ -83,7 +82,7 @@ export function PriceLookup({
               value={code}
               onChange={setCode}
               options={codes.map((option) => ({
-                value: option.code,
+                value: String(option.id),
                 label: `${option.code} — ${option.description}`,
               }))}
               placeholder="Select a code"

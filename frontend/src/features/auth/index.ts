@@ -8,4 +8,4 @@ export { ForgotPasswordScreen } from './components/ForgotPasswordScreen'
 export { AccountMenu } from './components/AccountMenu'
 export { safeRedirect } from './model/safe-redirect'
 // Who is signed in — for a record of who did something (EMR integration requests).
-export { useCurrentUser } from './queries/use-current-user'
+export { currentUserQuery, useCurrentUser } from './queries/use-current-user'

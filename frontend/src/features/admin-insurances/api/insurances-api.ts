@@ -1,67 +1,104 @@
-import { z } from 'zod'
-import { ApiError, renameFieldErrors } from '@/lib/api/api-error'
+import { renameFieldErrors } from '@/lib/api/api-error'
+import { request } from '@/lib/api/http-client'
+import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
 import {
   INSURANCE_FORM_FIELD_FOR,
-  insuranceResponseSchema,
+  insuranceDetailResponseSchema,
+  insurancePageResponseSchema,
   toInsurancePayload,
+  toInsuranceUpdatePayload,
   type Insurance,
+  type InsuranceDetail,
   type InsuranceFormValues,
   type InsurancePayload,
+  type InsuranceUpdatePayload,
 } from '../schemas/insurance'
 
 /**
- * Insurances' only door to a server.
+ * Insurances' only door to a server. **Live** (contracts confirmed
+ * 2026-10-08), carrying the session's token: `GET /insurances?page=N`,
+ * `GET /insurances/{id}`, `POST /insurances`, `PUT /insurances/{id}` and
+ * `DELETE /insurances/{id}`. Only `page` is sent to the list. Writes resolve
+ * with the server's message, which the screens show. Shapes in
+ * schemas/insurance.ts.
  *
- * **No endpoints and no payload exist yet.** The body sent is provisional
- * (see `schemas/insurance.ts`); paths, methods and responses are not known, so
- * none are written. In development and tests the calls go to an in-memory
- * mock that plays the server (ADR 0006); in any other build they reject as
- * `unavailable`.
- *
- * Assumed until the contract says otherwise: one list of every insurance the
- * user can see, filtered on screen; create and update, and nothing else — the
- * prototype deactivates an insurance and offers no delete, so none is built.
+ * A portal password is passed straight through: never logged, stored or
+ * cached.
  */
 export interface InsurancesApi {
-  list: (signal?: AbortSignal) => Promise<unknown>
-  create: (payload: InsurancePayload) => Promise<unknown>
-  update: (id: number, payload: InsurancePayload) => Promise<unknown>
+  list: (page: number, signal?: AbortSignal) => Promise<{ insurances: Insurance[]; pageCount: number }>
+  get: (id: number, signal?: AbortSignal) => Promise<InsuranceDetail>
+  create: (payload: InsurancePayload) => Promise<ServerMessage>
+  update: (id: number, payload: InsuranceUpdatePayload | { is_active: boolean }) => Promise<ServerMessage>
+  remove: (id: number) => Promise<ServerMessage>
 }
 
-const notConnected = (): Promise<never> =>
-  Promise.reject(
-    new ApiError({
-      kind: 'unavailable',
-      message: 'Insurances are not available right now.',
-      detail:
-        'No insurance endpoints exist yet. features/admin-insurances/api/insurances-api.ts is the integration point.',
+const live: InsurancesApi = {
+  list: (page, signal) =>
+    request({
+      method: 'GET',
+      path: '/insurances',
+      searchParams: { page },
+      schema: insurancePageResponseSchema,
+      ...(signal ? { signal } : {}),
     }),
-  )
-
-const live: InsurancesApi = { list: notConnected, create: notConnected, update: notConnected }
-
-async function backend(): Promise<InsurancesApi> {
-  // Tested here, not through a helper: see src/lib/api/mock-data.d.ts.
-  if (__MOCK_DATA__) return (await import('./insurances-api.mock')).mockInsurancesApi
-  return live
+  get: (id, signal) =>
+    request({
+      method: 'GET',
+      path: `/insurances/${id}`,
+      schema: insuranceDetailResponseSchema,
+      ...(signal ? { signal } : {}),
+    }),
+  create: (payload) =>
+    request({ method: 'POST', path: '/insurances', body: payload, schema: serverMessageSchema }),
+  update: (id, payload) =>
+    request({ method: 'PUT', path: `/insurances/${id}`, body: payload, schema: serverMessageSchema }),
+  remove: (id) => request({ method: 'DELETE', path: `/insurances/${id}`, schema: serverMessageSchema }),
 }
 
-async function save(call: (api: InsurancesApi) => Promise<unknown>): Promise<Insurance> {
+function backend(): Promise<InsurancesApi> {
+  return Promise.resolve(live)
+}
+
+async function send(call: (api: InsurancesApi) => Promise<ServerMessage>): Promise<ServerMessage> {
   try {
-    return insuranceResponseSchema.parse(await call(await backend()))
+    return await call(await backend())
   } catch (error) {
     throw renameFieldErrors(error, INSURANCE_FORM_FIELD_FOR)
   }
 }
 
+/**
+ * Every insurance — this screen filters them by practice, and patients,
+ * providers, coding rules and fee schedules pick and name them. The list is
+ * paged by the server, so this reads page 1, then the rest at once.
+ */
 export async function listInsurances(signal?: AbortSignal): Promise<Insurance[]> {
-  return z.array(insuranceResponseSchema).parse(await (await backend()).list(signal))
+  const api = await backend()
+  const first = await api.list(1, signal)
+  const rest = await Promise.all(
+    Array.from({ length: first.pageCount - 1 }, (_, index) => api.list(index + 2, signal)),
+  )
+  return [first, ...rest].flatMap((page) => page.insurances)
 }
 
-export function createInsurance(values: InsuranceFormValues): Promise<Insurance> {
-  return save((api) => api.create(toInsurancePayload(values)))
+export async function getInsurance(id: number, signal?: AbortSignal): Promise<InsuranceDetail> {
+  return (await backend()).get(id, signal)
 }
 
-export function updateInsurance(id: number, values: InsuranceFormValues): Promise<Insurance> {
-  return save((api) => api.update(id, toInsurancePayload(values)))
+export function createInsurance(values: InsuranceFormValues): Promise<ServerMessage> {
+  return send((api) => api.create(toInsurancePayload(values)))
+}
+
+export function updateInsurance(id: number, values: InsuranceFormValues): Promise<ServerMessage> {
+  return send((api) => api.update(id, toInsuranceUpdatePayload(values)))
+}
+
+/** Activates or deactivates an insurance: a save carrying `is_active` alone. */
+export function setInsuranceActive(id: number, isActive: boolean): Promise<ServerMessage> {
+  return send((api) => api.update(id, { is_active: isActive }))
+}
+
+export function deleteInsurance(id: number): Promise<ServerMessage> {
+  return send((api) => api.remove(id))
 }

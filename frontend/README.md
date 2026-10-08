@@ -10,11 +10,11 @@ the reference for what each screen must do.
 
 ```bash
 npm install
-cp .env.example .env.local   # no backend exists yet; the defaults are correct
 npm run dev
 ```
 
-Node 20.19+ (or 22+). The app runs without a backend: `VITE_DATA_SOURCE=mock`.
+Node 20.19+ (or 22+). `npm run dev` talks to the staging API set in `.env` — no extra setup, and no mock
+data. To point at another backend on your machine, copy `.env.example` to `.env.local`.
 
 ## Scripts
 

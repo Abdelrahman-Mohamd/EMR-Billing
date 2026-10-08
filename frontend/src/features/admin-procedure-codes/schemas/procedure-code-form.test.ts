@@ -1,32 +1,36 @@
 import { describe, expect, it } from 'vitest'
+import { procedureCodeResponseSchema } from './procedure-code'
 import {
   newProcedureCodeValues,
   procedureCodeFormSchema,
-  toProcedureCode,
   toProcedureCodeFormValues,
+  toProcedureCodePayload,
   type ProcedureCodeFormValues,
 } from './procedure-code-form'
 
-const errorsOf = (values: ProcedureCodeFormValues, existing: readonly string[] | null = []) => {
-  const result = procedureCodeFormSchema(existing).safeParse(values)
+// The first message of each field, as the form shows it.
+const errorsOf = (values: ProcedureCodeFormValues) => {
+  const result = procedureCodeFormSchema.safeParse(values)
   return result.success
     ? {}
-    : Object.fromEntries(result.error.issues.map((issue) => [issue.path.join('.'), issue.message]))
+    : Object.fromEntries(result.error.issues.reverse().map((issue) => [issue.path.join('.'), issue.message]))
 }
 const filled: ProcedureCodeFormValues = {
   ...newProcedureCodeValues(),
-  code: '97999',
-  description: 'Unlisted procedure',
-  defaultFee: '25.5',
+  code: '98110',
+  description: 'Therapeutic exercise',
+  defaultFee: '25',
+  modifierOverride: true,
+  modifiers: ['GP', 'KX', '', ''],
 }
 
-describe('procedure code form — the prototype’s checks', () => {
+describe('procedure code form — the server’s checks', () => {
   it('starts as the prototype does: Therapeutic, active, untimed, override off with four empty slots', () => {
     expect(newProcedureCodeValues()).toEqual({
       code: '',
       description: '',
       defaultFee: '',
-      procedureType: 'Therapeutic',
+      procedureType: 'therapeutic',
       isTimed: false,
       isActive: true,
       modifierOverride: false,
@@ -34,45 +38,75 @@ describe('procedure code form — the prototype’s checks', () => {
     })
   })
 
-  it('requires code, description, fee and type', () => {
+  it('requires code, description and type — not the fee', () => {
     expect(errorsOf({ ...newProcedureCodeValues(), procedureType: null })).toEqual({
       code: 'Enter the code.',
       description: 'Enter the description.',
-      defaultFee: 'Enter the default fee.',
       procedureType: 'Select a procedure type.',
     })
+    expect(errorsOf({ ...filled, defaultFee: '' })).toEqual({})
   })
 
-  it('takes a five-character code not already in the list, and an amount', () => {
+  it('takes a five-character code and an amount of at most two decimals', () => {
     expect(errorsOf({ ...filled, code: '9711' })).toEqual({ code: 'Please enter a valid code.' })
-    expect(errorsOf({ ...filled, code: '97110' }, ['97110'])).toEqual({ code: 'This code exists.' })
     expect(errorsOf({ ...filled, code: 'g0283' })).toEqual({})
     expect(errorsOf({ ...filled, defaultFee: '12.345' })).toEqual({
       defaultFee: 'Please enter a valid amount.',
     })
   })
 
-  it('does not check a code against the list when editing it', () => {
-    expect(errorsOf({ ...filled, code: '97110' }, null)).toEqual({})
-  })
-
-  it('accepts any modifiers — the client asked for no new validation', () => {
-    expect(errorsOf({ ...filled, modifierOverride: true, modifiers: ['zz', '', '9', ''] })).toEqual({})
+  it('takes modifiers of two letters or digits, and at least one while the override is on', () => {
+    expect(errorsOf({ ...filled, modifiers: ['G', '', '', ''] })).toEqual({
+      'modifiers.0': 'Enter two letters or digits.',
+    })
+    expect(errorsOf({ ...filled, modifiers: ['', '', '', ''] })).toEqual({
+      'modifiers.0': 'Add at least one modifier.',
+    })
+    expect(errorsOf({ ...filled, modifierOverride: false, modifiers: ['', '', '', ''] })).toEqual({})
   })
 })
 
-describe('saving a procedure code', () => {
-  it('keeps up to four modifiers, in capitals, only while the override is on', () => {
-    const on = toProcedureCode({ ...filled, modifierOverride: true, modifiers: ['gp', '', 'kx', '59'] })
-    expect(on.modifiers).toEqual(['GP', 'KX', '59'])
-    expect(
-      toProcedureCode({ ...filled, modifierOverride: false, modifiers: ['GP', '', '', ''] }).modifiers,
-    ).toEqual([])
+describe('procedure code payload (contract confirmed 2026-10-08)', () => {
+  it('sends the confirmed body, Timed and Active added', () => {
+    expect(toProcedureCodePayload(filled)).toEqual({
+      code: '98110',
+      description: 'Therapeutic exercise',
+      procedure_type: 'therapeutic',
+      is_timed: false,
+      modifier_override: true,
+      modifiers: ['GP', 'KX'],
+      default_fee: 25,
+      is_active: true,
+    })
   })
 
-  it('reads a saved code back into the same form, and clears “New from EMR” on save', () => {
-    const saved = { ...toProcedureCode(filled), isNewFromEmr: true }
-    expect(toProcedureCodeFormValues(saved)).toEqual({ ...filled, defaultFee: '25.50' })
-    expect(toProcedureCode(toProcedureCodeFormValues(saved)).isNewFromEmr).toBe(false)
+  it('sends no modifiers with the override off, and an empty fee as 0', () => {
+    expect(
+      toProcedureCodePayload({
+        ...filled,
+        modifierOverride: false,
+        modifiers: ['gp', '', '', ''],
+        defaultFee: '',
+      }),
+    ).toMatchObject({ modifier_override: false, modifiers: [], default_fee: 0 })
+  })
+
+  it('reads the server’s code — its fee as a string — back into the form', () => {
+    const code = procedureCodeResponseSchema.parse({
+      id: 1,
+      code: '98110',
+      description: 'Therapeutic exercise',
+      is_timed: false,
+      modifier_override: true,
+      modifiers: ['GP', 'KX'],
+      default_fee: '25.00',
+      procedure_type: 'therapeutic',
+      procedure_type_label: 'Therapeutic',
+      is_active: true,
+      created_at: '2026-10-08T15:26:38.000000Z',
+      updated_at: '2026-10-08T15:26:38.000000Z',
+    })
+    expect(code).toMatchObject({ defaultFee: 25, procedureTypeLabel: 'Therapeutic' })
+    expect(toProcedureCodeFormValues(code)).toEqual({ ...filled, defaultFee: '25.00' })
   })
 })

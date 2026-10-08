@@ -21,8 +21,11 @@ export const ICD_VERSIONS = ['ICD10', 'ICD9'] as const
 /** A class's rule defaults: every rule has a value. */
 export type ClassRules = Record<BooleanRuleKey, boolean> & { icdVersion: string }
 
+/** An insurance's yes/no rules: `null` inherits the class value. */
+export type BooleanOverrides = Record<BooleanRuleKey, boolean | null>
+
 /** An insurance's rules: `null` inherits the class value. */
-export type RuleOverrides = Record<BooleanRuleKey, boolean | null> & { icdVersion: string | null }
+export type RuleOverrides = BooleanOverrides & { icdVersion: string | null }
 
 export interface EffectiveRule {
   key: BooleanRuleKey | 'icdVersion'
@@ -51,12 +54,43 @@ export function effectiveRules(classRules: ClassRules, overrides: RuleOverrides)
 }
 
 /** True when the insurance sets at least one rule of its own. */
-export function hasOverrides(overrides: RuleOverrides): boolean {
-  return overrides.icdVersion !== null || BOOLEAN_RULES.some(({ key }) => overrides[key] !== null)
+export function hasOverrides(overrides: BooleanOverrides & { icdVersion?: string | null }): boolean {
+  return (overrides.icdVersion ?? null) !== null || BOOLEAN_RULES.some(({ key }) => overrides[key] !== null)
 }
 
-/** The insurance types the prototype offers — the claim filing indicator. */
-export const INSURANCE_TYPES = ['Commercial', 'Medicare', 'Workers Comp', 'PIP'] as const
+/** Each yes/no rule's effective value — COALESCE(insurance, class) — for the list, which has no ICD override. */
+export function effectiveBooleans(
+  classRules: Record<BooleanRuleKey, boolean>,
+  overrides: BooleanOverrides,
+): Record<BooleanRuleKey, boolean> {
+  return Object.fromEntries(
+    BOOLEAN_RULES.map(({ key }) => [key, overrides[key] ?? classRules[key]]),
+  ) as Record<BooleanRuleKey, boolean>
+}
+
+/**
+ * The insurance types the server accepts — the claim filing indicator codes —
+ * with the label it gives each (`insurance_type_label`, read on staging
+ * 2026-10-08; any other code is refused).
+ */
+export const INSURANCE_TYPES = [
+  { value: 'CI', label: 'Commercial' },
+  { value: 'MB', label: 'Medicare Part B' },
+  { value: 'MC', label: 'Medicaid' },
+  { value: 'BL', label: 'Blue Cross / Blue Shield' },
+  { value: 'HM', label: 'HMO' },
+  { value: 'WC', label: "Workers' Comp" },
+  { value: 'AM', label: 'Auto / PIP' },
+  { value: 'CH', label: 'Tricare' },
+  { value: 'VA', label: 'Veterans Affairs' },
+  { value: 'OF', label: 'Other Federal' },
+  { value: 'ZZ', label: 'Other' },
+] as const
+
+/** A type code's label; an unknown code is shown as sent. */
+export function insuranceTypeLabel(value: string): string {
+  return INSURANCE_TYPES.find((type) => type.value === value)?.label ?? value
+}
 
 /** The claim formats the prototype offers. */
 export const CLAIM_FORMATS = [

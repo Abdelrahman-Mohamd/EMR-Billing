@@ -7,6 +7,7 @@ import { Form, FormField, applyServerErrors } from '@/components/ui/Form'
 import { Input } from '@/components/ui/Input'
 import { Notice } from '@/components/ui/Notice'
 import { sendOtp, verifyOtp } from '../api/auth-api'
+import { INVALID_CODE } from '../model/messages'
 import { verifyCodeSchema, type VerifyCodeValues } from '../schemas/password-schemas'
 import { AuthEmailRow } from './AuthEmailRow'
 import { AuthSubmitButton } from './AuthSubmitButton'
@@ -45,6 +46,11 @@ export function VerifyCodeForm({
     try {
       await verifyOtp(email, values.otp)
     } catch (error) {
+      if (isApiError(error) && error.kind === 'validation' && error.fieldErrors.length === 0) {
+        // A wrong or expired code (the server names no field): its words, on the code.
+        form.setError('otp', { message: error.serverMessage ?? INVALID_CODE }, { shouldFocus: true })
+        return
+      }
       setFailure(
         isApiError(error) && error.kind === 'validation'
           ? applyServerErrors(form, error)
@@ -59,9 +65,10 @@ export function VerifyCodeForm({
     setFailure(null)
     setResending(true)
     try {
-      await sendOtp({ email })
+      const message = await sendOtp({ email })
       form.resetField('otp')
-      toast.success('A new code is on its way', 'Check your inbox for the latest one.')
+      if (message !== null) toast.success(message)
+      else toast.success('A new code is on its way', 'Check your inbox for the latest one.')
     } catch (error) {
       setFailure(userMessage(error))
     } finally {

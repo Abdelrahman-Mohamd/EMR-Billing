@@ -1,4 +1,4 @@
-import { usePractices } from '@/features/admin-practices'
+import { useLocations } from '@/features/admin-practices'
 import { useProcedureCodes } from '@/features/admin-procedure-codes'
 import { providerName, useProviders } from '@/features/admin-providers'
 import { fullName, listName, usePatientRecords } from '@/features/patients'
@@ -16,11 +16,12 @@ const same = (a: RecordRef | null, b: RecordRef) => a !== null && String(a) === 
  */
 export function useVisitReferences() {
   const records = usePatientRecords()
-  const practices = usePractices()
+  // Every location of every practice: a visit names its location.
+  const allLocations = useLocations()
   const providers = useProviders()
   const codes = useProcedureCodes()
 
-  const locations = (practices.data ?? []).flatMap((practice) => practice.locations)
+  const locations = allLocations.data ?? []
 
   const caseOf = (caseId: RecordRef) => records.cases.find((item) => same(item.id, caseId))
   const patientOf = (caseId: RecordRef) => {
@@ -30,7 +31,7 @@ export function useVisitReferences() {
 
   return {
     /** False until the lists the names come from have arrived. */
-    ready: records.ready && codes.ready && !practices.isPending && !providers.isPending,
+    ready: records.ready && !codes.isPending && !allLocations.isPending && !providers.isPending,
     caseOf,
     patientOf,
     /** "Okonkwo, Nadia". */
@@ -58,16 +59,18 @@ export function useVisitReferences() {
     },
     /** "97110" and "Therapeutic exercise". */
     procedure: (code: RecordRef) => {
-      const found = codes.codes.find((item) => item.code === String(code))
+      const found = (codes.data ?? []).find((item) => item.code === String(code))
       return { code: String(code), description: found?.description ?? '' }
     },
     /** The case's diagnosis at a pointer (1 = the first), e.g. "M54.50". */
     diagnosisAt: (caseId: RecordRef, pointer: number) => caseOf(caseId)?.diagnoses[pointer - 1]?.code ?? '',
     // Pickers for a new visit or line.
     records,
-    practices: practices.data ?? [],
+    /** A practice's locations, active or not. */
+    locationsOf: (practiceId: number | undefined) =>
+      locations.filter((location) => location.practiceId === practiceId),
     providers: providers.data ?? [],
-    codes: codes.codes,
+    codes: codes.data ?? [],
   }
 }
 

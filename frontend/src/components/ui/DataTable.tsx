@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { type CSSProperties, type ReactNode } from 'react'
 import { Link, type LinkProps } from '@tanstack/react-router'
 import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -19,6 +19,11 @@ import { EmptyState, ErrorState, SkeletonRows } from './States'
  * link or button that covers the whole row, so the row is clickable with a
  * mouse *and* reachable with a keyboard — a row that answers only to a mouse
  * is invisible to anyone who does not use one.
+ *
+ * Every column shows at every width. Below 1280px the table keeps a minimum
+ * width — about 8rem a column — and scrolls sideways inside its own box, so a
+ * phone sees the same columns as a desktop instead of a cut-down table; the
+ * page itself never scrolls sideways. From 1280px the table fits the page.
  */
 export type SortDirection = 'asc' | 'desc'
 
@@ -37,14 +42,6 @@ export interface Column<T> {
   /** Emphasised column — the name or number a user scans for. One per table. */
   primary?: boolean
   width?: string
-  /** Hidden below `sm`. Use for the columns a phone can live without. */
-  hideOnMobile?: boolean
-  /**
-   * Hidden below this breakpoint — for a secondary column that a narrower
-   * screen can do without, when the same value is visible elsewhere on the
-   * page. `hideOnMobile` is `hideBelow: 'sm'`.
-   */
-  hideBelow?: 'sm' | 'md' | 'lg' | 'xl'
   /**
    * This cell holds its own controls (a menu, a button). It is lifted above the
    * row-wide link so those controls stay clickable.
@@ -78,18 +75,8 @@ export interface DataTableProps<T> {
 
 const ALIGN = { left: 'text-left', right: 'text-right', center: 'text-center' } as const
 
-// Whole class names, so Tailwind sees them.
-const HIDE_BELOW = {
-  sm: 'hidden sm:table-cell',
-  md: 'hidden md:table-cell',
-  lg: 'hidden lg:table-cell',
-  xl: 'hidden xl:table-cell',
-} as const
-
-function hiddenBelow<T>(column: Column<T>): string | undefined {
-  const breakpoint = column.hideBelow ?? (column.hideOnMobile === true ? 'sm' : undefined)
-  return breakpoint === undefined ? undefined : HIDE_BELOW[breakpoint]
-}
+/** Below 1280px, the width a column keeps before the table scrolls instead. */
+const COLUMN_MIN_REM = 8
 
 export function DataTable<T>({
   columns,
@@ -139,7 +126,10 @@ export function DataTable<T>({
       {/* -mx-2 px-2: room inside the scroll box for the enlarged tap areas of
           the first and last cells' controls, so they never make it scroll. */}
       <div className="relative -mx-2 overflow-x-auto px-2">
-        <table className="w-full border-collapse text-left">
+        <table
+          className="w-full min-w-(--table-min) border-collapse text-left xl:min-w-0"
+          style={{ '--table-min': `${columns.length * COLUMN_MIN_REM}rem` } as CSSProperties}
+        >
           <caption className="sr-only">{caption}</caption>
           <thead>
             <tr>
@@ -164,7 +154,6 @@ export function DataTable<T>({
                     className={cn(
                       'border-rule-structural text-eyebrow text-n500 border-b px-3 pt-3.5 pb-2.5 align-bottom font-medium whitespace-nowrap uppercase first:pl-0 last:pr-0',
                       ALIGN[column.align ?? 'left'],
-                      hiddenBelow(column),
                     )}
                   >
                     {column.sortable === true && onSortChange ? (
@@ -229,7 +218,6 @@ export function DataTable<T>({
                           'border-rule-row text-micro text-n500 border-b px-3 py-[11px] align-middle first:pl-0 last:pr-0',
                           ALIGN[column.align ?? 'left'],
                           column.primary === true && 'text-meta text-ink font-medium',
-                          hiddenBelow(column),
                           column.interactive === true && 'relative z-[1]',
                         )}
                       >

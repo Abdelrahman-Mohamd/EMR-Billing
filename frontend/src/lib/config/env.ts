@@ -9,15 +9,17 @@ import { z } from 'zod'
  * See docs/SECURITY.md "Environment variables".
  */
 const envSchema = z.object({
-  /** Empty while no backend exists; the mock data source is used instead. */
+  /**
+   * The Billing API, e.g. https://api.example.test/api/v1 (set
+   * in `.env`). Empty means no backend: every request is refused as
+   * `unavailable` without being sent — what the tests use (`test.env` in vite.config.ts).
+   */
   VITE_API_BASE_URL: z.union([z.url(), z.literal('')]).default(''),
-  VITE_DATA_SOURCE: z.enum(['mock', 'live']).default('mock'),
   VITE_ENVIRONMENT: z.enum(['development', 'test', 'staging', 'production']).default('development'),
 })
 
 export type Env = {
   apiBaseUrl: string
-  dataSource: 'mock' | 'live'
   environment: 'development' | 'test' | 'staging' | 'production'
   /** True when the app is talking to a real backend. */
   isLive: boolean
@@ -33,9 +35,8 @@ export function parseEnv(raw: unknown): Env {
   const parsed = result.data
   return {
     apiBaseUrl: parsed.VITE_API_BASE_URL,
-    dataSource: parsed.VITE_DATA_SOURCE,
     environment: parsed.VITE_ENVIRONMENT,
-    isLive: parsed.VITE_DATA_SOURCE === 'live' && parsed.VITE_API_BASE_URL !== '',
+    isLive: parsed.VITE_API_BASE_URL !== '',
   }
 }
 

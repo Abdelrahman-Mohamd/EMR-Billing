@@ -6,36 +6,91 @@ import { routeTree } from '@/routeTree.gen'
 import { ApiError } from '@/lib/api/api-error'
 import { useToastStore } from '@/stores/toast-store'
 import { createTestQueryClient, renderWithProviders } from '@/test/render'
-import { createUser, listUsers, updateUser } from '../api/users-api'
-import type { User } from '../schemas/user'
+import { createUser, deleteUser, getUser, listUsers, setUserActive, updateUser } from '../api/users-api'
+import type { User, UserPage } from '../schemas/user'
 
 // Only the integration point is faked; route, queries, table, dialogs and
-// forms run for real.
-vi.mock('../api/users-api', () => ({ listUsers: vi.fn(), createUser: vi.fn(), updateUser: vi.fn() }))
+// forms run for real. `server` is what the fake backend holds, in its order,
+// paged 15 at a time as the real one does.
+vi.mock('../api/users-api', () => ({
+  listUsers: vi.fn(),
+  getUser: vi.fn(),
+  createUser: vi.fn(),
+  updateUser: vi.fn(),
+  setUserActive: vi.fn(),
+  deleteUser: vi.fn(),
+}))
+// Who is signed in: another feature's integration point, faked by path.
+const meMock = vi.hoisted(() => vi.fn())
+vi.mock('@/features/auth/api/auth-api', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getCurrentUser: meMock,
+}))
 const listMock = vi.mocked(listUsers)
+const getMock = vi.mocked(getUser)
 const createMock = vi.mocked(createUser)
 const updateMock = vi.mocked(updateUser)
+const setActiveMock = vi.mocked(setUserActive)
+const deleteMock = vi.mocked(deleteUser)
 
 const SECRET = 'Tr1cky-S3cret'
+const PER_PAGE = 15
 
-let users: User[]
+let server: User[]
+
+function page(number: number): UserPage {
+  const start = (number - 1) * PER_PAGE
+  const slice = server.slice(start, start + PER_PAGE)
+  return {
+    users: slice.map((user) => ({ ...user })),
+    page: number,
+    pageCount: Math.max(1, Math.ceil(server.length / PER_PAGE)),
+    total: server.length,
+    from: slice.length === 0 ? 0 : start + 1,
+    to: start + slice.length,
+  }
+}
 
 beforeEach(() => {
-  users = [
+  server = [
     { id: 1, name: 'Marcus Reyes', email: 'm.reyes@example.test', isActive: true },
     { id: 2, name: 'Dana Whitfield', email: 'd.whitfield@example.test', isActive: true },
     { id: 3, name: 'Owen Park', email: 'o.park@example.test', isActive: false },
   ]
-  listMock.mockReset().mockImplementation(() => Promise.resolve(structuredClone(users)))
+  listMock.mockReset().mockImplementation((number) => Promise.resolve(page(number)))
+  getMock.mockReset().mockImplementation((id) => {
+    const found = server.find((user) => user.id === id)
+    return found
+      ? Promise.resolve({ ...found })
+      : Promise.reject(new ApiError({ kind: 'not_found', message: 'Not found', status: 404 }))
+  })
+  // As the backend answers: its own message, no record.
   createMock.mockReset().mockImplementation((values) => {
-    const created = { id: 9, name: values.name, email: values.email, isActive: values.isActive }
-    users = [...users, created]
-    return Promise.resolve(created)
+    server = [...server, { id: 9, name: values.name, email: values.email, isActive: values.isActive }]
+    return Promise.resolve('User created successfully')
   })
   updateMock.mockReset().mockImplementation((id, values) => {
-    const updated = { id, name: values.name, email: values.email, isActive: values.isActive }
-    users = users.map((user) => (user.id === id ? updated : user))
-    return Promise.resolve(updated)
+    server = server.map((user) =>
+      user.id === id ? { id, name: values.name, email: values.email, isActive: values.isActive } : user,
+    )
+    return Promise.resolve('User updated successfully')
+  })
+  setActiveMock.mockReset().mockImplementation((user, isActive) => {
+    server = server.map((item) => (item.id === user.id ? { ...item, isActive } : item))
+    return Promise.resolve('User updated successfully')
+  })
+  deleteMock.mockReset().mockImplementation((id) => {
+    server = server.filter((user) => user.id !== id)
+    return Promise.resolve('User deleted successfully')
+  })
+  // Signed in as Dana (id 2).
+  meMock.mockReset().mockResolvedValue({
+    id: 2,
+    name: 'Dana Whitfield',
+    email: 'd.whitfield@example.test',
+    isActive: true,
+    createdAt: '2026-10-05T19:23:35.000000Z',
+    updatedAt: '2026-10-05T19:23:35.000000Z',
   })
 })
 afterEach(() => {
@@ -53,13 +108,20 @@ function renderAt(path = '/admin/users') {
   return { router }
 }
 
-const table = () => screen.findByRole('table', { name: 'Users' })
+const table = () => screen.findByRole('table', { name: 'Users' }, { timeout: 5000 })
 const field = (name: RegExp) => screen.getByRole('textbox', { name })
-const passwordField = () => screen.getByLabelText(/^password/i)
+const passwordField = () => screen.getByLabelText(/^(new )?password/i)
 
 async function openNew() {
-  await userEvent.click(await screen.findByRole('button', { name: 'New user' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'New user' }, { timeout: 5000 }))
   return screen.getByRole('dialog')
+}
+
+async function openEdit(name: string) {
+  await userEvent.click(await screen.findByRole('button', { name: `Edit ${name}` }, { timeout: 5000 }))
+  const dialog = screen.getByRole('dialog')
+  await within(dialog).findByRole('textbox', { name: /^name/i })
+  return dialog
 }
 
 async function fillNew(dialog: HTMLElement) {
@@ -70,7 +132,7 @@ async function fillNew(dialog: HTMLElement) {
 }
 
 describe('Admin → Users', () => {
-  it('lists users by name with email and status, under Admin', async () => {
+  it('lists users in the server order with email and status, under Admin', async () => {
     renderAt()
     // The first test pays for loading the route's code-split chunk.
     expect(
@@ -83,15 +145,13 @@ describe('Admin → Users', () => {
       .getAllByRole('row')
       .slice(1)
     expect(rows.map((row) => within(row).getAllByRole('cell')[0]?.textContent)).toEqual([
-      expect.stringContaining('Dana Whitfield'),
       expect.stringContaining('Marcus Reyes'),
+      expect.stringContaining('Dana Whitfield'),
       expect.stringContaining('Owen Park'),
     ])
-    expect(within(rows[0] as HTMLElement).getAllByText('d.whitfield@example.test').length).toBeGreaterThan(0)
+    expect(within(rows[1] as HTMLElement).getAllByText('d.whitfield@example.test').length).toBeGreaterThan(0)
     // The shared Active switch: on is Active, off is Inactive.
-    expect(
-      within(rows[0] as HTMLElement).getByRole('switch', { name: 'Dana Whitfield: active' }),
-    ).toBeChecked()
+    expect(within(rows[0] as HTMLElement).getByRole('switch', { name: 'Marcus Reyes: active' })).toBeChecked()
     expect(
       within(rows[2] as HTMLElement).getByRole('switch', { name: 'Owen Park: active' }),
     ).not.toBeChecked()
@@ -100,16 +160,30 @@ describe('Admin → Users', () => {
     expect(screen.getByText('3 users')).toBeInTheDocument()
   })
 
+  it('pages as the server does, 15 at a time', async () => {
+    server = Array.from({ length: 20 }, (_, index) => ({
+      id: index + 1,
+      name: `User ${index + 1}`,
+      email: `user${index + 1}@example.test`,
+      isActive: true,
+    }))
+    renderAt()
+    expect(await screen.findByText('Showing 1–15 of 20 users', {}, { timeout: 5000 })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(await screen.findByText('Showing 16–20 of 20 users')).toBeInTheDocument()
+    expect(listMock).toHaveBeenLastCalledWith(2, expect.anything())
+  })
+
   it('shows a loading state, a failed load with a retry, and an empty list', async () => {
     listMock.mockRejectedValueOnce(new ApiError({ kind: 'unavailable', message: 'Down.' }))
     renderAt()
-    expect(await screen.findByRole('status')).toHaveTextContent('Loading')
-    users = []
+    expect(await screen.findByRole('status', {}, { timeout: 5000 })).toHaveTextContent('Loading')
+    server = []
     await userEvent.click(await screen.findByRole('button', { name: /try again/i }))
     expect(await screen.findByText('No users yet')).toBeInTheDocument()
   })
 
-  it('creates a user with exactly the entered values, starting active', async () => {
+  it('creates a user with exactly the entered values, starting active, and says so in the server words', async () => {
     renderAt()
     const dialog = await openNew()
     expect(field(/^name/i)).toHaveAttribute('placeholder', 'Enter user name')
@@ -131,10 +205,8 @@ describe('Admin → Users', () => {
       password: SECRET,
       isActive: false,
     })
-    expect(screen.getByRole('status')).toHaveTextContent('User created')
-    const row = within(await table())
-      .getByText('Ada Lin')
-      .closest('tr') as HTMLElement
+    expect(screen.getByRole('status')).toHaveTextContent('User created successfully')
+    const row = (await within(await table()).findByText('Ada Lin')).closest('tr') as HTMLElement
     expect(within(row).getByRole('switch', { name: 'Ada Lin: active' })).not.toBeChecked()
     // The password went to the request and nowhere else on the page.
     expect(document.body).not.toHaveTextContent(SECRET)
@@ -185,29 +257,42 @@ describe('Admin → Users', () => {
     expect(logged.some((line) => line.includes(SECRET))).toBe(false)
   })
 
-  it('puts a server field error on its field', async () => {
+  it('puts the server field errors on their fields', async () => {
     createMock.mockRejectedValueOnce(
       new ApiError({
         kind: 'validation',
-        message: 'Some fields need attention.',
+        message: 'The email has already been taken. (and 1 more error)',
+        serverMessage: 'The email has already been taken. (and 1 more error)',
         status: 422,
-        fieldErrors: [{ path: 'email', message: 'The email has already been taken.' }],
+        fieldErrors: [
+          { path: 'email', message: 'The email has already been taken.' },
+          { path: 'password', message: 'The password field must be at least 8 characters.' },
+        ],
       }),
     )
     renderAt()
     const dialog = await fillNew(await openNew())
     await userEvent.click(within(dialog).getByRole('button', { name: 'Create user' }))
     expect(await within(dialog).findByText('The email has already been taken.')).toBeInTheDocument()
+    expect(within(dialog).getByText('The password field must be at least 8 characters.')).toBeInTheDocument()
     await waitFor(() => expect(field(/^email/i)).toHaveFocus())
   })
 
-  it('edits a user with no password field at all, and maps Active to the switch', async () => {
+  it('edits a user as the server has them, keeping the password unless a new one is typed', async () => {
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit Owen Park' }))
-    const dialog = screen.getByRole('dialog')
-    expect(field(/^name/i)).toHaveValue('Owen Park')
+    await table()
+    // Renamed elsewhere since the list was loaded.
+    server = server.map((user) => (user.id === 3 ? { ...user, name: 'Owen Park Jr' } : user))
+    const dialog = await openEdit('Owen Park')
+    expect(getMock).toHaveBeenCalledWith(3, expect.anything())
+    expect(field(/^name/i)).toHaveValue('Owen Park Jr')
     expect(field(/^email/i)).toHaveValue('o.park@example.test')
-    expect(within(dialog).queryByLabelText(/password/i)).not.toBeInTheDocument()
+    // An empty New password: a stored one is never shown or pre-filled.
+    expect(passwordField()).toHaveValue('')
+    expect(passwordField()).toHaveAttribute('placeholder', 'Enter a new password')
+    expect(within(dialog).getByRole('button', { name: 'About New password' })).toHaveAccessibleDescription(
+      'Leave it empty to keep the current password.',
+    )
     const active = within(dialog).getByRole('switch', { name: 'Active' })
     expect(active).not.toBeChecked()
 
@@ -215,16 +300,28 @@ describe('Admin → Users', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save user' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(updateMock).toHaveBeenCalledWith(3, {
-      name: 'Owen Park',
+      name: 'Owen Park Jr',
       email: 'o.park@example.test',
+      password: '',
       isActive: true,
     })
-    expect(screen.getByRole('status')).toHaveTextContent('User saved')
+    expect(screen.getByRole('status')).toHaveTextContent('User updated successfully')
+  })
+
+  it('sets a new password from the edit form', async () => {
+    renderAt()
+    const dialog = await openEdit('Marcus Reyes')
+    await userEvent.type(passwordField(), SECRET)
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save user' }))
+    await waitFor(() =>
+      expect(updateMock).toHaveBeenCalledWith(1, expect.objectContaining({ password: SECRET })),
+    )
+    expect(document.body).not.toHaveTextContent(SECRET)
   })
 
   it('deactivates and reactivates with the Active switch after a confirmation, changing only the status', async () => {
     renderAt()
-    const marcus = await screen.findByRole('switch', { name: 'Marcus Reyes: active' })
+    const marcus = await screen.findByRole('switch', { name: 'Marcus Reyes: active' }, { timeout: 5000 })
     await userEvent.click(marcus)
     // Asked first, as in the prototype: the switch waits for the answer.
     expect(marcus).toBeChecked()
@@ -232,13 +329,9 @@ describe('Admin → Users', () => {
     expect(confirm).toHaveTextContent('Their status becomes Inactive.')
     await userEvent.click(within(confirm).getByRole('button', { name: 'Deactivate user' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
-    expect(updateMock).toHaveBeenCalledWith(1, {
-      name: 'Marcus Reyes',
-      email: 'm.reyes@example.test',
-      isActive: false,
-    })
-
-    await waitFor(() => expect(marcus).not.toBeChecked())
+    expect(setActiveMock).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }), false)
+    expect(marcus).not.toBeChecked()
+    expect(screen.getByRole('status')).toHaveTextContent('User updated successfully')
 
     await userEvent.click(await screen.findByRole('switch', { name: 'Owen Park: active' }))
     await userEvent.click(
@@ -246,11 +339,53 @@ describe('Admin → Users', () => {
         name: 'Reactivate user',
       }),
     )
-    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2))
-    expect(updateMock).toHaveBeenLastCalledWith(3, {
-      name: 'Owen Park',
-      email: 'o.park@example.test',
-      isActive: true,
-    })
+    await waitFor(() =>
+      expect(setActiveMock).toHaveBeenLastCalledWith(expect.objectContaining({ id: 3 }), true),
+    )
+    expect(updateMock).not.toHaveBeenCalled()
+  })
+
+  it('deletes a user after asking, but offers no Delete on the signed-in user', async () => {
+    renderAt()
+    await screen.findByRole('button', { name: 'Delete Marcus Reyes' }, { timeout: 5000 })
+    // Signed in as Dana: her own row has Edit, not Delete.
+    expect(screen.getByRole('button', { name: 'Edit Dana Whitfield' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete Dana Whitfield' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Marcus Reyes' }))
+    const ask = await screen.findByRole('alertdialog', { name: 'Delete Marcus Reyes?' })
+    expect(ask).toHaveTextContent('They can no longer sign in.')
+    await userEvent.click(within(ask).getByRole('button', { name: 'Delete user' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deleteMock).toHaveBeenCalledWith(1)
+    expect(screen.getByRole('status')).toHaveTextContent('User deleted successfully')
+    await waitFor(async () =>
+      expect(within(await table()).queryByText('Marcus Reyes')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('says why when a delete is refused', async () => {
+    deleteMock.mockRejectedValueOnce(
+      new ApiError({
+        kind: 'forbidden',
+        message: 'You cannot delete this user.',
+        serverMessage: 'You cannot delete this user.',
+        status: 403,
+      }),
+    )
+    renderAt()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Owen Park' }, { timeout: 5000 }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete user' }),
+    )
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts).toEqual([
+        expect.objectContaining({
+          tone: 'error',
+          title: 'Owen Park was not deleted',
+          description: 'You cannot delete this user.',
+        }),
+      ]),
+    )
   })
 })

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import {
   useReferringPhysicians,
-  useUpdateReferringPhysician,
+  useCorrectReferringPhysicianNpi,
   type ReferringPhysician,
 } from '@/features/admin-referring-physicians'
 import { usePatientRecords, type Coverage, type PatientCase } from '@/features/patients'
@@ -216,7 +216,7 @@ export function ReferrerFix({
 }) {
   const formId = useId()
   const records = usePatientRecords()
-  const update = useUpdateReferringPhysician()
+  const update = useCorrectReferringPhysicianNpi()
   const referrers = useValidReferrers(referrer.practiceId)
   const [failure, setFailure] = useState<string | null>(null)
   const form = useForm<ReferrerFixValues>({
@@ -246,16 +246,8 @@ export function ReferrerFix({
             return
           }
           try {
-            await update.mutateAsync({
-              id: referrer.id,
-              values: {
-                practiceId: String(referrer.practiceId),
-                code: referrer.code,
-                name: referrer.name,
-                type: referrer.type,
-                npi: values.npi,
-              },
-            })
+            // The NPI alone: the rest of the profile stays as it is.
+            await update.mutateAsync({ id: referrer.id, npi: values.npi })
             onDone('Referring physician fixed', true)
           } catch (error) {
             setFailure(userMessage(error))

@@ -10,34 +10,46 @@ import type { Organization } from '@/features/admin-organizations'
 import {
   createLocation,
   createPractice,
+  deleteLocation,
+  deletePractice,
+  getPractice,
   listPractices,
+  setLocationActive,
   updateLocation,
   updatePractice,
 } from '../api/practices-api'
-import type { Location, Practice } from '../schemas/practice'
+import type { Location, Practice, PracticeSummary } from '../schemas/practice'
 
 // Only the integration points are faked — this feature's api functions and
 // the organizations list it reads (TESTING_STRATEGY §5). Route, queries,
 // tables, dialogs and forms run for real.
 vi.mock('../api/practices-api', () => ({
   listPractices: vi.fn(),
+  getPractice: vi.fn(),
+  deletePractice: vi.fn(),
   createPractice: vi.fn(),
   updatePractice: vi.fn(),
   createLocation: vi.fn(),
   updateLocation: vi.fn(),
+  setLocationActive: vi.fn(),
+  deleteLocation: vi.fn(),
 }))
 // Another feature's internals: faked by path, never imported (lint forbids it).
 const organizationsMock = vi.hoisted(() => vi.fn<() => Promise<Organization[]>>())
 vi.mock('@/features/admin-organizations/api/organizations-api', () => ({
-  listOrganizations: organizationsMock,
+  listAllOrganizations: organizationsMock,
   createOrganization: vi.fn(),
   updateOrganization: vi.fn(),
 }))
 const listMock = vi.mocked(listPractices)
+const getMock = vi.mocked(getPractice)
+const deleteMock = vi.mocked(deletePractice)
 const createPracticeMock = vi.mocked(createPractice)
 const updatePracticeMock = vi.mocked(updatePractice)
 const createLocationMock = vi.mocked(createLocation)
 const updateLocationMock = vi.mocked(updateLocation)
+const setActiveMock = vi.mocked(setLocationActive)
+const deleteLocationMock = vi.mocked(deleteLocation)
 
 function makeLocation(overrides: Partial<Location> = {}): Location {
   return {
@@ -54,9 +66,12 @@ function makeLocation(overrides: Partial<Location> = {}): Location {
 }
 
 function makePractice(overrides: Partial<Practice> = {}): Practice {
+  const { organizationName = 'Harborline Rehab Group', ...rest } = overrides
   return {
     id: 1,
     organizationId: 1,
+    // The record names its organization; one in none has no name.
+    ...(rest.organizationId === null ? {} : { organizationName }),
     code: 'HPT1',
     name: 'Harborline Physical Therapy',
     dbaName: 'Harborline PT',
@@ -66,8 +81,13 @@ function makePractice(overrides: Partial<Practice> = {}): Practice {
     address: { line1: '8622 5th Avenue', line2: 'Suite 2', city: 'Brooklyn', state: 'NY', zip: '11209' },
     isActive: true,
     locations: [],
-    ...overrides,
+    ...rest,
   }
+}
+
+/** What the list carries: no DBA, address or locations — only their count. */
+function summaryOf({ dbaName: _dba, address: _address, locations, ...practice }: Practice): PracticeSummary {
+  return { ...practice, locationsCount: locations.length }
 }
 
 let practices: Practice[]
@@ -97,27 +117,61 @@ beforeEach(() => {
     }),
   ]
   organizations = [
-    { id: 1, name: 'Harborline Rehab Group', isActive: true },
-    { id: 2, name: 'Alder Therapy Partners', isActive: false },
+    {
+      id: 1,
+      name: 'Harborline Rehab Group',
+      isActive: true,
+      practicesCount: 1,
+      createdAt: '2026-10-07T16:06:23.000000Z',
+    },
+    {
+      id: 2,
+      name: 'Alder Therapy Partners',
+      isActive: false,
+      practicesCount: 0,
+      createdAt: '2026-10-07T16:06:23.000000Z',
+    },
   ]
-  listMock.mockReset().mockImplementation(() => Promise.resolve(structuredClone(practices)))
+  listMock.mockReset().mockImplementation(() => Promise.resolve(practices.map(summaryOf)))
+  getMock.mockReset().mockImplementation((id) => {
+    const found = practices.find((practice) => practice.id === id)
+    return found
+      ? Promise.resolve(structuredClone(found))
+      : Promise.reject(new ApiError({ kind: 'not_found', message: 'Not found', status: 404 }))
+  })
   organizationsMock.mockReset().mockImplementation(() => Promise.resolve(structuredClone(organizations)))
   createPracticeMock.mockReset().mockImplementation((values) => {
-    const created = makePractice({ id: 3, name: values.name, code: values.code, organizationId: null })
-    practices = [...practices, created]
-    return Promise.resolve(created)
+    // As the backend answers: no record back.
+    practices = [
+      ...practices,
+      makePractice({ id: 3, name: values.name, code: values.code, organizationId: null }),
+    ]
+    return Promise.resolve(null)
   })
-  updatePracticeMock.mockReset().mockImplementation((id) => Promise.resolve(makePractice({ id })))
+  updatePracticeMock.mockReset().mockImplementation(() => Promise.resolve(null))
+  deleteMock.mockReset().mockImplementation((id) => {
+    practices = practices.filter((practice) => practice.id !== id)
+    return Promise.resolve(null)
+  })
   createLocationMock.mockReset().mockImplementation((practiceId, values) => {
     const created = makeLocation({ id: 9, practiceId, code: values.code, name: values.name })
     practices = practices.map((p) =>
       p.id === practiceId ? { ...p, locations: [...p.locations, created] } : p,
     )
-    return Promise.resolve(created)
+    return Promise.resolve(null)
   })
-  updateLocationMock
-    .mockReset()
-    .mockImplementation((id, practiceId) => Promise.resolve(makeLocation({ id, practiceId })))
+  updateLocationMock.mockReset().mockImplementation(() => Promise.resolve(null))
+  setActiveMock.mockReset().mockImplementation((id, isActive) => {
+    practices = practices.map((p) => ({
+      ...p,
+      locations: p.locations.map((l) => (l.id === id ? { ...l, isActive } : l)),
+    }))
+    return Promise.resolve(null)
+  })
+  deleteLocationMock.mockReset().mockImplementation((id) => {
+    practices = practices.map((p) => ({ ...p, locations: p.locations.filter((l) => l.id !== id) }))
+    return Promise.resolve(null)
+  })
 })
 afterEach(() => {
   useToastStore.getState().clear()
@@ -172,16 +226,17 @@ describe('Admin → Practices & locations: practices', () => {
       expect.stringContaining('Harborline Physical Therapy'),
       expect.stringContaining('Northgate Sports & Spine'),
     ])
-    // A tile tells practices apart — name, code, active locations (Park Slope
-    // is inactive) — without repeating the identifiers shown below it.
+    // A tile tells practices apart — name, code, how many locations (the list's
+    // count, inactive Park Slope included) — without repeating the identifiers
+    // shown below it.
     expect(tiles[0]).toHaveTextContent('HPT1')
-    expect(tiles[0]).toHaveTextContent('1 location')
+    expect(tiles[0]).toHaveTextContent('2 locations')
     expect(tiles[0]).not.toHaveTextContent('1609847312')
     // The first practice is the one on show, and its tile says so.
     expect(tiles[0]).toHaveAttribute('aria-current', 'page')
     expect(tiles[1]).not.toHaveAttribute('aria-current')
 
-    const details = screen.getByRole('region', { name: 'Harborline Physical Therapy' })
+    const details = await screen.findByRole('region', { name: 'Harborline Physical Therapy' })
     expect(within(details).getByRole('heading', { level: 2 })).toHaveTextContent(
       'Harborline Physical Therapy',
     )
@@ -255,7 +310,7 @@ describe('Admin → Practices & locations: practices', () => {
     ).toBeInTheDocument()
   })
 
-  it('creates a practice together with its first location, then opens it', async () => {
+  it('creates a practice together with its first location, then lists it', async () => {
     const { router } = renderAt()
     await userEvent.click(await screen.findByRole('button', { name: 'New practice' }))
     const dialog = screen.getByRole('dialog')
@@ -298,10 +353,13 @@ describe('Admin → Practices & locations: practices', () => {
       },
     })
     expect(screen.getByRole('status')).toHaveTextContent('Cedar Valley Therapy created')
-    await waitFor(() => expect(router.state.location.search).toEqual({ practice: 3 }))
-    expect(await screen.findByRole('heading', { level: 2, name: 'Cedar Valley Therapy' })).toBeInTheDocument()
+    // The response carries no record to open, so the list is read again and shows it; the
+    // practice on screen stays the one that was open.
+    await waitFor(() => expect(listMock.mock.calls.length).toBeGreaterThan(1))
+    expect(await screen.findByText('Cedar Valley Therapy')).toBeInTheDocument()
+    expect(router.state.location.search).not.toHaveProperty('practice', 3)
     // Two full addresses typed key by key: slower than the default five seconds.
-  }, 15_000)
+  }, 30_000) // A long form, typed key by key.
 
   it('explains optional context from info icons beside the labels, not as loose notes', async () => {
     renderAt()
@@ -386,7 +444,7 @@ describe('Admin → Practices & locations: practices', () => {
     await waitFor(() => expect(createPracticeMock).toHaveBeenCalledTimes(1))
     expect(createPracticeMock.mock.calls[0]?.[0]).toMatchObject({ organizationId: '1' })
     // Two full addresses typed key by key: slower than the default five seconds.
-  }, 15_000)
+  }, 30_000) // A long form, typed key by key.
 
   it('edits a practice with its values filled in, keeping an inactive organization visible', async () => {
     practices = [makePractice({ organizationId: 2 })]
@@ -437,7 +495,7 @@ describe('Admin → Practices & locations: locations', () => {
     renderAt()
     const table = await screen.findByRole('table', { name: 'Locations' })
     const bayRidge = within(table).getByText('Bay Ridge').closest('tr') as HTMLElement
-    expect(bayRidge).toHaveTextContent('BR003 · 8622 5th Avenue, Brooklyn 11209')
+    expect(bayRidge).toHaveTextContent('8622 5th Avenue, Brooklyn 11209')
     expect(bayRidge).toHaveTextContent('11 — Office')
     expect(within(bayRidge).getByRole('switch', { name: 'Bay Ridge: active' })).toBeChecked()
     const parkSlope = within(table).getByText('Park Slope').closest('tr') as HTMLElement
@@ -495,21 +553,21 @@ describe('Admin → Practices & locations: locations', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(updateLocationMock).toHaveBeenCalledWith(
       1,
-      1,
       expect.objectContaining({ code: 'BR003', isActive: false }),
     )
   })
 
-  it('keeps a location without a place of service without one', async () => {
+  it('asks for a place of service: the server keeps one on every location', async () => {
     renderAt()
     await userEvent.click(await screen.findByRole('button', { name: 'Edit Park Slope' }))
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByRole('combobox', { name: /default place of service/i })).toHaveTextContent(
-      'Select place of service',
-    )
+    const pos = within(dialog).getByRole('combobox', { name: /default place of service/i })
+    expect(pos).toHaveTextContent('Select place of service')
+    // Nothing to clear it with.
+    expect(within(dialog).queryByRole('button', { name: /clear/i })).not.toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save location' }))
-    await waitFor(() => expect(updateLocationMock).toHaveBeenCalledTimes(1))
-    expect(updateLocationMock.mock.calls[0]?.[2]).toMatchObject({ placeOfService: null })
+    expect(await within(dialog).findByText('Select the place of service.')).toBeInTheDocument()
+    expect(updateLocationMock).not.toHaveBeenCalled()
   })
 
   it('puts a duplicate location code rejected by the server on the code field', async () => {
@@ -545,14 +603,8 @@ describe('Admin → Practices & locations: locations', () => {
     await userEvent.click(within(confirm).getByRole('button', { name: 'Deactivate' }))
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
-    expect(updateLocationMock).toHaveBeenCalledWith(1, 1, {
-      code: 'BR003',
-      name: 'Bay Ridge',
-      npi: '1609847312',
-      address: { line1: '8622 5th Avenue', city: 'Brooklyn', state: 'NY', zip: '11209' },
-      placeOfService: '11',
-      isActive: false,
-    })
+    expect(setActiveMock).toHaveBeenCalledWith(1, false)
+    expect(updateLocationMock).not.toHaveBeenCalled()
     expect(screen.getByRole('status')).toHaveTextContent('Bay Ridge deactivated')
   })
 
@@ -562,7 +614,7 @@ describe('Admin → Practices & locations: locations', () => {
     const confirm = screen.getByRole('alertdialog', { name: 'Reactivate Park Slope?' })
     await userEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
-    expect(updateLocationMock).not.toHaveBeenCalled()
+    expect(setActiveMock).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('switch', { name: 'Park Slope: active' }))
     await userEvent.click(
@@ -570,12 +622,11 @@ describe('Admin → Practices & locations: locations', () => {
         name: 'Reactivate',
       }),
     )
-    await waitFor(() => expect(updateLocationMock).toHaveBeenCalledTimes(1))
-    expect(updateLocationMock.mock.calls[0]?.[2]).toMatchObject({ isActive: true, placeOfService: null })
+    await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith(2, true))
   })
 
   it('says so when a status change fails', async () => {
-    updateLocationMock.mockRejectedValueOnce(new ApiError({ kind: 'unavailable', message: 'Down.' }))
+    setActiveMock.mockRejectedValueOnce(new ApiError({ kind: 'unavailable', message: 'Down.' }))
     renderAt()
     await userEvent.click(await screen.findByRole('switch', { name: 'Bay Ridge: active' }))
     await userEvent.click(
@@ -595,4 +646,137 @@ describe('Admin → Practices & locations: locations', () => {
     expect(updateLocationMock).not.toHaveBeenCalled()
     await waitFor(() => expect(opener).toHaveFocus())
   })
+
+  it('deletes a practice after asking, then shows the first practice', async () => {
+    const { router } = renderAt('/admin/practices?practice=2')
+    await screen.findByRole('region', { name: 'Northgate Sports & Spine' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Delete practice' }))
+    const ask = await screen.findByRole('alertdialog', { name: 'Delete Northgate Sports & Spine?' })
+    expect(ask).toHaveTextContent('Its location is deleted with it.')
+    await userEvent.click(within(ask).getByRole('button', { name: 'Delete practice' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deleteMock).toHaveBeenCalledWith(2)
+    expect(screen.getByRole('status')).toHaveTextContent('Northgate Sports & Spine deleted')
+    await waitFor(() => expect(router.state.location.search).toEqual({}))
+    expect(await screen.findByRole('region', { name: 'Harborline Physical Therapy' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('navigation', { name: 'Practices' })).queryByText('Northgate Sports & Spine'),
+      ).not.toBeInTheDocument(),
+    )
+  }, 15_000)
+
+  it('keeps the practice when the delete is cancelled or refused', async () => {
+    renderAt()
+    await screen.findByRole('region', { name: 'Harborline Physical Therapy' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Delete practice' }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }),
+    )
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deleteMock).not.toHaveBeenCalled()
+
+    deleteMock.mockRejectedValueOnce(
+      new ApiError({ kind: 'validation', message: 'This practice still has visits.', status: 422 }),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Delete practice' }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete practice' }),
+    )
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts).toEqual([
+        expect.objectContaining({
+          tone: 'error',
+          title: 'Harborline Physical Therapy was not deleted',
+          description: 'This practice still has visits.',
+        }),
+      ]),
+    )
+    expect(screen.getByRole('region', { name: 'Harborline Physical Therapy' })).toBeInTheDocument()
+  }, 15_000)
+
+  it('deletes a location after asking, and the list follows', async () => {
+    renderAt()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Park Slope' }, { timeout: 5000 }))
+    const ask = await screen.findByRole('alertdialog', { name: 'Delete Park Slope?' })
+    await userEvent.click(within(ask).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deleteLocationMock).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Park Slope' }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog', { name: 'Delete Park Slope?' })).getByRole('button', {
+        name: 'Delete location',
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deleteLocationMock).toHaveBeenCalledWith(2)
+    expect(screen.getByRole('status')).toHaveTextContent('Park Slope deleted')
+    await waitFor(() => expect(within(locationsTable()).queryByText('Park Slope')).not.toBeInTheDocument())
+    expect(within(locationsTable()).getByText('Bay Ridge')).toBeInTheDocument()
+  }, 15_000)
+
+  it('says so when a location delete is refused', async () => {
+    deleteLocationMock.mockRejectedValueOnce(
+      new ApiError({ kind: 'validation', message: 'This location has visits.', status: 422 }),
+    )
+    renderAt()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Bay Ridge' }, { timeout: 5000 }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete location' }),
+    )
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts).toEqual([
+        expect.objectContaining({
+          tone: 'error',
+          title: 'Bay Ridge was not deleted',
+          description: 'This location has visits.',
+        }),
+      ]),
+    )
+    expect(within(locationsTable()).getByText('Bay Ridge')).toBeInTheDocument()
+  }, 15_000)
+
+  it('shows the server message on success, and its reason when it refuses', async () => {
+    deleteLocationMock.mockImplementationOnce((id) => {
+      practices = practices.map((p) => ({ ...p, locations: p.locations.filter((l) => l.id !== id) }))
+      return Promise.resolve('Location deleted successfully')
+    })
+    renderAt()
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Park Slope' }, { timeout: 5000 }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete location' }),
+    )
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts).toEqual([
+        expect.objectContaining({ tone: 'success', title: 'Location deleted successfully' }),
+      ]),
+    )
+
+    // The backend's answer for a practice's last location (it names no form field).
+    deleteLocationMock.mockRejectedValueOnce(
+      new ApiError({
+        kind: 'validation',
+        message: 'A practice must have at least one location; this is its last one.',
+        serverMessage: 'A practice must have at least one location; this is its last one.',
+        status: 422,
+        fieldErrors: [
+          { path: 'location', message: 'A practice must have at least one location; this is its last one.' },
+        ],
+      }),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Bay Ridge' }))
+    await userEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete location' }),
+    )
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.at(-1)).toEqual(
+        expect.objectContaining({
+          tone: 'error',
+          description: 'A practice must have at least one location; this is its last one.',
+        }),
+      ),
+    )
+  }, 15_000)
 })

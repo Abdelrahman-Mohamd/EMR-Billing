@@ -12,6 +12,15 @@ import { signIn } from '../api/auth-api'
 // server would have answered.
 vi.mock('../api/auth-api', () => ({ signIn: vi.fn() }))
 const signInMock = vi.mocked(signIn)
+/** The user a login returns (the contract's fields). */
+const USER = {
+  id: 1,
+  name: 'Dana Whitfield',
+  email: 'd.whitfield@example.test',
+  isActive: true,
+  createdAt: '2026-10-05T19:23:35.000000Z',
+  updatedAt: '2026-10-05T19:23:35.000000Z',
+}
 
 function renderSignIn(path = '/login') {
   const queryClient = createTestQueryClient()
@@ -88,7 +97,7 @@ describe('sign-in page', () => {
   })
 
   it('submits from the keyboard with Enter', async () => {
-    signInMock.mockResolvedValue(undefined)
+    signInMock.mockResolvedValue(USER)
     renderSignIn()
     await screen.findByRole('heading', { level: 1 })
     await userEvent.type(email(), '  d.whitfield@example.test ')
@@ -103,7 +112,7 @@ describe('sign-in page', () => {
   })
 
   it('goes to the start page after signing in', async () => {
-    signInMock.mockResolvedValue(undefined)
+    signInMock.mockResolvedValue(USER)
     const { router } = renderSignIn()
     await screen.findByRole('heading', { level: 1 })
     await fillAndSubmit()
@@ -111,7 +120,7 @@ describe('sign-in page', () => {
   })
 
   it('returns to the page that sent the user here', async () => {
-    signInMock.mockResolvedValue(undefined)
+    signInMock.mockResolvedValue(USER)
     const { router } = renderSignIn('/login?redirect=%2Fdev%2Fui')
     await screen.findByRole('heading', { level: 1 })
     await fillAndSubmit()
@@ -119,15 +128,24 @@ describe('sign-in page', () => {
   })
 
   it('ignores a redirect that would leave the application', async () => {
-    signInMock.mockResolvedValue(undefined)
+    signInMock.mockResolvedValue(USER)
     const { router } = renderSignIn('/login?redirect=%2F%2Fevil.example')
     await screen.findByRole('heading', { level: 1 })
     await fillAndSubmit()
     await waitFor(() => expect(router.state.location.pathname).toBe('/patients'))
   })
 
+  it('keeps the user the login returned as who is signed in', async () => {
+    signInMock.mockResolvedValue(USER)
+    const { queryClient, router } = renderSignIn()
+    await screen.findByRole('heading', { level: 1 })
+    await fillAndSubmit()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/patients'))
+    expect(queryClient.getQueryData(['auth', 'current-user'])).toEqual(USER)
+  })
+
   it('drops whatever the previous session had cached', async () => {
-    signInMock.mockResolvedValue(undefined)
+    signInMock.mockResolvedValue(USER)
     const { queryClient } = renderSignIn()
     queryClient.setQueryData(['claims', 'list'], [{ id: 'from-the-last-user' }])
     await screen.findByRole('heading', { level: 1 })
@@ -137,7 +155,7 @@ describe('sign-in page', () => {
 
   it('shows that it is working, and cannot be sent twice', async () => {
     let finish: () => void = () => undefined
-    signInMock.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)))
+    signInMock.mockImplementation(() => new Promise((resolve) => (finish = () => resolve(USER))))
     renderSignIn()
     await screen.findByRole('heading', { level: 1 })
     await fillAndSubmit()

@@ -1,64 +1,77 @@
 import { useState } from 'react'
 import { Plus, Users } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { DataTable, type Column } from '@/components/ui/DataTable'
+import { ConfirmDialog } from '@/components/ui/Dialog'
+import { Pagination } from '@/components/ui/Pagination'
 import { RowActionButton, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
-import { useUsers } from '../queries/use-users'
+import { useCurrentUser } from '@/features/auth'
+import { isApiError, userMessage } from '@/lib/api/api-error'
+import { toast } from '@/stores/toast-store'
+import { useDeleteUser, useUsersPage } from '../queries/use-users'
 import type { User } from '../schemas/user'
 import { UserDialog } from './UserDialog'
 import { UserStatusDialog } from './UserStatusDialog'
 
 /** What is open over the list. One at a time. */
-type Open = { kind: 'form'; user: User | null } | { kind: 'status'; user: User }
+type Open =
+  { kind: 'form'; user: User | null } | { kind: 'status'; user: User } | { kind: 'delete'; user: User }
 
 /**
  * Admin → Users: who can sign in, as the prototype lists them — name and
- * email, and the shared Active switch and Edit action
- * (components/ui/RowActions); the switch deactivates or reactivates the user
- * after a confirmation, as the prototype's row action does. No password is in
- * the list data at all.
+ * email, and the shared Active switch, Edit and Delete actions
+ * (components/ui/RowActions). The switch deactivates or reactivates the user
+ * after a confirmation, as the prototype's row action does; Delete asks first
+ * too. No password is in the list data at all.
  *
- * Not shown, because the payload has none of it: roles, practice and location
- * grants, username, service-account flag. Not built: delete (the prototype has
- * none), hiding the actions on one's own row (there is no current-user
- * information yet), and search (the prototype has none).
+ * The list is the server's: 15 a page, in the server's order, with a pager —
+ * no sort or search parameter is part of the contract, so the name column
+ * does not sort (sorting one page would misstate the whole list).
  *
- * The list is not paged: no API defines paging. It is sorted here, by name, as
- * the prototype sorts it.
+ * The signed-in user's own row offers no Delete (`GET /auth/me` says who that
+ * is). The server decides what anyone may do regardless.
+ *
+ * Not shown, because the backend has none of it: roles, practice and location
+ * grants, username, service-account flag.
  */
 export function UsersScreen() {
-  const users = useUsers()
+  const [page, setPage] = useState(1)
+  const users = useUsersPage(page)
+  const me = useCurrentUser()
+  const remove = useDeleteUser()
   const [open, setOpen] = useState<Open | null>(null)
-  const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
 
-  const rows = [...(users.data ?? [])].sort((a, b) => {
-    const order = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    return sort.direction === 'asc' ? order : -order
-  })
+  const rows = users.data?.users ?? []
+  const total = users.data?.total ?? 0
+  const pageCount = users.data?.pageCount ?? 1
+
+  const confirmDelete = async (user: User) => {
+    try {
+      const message = await remove.mutateAsync(user.id)
+      toast.success(message ?? `${user.name} deleted`)
+      // The last row of the last page: step back rather than show an empty page.
+      if (rows.length === 1 && page > 1) setPage(page - 1)
+    } catch (error) {
+      toast.error(
+        `${user.name} was not deleted`,
+        isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+      )
+    }
+  }
 
   const columns: ReadonlyArray<Column<User>> = [
     {
       key: 'name',
       header: 'Name',
       primary: true,
-      sortable: true,
-      cell: (user) => (
-        <span className="block [overflow-wrap:anywhere]">
-          {user.name}
-          {/* On a phone the email column is hidden; the address rides here. */}
-          <span className="sm:hidden">
-            <CellSub>{user.email}</CellSub>
-          </span>
-        </span>
-      ),
+      cell: (user) => <span className="block break-words">{user.name}</span>,
     },
     {
       key: 'email',
       header: 'Email',
-      hideOnMobile: true,
-      cell: (user) => <span className="[overflow-wrap:anywhere]">{user.email}</span>,
+      cell: (user) => <span className="break-words">{user.email}</span>,
     },
     activeColumn<User>({
       isActive: (user) => user.isActive,
@@ -67,11 +80,20 @@ export function UsersScreen() {
       onChange: (user) => setOpen({ kind: 'status', user }),
     }),
     actionsColumn<User>((user) => (
-      <RowActionButton
-        action="edit"
-        label={`Edit ${user.name}`}
-        onClick={() => setOpen({ kind: 'form', user })}
-      />
+      <>
+        <RowActionButton
+          action="edit"
+          label={`Edit ${user.name}`}
+          onClick={() => setOpen({ kind: 'form', user })}
+        />
+        {user.id !== me.data?.id && (
+          <RowActionButton
+            action="delete"
+            label={`Delete ${user.name}`}
+            onClick={() => setOpen({ kind: 'delete', user })}
+          />
+        )}
+      </>
     )),
   ]
 
@@ -84,6 +106,13 @@ export function UsersScreen() {
       {label}
     </Button>
   )
+
+  const summary =
+    pageCount <= 1
+      ? total === 1
+        ? '1 user'
+        : `${total} users`
+      : `Showing ${users.data?.from ?? 0}–${users.data?.to ?? 0} of ${total} users`
 
   return (
     <PageContainer>
@@ -101,8 +130,6 @@ export function UsersScreen() {
         loading={users.isPending}
         error={users.isError}
         onRetry={() => void users.refetch()}
-        sort={sort}
-        onSortChange={setSort}
         empty={
           <EmptyState
             icon={<Users size={20} />}
@@ -111,7 +138,11 @@ export function UsersScreen() {
             action={newUser('New user')}
           />
         }
-        footer={<span>{rows.length === 1 ? '1 user' : `${rows.length} users`}</span>}
+        footer={
+          total > 0 ? (
+            <Pagination page={page} pageCount={pageCount} onPageChange={setPage} summary={summary} />
+          ) : undefined
+        }
       />
 
       {open?.kind === 'form' && (
@@ -120,6 +151,17 @@ export function UsersScreen() {
       {open?.kind === 'status' && (
         <UserStatusDialog key={open.user.id} user={open.user} onClose={() => setOpen(null)} />
       )}
+      <ConfirmDialog
+        open={open?.kind === 'delete'}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setOpen(null)
+        }}
+        title={`Delete ${open?.kind === 'delete' ? open.user.name : ''}?`}
+        description="They can no longer sign in."
+        confirmLabel="Delete user"
+        tone="destructive"
+        onConfirm={() => (open?.kind === 'delete' ? confirmDelete(open.user) : undefined)}
+      />
     </PageContainer>
   )
 }

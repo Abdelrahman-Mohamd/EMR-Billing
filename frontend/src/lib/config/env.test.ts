@@ -2,28 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { parseEnv } from './env'
 
 describe('environment configuration', () => {
-  it('treats an empty API base URL as "no backend yet"', () => {
-    const env = parseEnv({ VITE_API_BASE_URL: '', VITE_DATA_SOURCE: 'mock', VITE_ENVIRONMENT: 'development' })
+  it('treats an empty API base URL as "no backend": nothing is sent', () => {
+    const env = parseEnv({ VITE_API_BASE_URL: '', VITE_ENVIRONMENT: 'test' })
     expect(env.isLive).toBe(false)
   })
 
-  it('is not live while the data source is mock, even with a base URL set', () => {
+  it('talks to the backend whenever its base URL is set — there is no mock data source', () => {
     const env = parseEnv({
-      VITE_API_BASE_URL: 'https://api.example.com',
-      VITE_DATA_SOURCE: 'mock',
+      VITE_API_BASE_URL: 'https://api.example.test/api/v1',
       VITE_ENVIRONMENT: 'staging',
     })
-    expect(env.isLive).toBe(false)
-  })
-
-  it('is live only with both a data source and a base URL', () => {
-    const env = parseEnv({
-      VITE_API_BASE_URL: 'https://api.example.com',
-      VITE_DATA_SOURCE: 'live',
-      VITE_ENVIRONMENT: 'production',
-    })
     expect(env.isLive).toBe(true)
-    expect(env.apiBaseUrl).toBe('https://api.example.com')
+    expect(env.apiBaseUrl).toBe('https://api.example.test/api/v1')
   })
 
   it('rejects an unknown environment name instead of guessing', () => {

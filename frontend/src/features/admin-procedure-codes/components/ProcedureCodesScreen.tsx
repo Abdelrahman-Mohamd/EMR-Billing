@@ -1,15 +1,23 @@
 import { useState } from 'react'
 import { Hash, Plus } from 'lucide-react'
-import { Badge, StatusDot, Tag } from '@/components/ui/Badge'
+import { isApiError, userMessage } from '@/lib/api/api-error'
+import { toast } from '@/stores/toast-store'
+import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Pagination } from '@/components/ui/Pagination'
-import { RowActionButton, actionsColumn, activeColumn } from '@/components/ui/RowActions'
+import { RowActionButton, actionsColumn, StatusChangeDialog, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
 import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
-import { useProcedureCodes } from '../data/procedure-code-store'
 import { formatMoney } from '@/lib/utils/money'
-import type { ProcedureCode } from '../model/procedure-code'
+import { procedureTypeName } from '../model/procedure-code'
+import {
+  useDeleteProcedureCode,
+  useProcedureCodes,
+  useSetProcedureCodeActive,
+} from '../queries/use-procedure-codes'
+import type { ProcedureCode } from '../schemas/procedure-code'
 import { ProcedureCodeDialog } from './ProcedureCodeDialog'
 
 /** The prototype pages the list 20 codes at a time. */
@@ -17,22 +25,27 @@ const PAGE_SIZE = 20
 
 /**
  * Setup → Procedure codes, as the prototype has it: one list shared by every
- * practice — code (marked when new from the EMR), description, type, timed,
- * modifier override, default fee (marked at $0.00), status — sorted by code,
- * 20 a page, each row opening the code to edit; and "New code". No search,
- * filter or delete: the prototype has none.
+ * practice — code, description, type, timed, modifier override, default fee
+ * (marked at $0.00), Active (asks first) — sorted by code, 20 a page; Edit and
+ * Delete; and "New code". No search or filter: the prototype has none. The
+ * prototype's "New from EMR" mark is not in the contract, so it is left out.
  *
- * **Frontend only.** There is no backend for procedure codes: the list lives
- * in this browser tab (`data/procedure-code-store.ts`). That is architecture, not
- * product: the screen shows no message about it.
+ * Every code is read (all of the server's pages — fee schedules, coding rules
+ * and visits pick from the same list) and sorted and paged here.
  *
  * Not built: the prototype limits editing to a System Admin; there is no
  * permission model here yet (docs/FRONTEND_ARCHITECTURE.md §8).
  */
 export function ProcedureCodesScreen() {
-  const { ready, codes, save } = useProcedureCodes()
+  const procedureCodes = useProcedureCodes()
+  const codes = procedureCodes.data ?? []
+  const setActive = useSetProcedureCodeActive()
+  const remove = useDeleteProcedureCode()
   /** `undefined`: no dialog. `null`: adding. A code: editing it. */
   const [editing, setEditing] = useState<ProcedureCode | null | undefined>(undefined)
+  /** The row whose Active switch was flipped, waiting for confirmation. */
+  const [statusOf, setStatusOf] = useState<ProcedureCode | null>(null)
+  const [deleting, setDeleting] = useState<ProcedureCode | null>(null)
   const [sort, setSort] = useState<Sort>({ key: 'code', direction: 'asc' })
   const [page, setPage] = useState(1)
 
@@ -41,7 +54,7 @@ export function ProcedureCodesScreen() {
     const text = (left: string, right: string) =>
       left.localeCompare(right, undefined, { sensitivity: 'base' })
     if (sort.key === 'description') return text(a.description, b.description)
-    if (sort.key === 'procedureType') return text(a.procedureType, b.procedureType)
+    if (sort.key === 'procedureType') return text(procedureTypeName(a), procedureTypeName(b))
     return text(a.code, b.code)
   }
   const sorted = [...codes].sort((a, b) => (sort.direction === 'asc' ? compare(a, b) : -compare(a, b)))
@@ -77,43 +90,13 @@ export function ProcedureCodesScreen() {
       header: 'Code',
       primary: true,
       sortable: true,
-      cell: (code) => (
-        <span className="block">
-          <span className="inline-flex flex-wrap items-center gap-1.5">
-            <span className="font-medium whitespace-nowrap">{code.code}</span>
-            {code.isNewFromEmr && <Badge tone="warning">New from EMR</Badge>}
-          </span>
-          {/* On a phone, where their columns are hidden, the description and fee ride under the code. */}
-          <span className="sm:hidden">
-            <CellSub>
-              <span className="[overflow-wrap:anywhere]">{code.description}</span>
-              <span aria-hidden="true"> · </span>
-              {code.defaultFee > 0 ? formatMoney(code.defaultFee) : `${formatMoney(0)} fee`}
-            </CellSub>
-          </span>
-          {/* Until the type and override columns appear, they ride under the code. */}
-          <span className="xl:hidden">
-            <CellSub>
-              {code.procedureType}
-              <span aria-hidden="true"> · </span>
-              {code.isTimed ? 'Timed' : 'Untimed'}
-              {code.modifierOverride && code.modifiers.length > 0 && (
-                <>
-                  <span aria-hidden="true"> · </span>
-                  Override {code.modifiers.join(' · ')}
-                </>
-              )}
-            </CellSub>
-          </span>
-        </span>
-      ),
+      cell: (code) => <span className="font-medium whitespace-nowrap">{code.code}</span>,
     },
     {
       key: 'description',
       header: 'Description',
       sortable: true,
-      hideOnMobile: true,
-      cell: (code) => <span className="[overflow-wrap:anywhere]">{code.description}</span>,
+      cell: (code) => <span className="break-words">{code.description}</span>,
     },
     {
       // The prototype's Type and "Timed (8-minute rule)" columns, as one: there
@@ -121,34 +104,39 @@ export function ProcedureCodesScreen() {
       key: 'procedureType',
       header: 'Type',
       sortable: true,
-      hideBelow: 'xl',
       cell: (code) => (
         <span className="block whitespace-nowrap">
-          {code.procedureType}
+          {procedureTypeName(code)}
           <CellSub>{code.isTimed ? 'Timed (8-minute rule)' : 'Untimed'}</CellSub>
         </span>
       ),
     },
-    { key: 'modifiers', header: 'Modifier override', hideBelow: 'xl', cell: override },
+    { key: 'modifiers', header: 'Modifier override', cell: override },
     {
       key: 'defaultFee',
       header: 'Default fee',
       sortable: true,
-      hideOnMobile: true,
       cell: fee,
     },
     activeColumn<ProcedureCode>({
       isActive: (code) => code.isActive,
       label: (code) => `${code.code} — ${code.description}`,
-      // Only the flag changes; everything else about the code stays as it is.
-      onChange: (code, isActive) => save({ ...code, isActive }),
+      // Asks first (StatusChangeDialog below).
+      onChange: (code) => setStatusOf(code),
     }),
     actionsColumn<ProcedureCode>((code) => (
-      <RowActionButton
-        action="edit"
-        label={`Edit ${code.code} — ${code.description}`}
-        onClick={() => setEditing(code)}
-      />
+      <>
+        <RowActionButton
+          action="edit"
+          label={`Edit ${code.code} — ${code.description}`}
+          onClick={() => setEditing(code)}
+        />
+        <RowActionButton
+          action="delete"
+          label={`Delete ${code.code} — ${code.description}`}
+          onClick={() => setDeleting(code)}
+        />
+      </>
     )),
   ]
 
@@ -170,8 +158,10 @@ export function ProcedureCodesScreen() {
         caption="Procedure codes"
         columns={columns}
         rows={rows}
-        getRowId={(code) => code.code}
-        loading={!ready}
+        getRowId={(code) => String(code.id)}
+        loading={procedureCodes.isPending}
+        error={procedureCodes.isError}
+        onRetry={() => void procedureCodes.refetch()}
         sort={sort}
         onSortChange={(next) => {
           setSort(next)
@@ -202,13 +192,41 @@ export function ProcedureCodesScreen() {
 
       {editing !== undefined && (
         <ProcedureCodeDialog
-          key={editing?.code ?? 'new'}
+          key={editing?.id ?? 'new'}
           procedureCode={editing}
-          existingCodes={codes.map((code) => code.code)}
-          onSave={save}
           onClose={() => setEditing(undefined)}
         />
       )}
+      {statusOf !== null && (
+        <StatusChangeDialog
+          name={statusOf.code}
+          isActive={statusOf.isActive}
+          onConfirm={() => setActive.mutateAsync({ id: statusOf.id, isActive: !statusOf.isActive })}
+          onClose={() => setStatusOf(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title={`Delete ${deleting?.code ?? ''}?`}
+        description="Its fee-schedule prices are deleted too."
+        confirmLabel="Delete code"
+        tone="destructive"
+        onConfirm={async () => {
+          if (deleting === null) return
+          try {
+            const message = await remove.mutateAsync(deleting.id)
+            toast.success(message ?? `${deleting.code} deleted`)
+          } catch (error) {
+            toast.error(
+              `${deleting.code} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
+        }}
+      />
     </PageContainer>
   )
 }

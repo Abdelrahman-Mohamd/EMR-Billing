@@ -137,6 +137,17 @@ export default tseslint.config(
       ],
     },
   },
+  // The one exception: the access token is kept in localStorage (docs/SECURITY.md §2, decided 2026-10-07).
+  {
+    files: ['src/lib/auth/session.ts', 'src/lib/auth/session.test.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: 'fetch', message: 'Call the API through src/lib/api.' },
+        { name: 'sessionStorage', message: 'See docs/SECURITY.md "Browser storage".' },
+      ],
+    },
+  },
 
   // ---------------------------------------------------------------- ui kit
   {

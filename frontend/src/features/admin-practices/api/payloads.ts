@@ -7,6 +7,7 @@ import type {
 import type {
   AddressPayload,
   LocationPayload,
+  LocationUpdatePayload,
   PracticeLocationPayload,
   PracticePayload,
 } from '../schemas/practice-payload'
@@ -33,12 +34,16 @@ function toAddressPayload(address: {
   return payload
 }
 
+/** A new practice's location, in the flat shape `POST /practices` takes. */
 function toPracticeLocationPayload(location: LocationFieldsValues): PracticeLocationPayload {
   const payload: PracticeLocationPayload = {
     code: location.code,
     name: location.name,
     npi: location.npi,
-    address: toAddressPayload(location.address),
+    address: location.address.line1,
+    city: location.address.city,
+    state: location.address.state,
+    zipcode: location.address.zip,
   }
   if (location.placeOfService !== null) payload.place_of_service = location.placeOfService
   return payload
@@ -57,11 +62,64 @@ export function toPracticePayload(values: PracticeFormValues | NewPracticeFormVa
     address: toAddressPayload(values.address),
     is_active: values.isActive,
   }
-  if (values.dbaName !== '') payload.dba_name = values.dbaName
-  if ('location' in values) payload.locations = [toPracticeLocationPayload(values.location)]
+  if ('location' in values) {
+    // A new practice: an empty DBA is left out, as in the example.
+    if (values.dbaName !== '') payload.dba_name = values.dbaName
+    payload.locations = [toPracticeLocationPayload(values.location)]
+  } else {
+    // A save keeps whatever it leaves out, so an emptied DBA is sent as null.
+    payload.dba_name = values.dbaName === '' ? null : values.dbaName
+  }
   return payload
 }
 
+/** A location saved on its own (`PUT /locations/{id}`): every field, no `practice_id`. */
+export function toLocationUpdatePayload(values: LocationFormValues): LocationUpdatePayload {
+  return { ...toPracticeLocationPayload(values), is_active: values.isActive }
+}
+
+/** A location added to a practice (`POST /locations`). */
 export function toLocationPayload(practiceId: number, values: LocationFormValues): LocationPayload {
-  return { practice_id: practiceId, ...toPracticeLocationPayload(values), is_active: values.isActive }
+  return { practice_id: practiceId, ...toLocationUpdatePayload(values) }
+}
+
+/** Practice payload keys whose form field is named differently. */
+const PRACTICE_FIELD_FOR: Readonly<Record<string, string>> = {
+  organization_id: 'organizationId',
+  dba_name: 'dbaName',
+  tax_id: 'taxId',
+  taxonomy_code: 'taxonomyCode',
+}
+
+/** A flat location key → where a location form keeps it. */
+const LOCATION_FIELD_FOR: Readonly<Record<string, string>> = {
+  address: 'address.line1',
+  city: 'address.city',
+  state: 'address.state',
+  zipcode: 'address.zip',
+  place_of_service: 'placeOfService',
+  is_active: 'isActive',
+}
+
+/** A location form's server field error path: `zipcode` → `address.zip`. */
+export function locationFormFieldFor(path: string): string {
+  const [field = '', ...rest] = path.split('.')
+  return [LOCATION_FIELD_FOR[field] ?? field, ...rest].join('.')
+}
+
+/**
+ * A server field error's path (payload names) → the form field it belongs to,
+ * so a rejection lands on its input: `tax_id` → `taxId`; the practice's
+ * nested address keys are the form's. A new practice's first location, sent
+ * flat as `locations[0]`, is the form's `location`, its address nested:
+ * `locations.0.zipcode` → `location.address.zip`.
+ */
+export function practiceFormFieldFor(path: string): string {
+  const [head, index, field, ...rest] = path.split('.')
+  if (head === 'locations' && index === '0' && field !== undefined)
+    return ['location', LOCATION_FIELD_FOR[field] ?? field, ...rest].join('.')
+  return path
+    .split('.')
+    .map((part) => PRACTICE_FIELD_FOR[part] ?? part)
+    .join('.')
 }
