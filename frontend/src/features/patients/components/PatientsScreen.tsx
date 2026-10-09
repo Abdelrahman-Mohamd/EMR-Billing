@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { SlidersHorizontal, UserPlus, Users } from 'lucide-react'
-import { toast } from '@/stores/toast-store'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
 import { SearchInput } from '@/components/ui/Input'
@@ -9,21 +8,11 @@ import { Pagination } from '@/components/ui/Pagination'
 import { activeColumn } from '@/components/ui/RowActions'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
-import { useInsurances } from '@/features/admin-insurances'
 import { PracticeSelect, usePractices } from '@/features/admin-practices'
 import { formatIsoDate } from '@/lib/utils/dates'
-import { usePatientRecords } from '../data/patient-records-store'
-import { listName, type Patient } from '../model/patient'
-import {
-  DEFAULT_FILTERS,
-  activeFilterCount,
-  casesOf,
-  leadCase,
-  matchesSearch,
-  primaryInsuranceId,
-  type PatientFilters,
-} from '../model/roster'
-import { toPatientValues } from '../schemas/patient-form'
+import { genderName, listName, type PatientSummary } from '../model/patient'
+import { DEFAULT_FILTERS, activeFilterCount, matchesSearch, type PatientFilters } from '../model/roster'
+import { usePatientWrites, usePatients, useSetPatientActive } from '../queries/use-patients'
 import { PatientDialog } from './PatientDialog'
 import { PatientFiltersDrawer } from './PatientFiltersDrawer'
 import { PatientStatusDialog } from './PatientStatusDialog'
@@ -32,49 +21,43 @@ import { PatientStatusDialog } from './PatientStatusDialog'
 const PAGE_SIZE = 12
 
 interface Row {
-  patient: Patient
-  cases: number
-  insurance: string
+  patient: PatientSummary
 }
 
 /**
  * Patients — the roster, as the prototype has it: search by name, Billing ID
- * or EMR ID; filters (primary insurance, status — Active by default); Patient
- * (with its Billing ID), Born, EMR ID, Cases, Primary insurance and the shared
- * Active switch (deactivating or reactivating asks first, as the prototype
- * does); sorted, 12 a page; "New patient". A row opens the patient's chart.
+ * or EMR ID; the status filter (Active by default); Patient (with its Billing
+ * ID — the server's id), Born (with gender), EMR ID and the shared Active
+ * switch (deactivating or reactivating asks first, as the prototype does);
+ * sorted, 12 a page; "New patient". A row opens the patient's chart.
  *
  * As on the other practice-scoped screens, the practice filter is in the URL
  * (`?practice=<id>`). The search text and the other filters stay in the
  * screen: a search can hold a patient's name, and PHI never goes in a URL.
  *
- * Not shown, because what they are built on does not exist yet: the "Open
+ * Every patient is read (all of the server's pages) and searched, filtered,
+ * sorted and paged here — the list takes no search. Not shown, because the
+ * patient list does not carry them: the prototype's Cases and Primary
+ * insurance columns and insurance filter (a case's coverage), the "Open
  * balance" column and filter (billed charges), the location filter and the
  * billing-exception flag (visits).
  *
- * **Frontend only.** There is no backend for patients: they live in this
- * browser tab (`data/patient-records-store.ts`). That is architecture, not
- * product: the screen shows no message about it.
+ * The server does not return a new patient's id, so creating one stays on the
+ * roster, which shows them once the list is read again.
  */
 export function PatientsScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
-  const records = usePatientRecords()
+  const patients = usePatients()
   const practices = usePractices()
-  const insurances = useInsurances()
+  const writes = usePatientWrites()
+  const setActive = useSetPatientActive()
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<PatientFilters>(DEFAULT_FILTERS)
   const [filtering, setFiltering] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [statusOf, setStatusOf] = useState<Patient | null>(null)
+  const [statusOf, setStatusOf] = useState<PatientSummary | null>(null)
   const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
   const [page, setPage] = useState(1)
-
-  const insuranceName = (id: number | undefined) =>
-    id === undefined ? '' : (insurances.data?.find((item) => item.id === id)?.name ?? '')
-  const practiceInsurances = (insurances.data ?? []).filter(
-    (item) => practiceFilter === undefined || item.practiceId === practiceFilter,
-  )
-  const insuranceNames = [...new Set(practiceInsurances.map((item) => item.name))]
 
   const setPractice = (value: string | null) => {
     setPage(1)
@@ -86,18 +69,10 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
   }
   const filtered = search.trim() !== '' || activeFilterCount(filters) > 0
 
-  const rows: Row[] = records.patients
+  const rows: Row[] = (patients.data ?? [])
     .filter((patient) => practiceFilter === undefined || patient.practiceId === practiceFilter)
-    .map((patient) => {
-      const own = casesOf(records.cases, patient.id)
-      return {
-        patient,
-        cases: own.length,
-        insurance: insuranceName(primaryInsuranceId(leadCase(own), records.coverages)),
-      }
-    })
+    .map((patient) => ({ patient }))
     .filter((row) => matchesSearch(row.patient, search))
-    .filter((row) => filters.insurance === '' || row.insurance === filters.insurance)
     .filter((row) => filters.status === 'All' || row.patient.isActive === (filters.status === 'Active'))
     .sort((a, b) => {
       const text = (left: string, right: string) =>
@@ -107,11 +82,7 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
           ? a.patient.dob.localeCompare(b.patient.dob)
           : sort.key === 'emrId'
             ? (a.patient.emrId ?? 0) - (b.patient.emrId ?? 0)
-            : sort.key === 'cases'
-              ? a.cases - b.cases
-              : sort.key === 'insurance'
-                ? text(a.insurance, b.insurance)
-                : text(listName(a.patient), listName(b.patient))
+            : text(listName(a.patient), listName(b.patient))
       return sort.direction === 'asc' ? order : -order
     })
 
@@ -138,7 +109,7 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       cell: ({ patient }) => (
         <span className="block break-words">
           {patient.lastName}, <span className="text-n600 font-normal">{patient.firstName}</span>
-          {patient.billingId !== null && <CellSub>Billing ID {patient.billingId}</CellSub>}
+          <CellSub>Billing ID {patient.billingId}</CellSub>
         </span>
       ),
     },
@@ -147,7 +118,10 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       header: 'Born',
       sortable: true,
       cell: ({ patient }) => (
-        <span className="whitespace-nowrap tabular-nums">{formatIsoDate(patient.dob)}</span>
+        <span className="block whitespace-nowrap">
+          <span className="tabular-nums">{formatIsoDate(patient.dob)}</span>
+          {genderName(patient) !== '' && <CellSub>{genderName(patient)}</CellSub>}
+        </span>
       ),
     },
     {
@@ -159,23 +133,6 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
           <span className="text-n400">—</span>
         ) : (
           <span className="tabular-nums">{patient.emrId}</span>
-        ),
-    },
-    {
-      key: 'cases',
-      header: 'Cases',
-      sortable: true,
-      cell: ({ cases }) => <span className="tabular-nums">{cases}</span>,
-    },
-    {
-      key: 'insurance',
-      header: 'Primary insurance',
-      sortable: true,
-      cell: ({ insurance }) =>
-        insurance === '' ? (
-          <span className="text-n400">—</span>
-        ) : (
-          <span className="break-words">{insurance}</span>
         ),
     },
     activeColumn<Row>({
@@ -242,20 +199,27 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
         </Button>
       </FilterBar>
 
-      {practices.isError ? (
-        <ErrorState onRetry={() => void practices.refetch()} />
+      {practices.isError || patients.isError ? (
+        <ErrorState
+          onRetry={() => {
+            if (practices.isError) void practices.refetch()
+            if (patients.isError) void patients.refetch()
+          }}
+        />
       ) : (
         <DataTable
           caption="Patients"
           columns={columns}
           rows={pageRows}
           getRowId={({ patient }) => patient.id}
-          loading={!records.ready}
+          loading={patients.isPending}
           sort={sort}
           onSortChange={(next) => {
             setSort(next)
             setPage(1)
           }}
+          // A row opens the patient's chart; "View chart" at its end says so.
+          openHint="View chart"
           rowLink={({ patient }) => ({
             to: '/patients/$patientId',
             params: { patientId: patient.id },
@@ -286,7 +250,6 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       {filtering && (
         <PatientFiltersDrawer
           filters={filters}
-          insuranceNames={insuranceNames}
           onApply={(next) => {
             setFilters(next)
             setPage(1)
@@ -299,18 +262,7 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
         <PatientDialog
           patient={null}
           defaultPracticeId={practiceFilter === undefined ? null : String(practiceFilter)}
-          onSave={(values) => {
-            const created = records.createPatient(toPatientValues(values, Number(values.practiceId)))
-            toast.success(
-              'Patient created',
-              'A “Default” case was added. Add the patient’s insurance, then choose it on the case with its diagnoses before the first charge.',
-            )
-            void navigate({
-              to: '/patients/$patientId',
-              params: { patientId: created.patientId },
-              hash: 'insurance',
-            })
-          }}
+          onSave={writes.create}
           onClose={() => setCreating(false)}
         />
       )}
@@ -318,7 +270,7 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       {statusOf !== null && (
         <PatientStatusDialog
           patient={statusOf}
-          onConfirm={(isActive) => records.setPatientActive(statusOf.id, isActive)}
+          onConfirm={(isActive) => setActive.mutateAsync({ id: statusOf.id, isActive })}
           onClose={() => setStatusOf(null)}
         />
       )}

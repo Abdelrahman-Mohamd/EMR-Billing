@@ -5,6 +5,7 @@ import type { Authorization } from '../model/authorization'
 import type { PatientCase } from '../model/case'
 import type { Coverage } from '../model/coverage'
 import type { Patient } from '../model/patient'
+import type { ServerCase } from '../schemas/patient-case'
 
 /**
  * Test fixtures for the Patients screens: invented people only. The other
@@ -85,34 +86,46 @@ export const referrer = (id: number, name: string, npi = '1720394851'): Referrin
   isActive: true,
 })
 
+/** A patient's whole record as the server sends it, parsed — invented people only. */
 export const patient = (
   overrides: Partial<Patient> & Pick<Patient, 'id' | 'firstName' | 'lastName'>,
 ): Patient => ({
   practiceId: 1,
-  billingId: 10412,
+  billingId: Number(overrides.id) || 10412,
   emrId: 56361773,
   middleName: '',
   dob: '1984-06-12',
-  gender: 'Female',
-  ssn: '',
-  phoneCell: '718-555-0142',
+  gender: 'F',
+  genderLabel: 'Female',
+  maskedSsn: '',
+  phoneCell: '7185550142',
   phoneHome: '',
   email: '',
   address: { line1: '412 Ovington Avenue', line2: '', city: 'Brooklyn', state: 'NY', zip: '11209' },
   guarantor: null,
   notes: '',
+  noStatements: false,
   isActive: true,
+  cases: [],
   ...overrides,
 })
 
+/** A case's insurance as the server sends it, parsed. */
 export const coverage = (
-  overrides: Partial<Coverage> & Pick<Coverage, 'id' | 'patientId' | 'insuranceId'>,
+  overrides: Partial<Coverage> & Pick<Coverage, 'id' | 'caseId' | 'insuranceId'>,
 ): Coverage => ({
+  insuranceLabel: `${1000 + overrides.insuranceId} – Insurance ${overrides.insuranceId}`,
+  insuranceName: `Insurance ${overrides.insuranceId}`,
+  insuranceType: 'CI',
+  rank: 1,
+  rankLabel: 'Primary',
   memberId: 'W284019733',
   groupNumber: '0184421',
   claimNumber: '',
   subscriber: null,
   employer: null,
+  effectiveDate: '',
+  terminationDate: '',
   ...overrides,
 })
 
@@ -120,12 +133,10 @@ export const patientCase = (
   overrides: Partial<PatientCase> & Pick<PatientCase, 'id' | 'patientId' | 'name'>,
 ): PatientCase => ({
   referrerId: 1,
-  primaryCoverageId: null,
-  secondaryCoverageId: null,
   injuryType: '',
+  injuryTypeLabel: '',
   injuryDate: '',
   accidentState: '',
-  employmentStatus: '',
   startOfCare: '2026-08-04',
   dischargeDate: '',
   isActive: true,
@@ -136,11 +147,13 @@ export const patientCase = (
 export const authorization = (
   overrides: Partial<Authorization> & Pick<Authorization, 'id' | 'caseId' | 'coverageId' | 'number'>,
 ): Authorization => ({
+  insuranceName: '',
   start: '2026-08-01',
   end: '2099-10-31',
   qty: 12,
-  unit: 'Visits',
+  unit: 'visits',
   used: 0,
+  remaining: (overrides.qty ?? 12) - (overrides.used ?? 0),
   ...overrides,
 })
 
@@ -150,3 +163,9 @@ export const ICD10 = [
   { code: 'M25.511', description: 'Pain in right shoulder' },
   { code: 'M75.101', description: 'Unspecified rotator cuff tear of right shoulder, not traumatic' },
 ]
+
+/** A case as the server holds it: its codes without descriptions. */
+export const asServerCase = ({ diagnoses, ...item }: PatientCase): ServerCase => ({
+  ...item,
+  icd10Codes: diagnoses.map((diagnosis) => diagnosis.code),
+})

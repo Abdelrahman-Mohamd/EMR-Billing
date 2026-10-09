@@ -1,33 +1,29 @@
 import { useState } from 'react'
 import { Pencil } from 'lucide-react'
-import { toast } from '@/stores/toast-store'
 import { Button } from '@/components/ui/Button'
 import { KeyValue } from '@/components/ui/KeyValue'
 import { formatIsoDate, todayIso } from '@/lib/utils/dates'
-import { usePatientRecords } from '../../data/patient-records-store'
-import { addressLine, ageOn, maskSsn } from '../../model/patient'
-import { toPatientValues } from '../../schemas/patient-form'
+import { ageOn, genderName, showPhone, type Patient } from '../../model/patient'
+import { usePatientWrites } from '../../queries/use-patients'
 import { PatientDialog } from '../PatientDialog'
 import { CardGroup, ChartCard } from './ChartCard'
 
 /**
- * The chart's Profile, with the prototype's groups: Demographics (with "Edit
- * patient"), Contact & address, and Guarantor (with the guarantor's address and
- * the internal notes) — one card, a group each, "Edit patient" at its top since
- * it edits them all. Contact & address and Guarantor sit side by side from
- * 1280px so the page is shorter to scroll.
+ * The chart's Profile, with the prototype's groups: Demographics, Contact &
+ * address, Guarantor (who receives the statements, and whether they are sent)
+ * and the Internal notes — one card, a group each, "Edit patient" at its top
+ * since it edits them all. Each group is a two-column table, two groups side
+ * by side from 768px. A value's own details (a relationship, a birth date) sit
+ * on a quieter line under it; an address is one value on two lines.
  *
- * The SSN is only ever shown masked. The prototype lets a System Admin reveal
- * it; there is no permission model here to know who that is, so nobody can.
- * Not built: the prototype's History (the record's own audit trail) and its
- * billing-exception notice — neither exists here yet.
+ * The record is the server's, as the chart read it. The SSN is only ever shown
+ * masked — the server never sends it whole. Not built: the prototype's History
+ * (the record's own audit trail) and its billing-exception notice — neither
+ * exists here yet.
  */
-export function ProfileSection({ patientId }: { patientId: string }) {
-  const records = usePatientRecords()
+export function ProfileSection({ patient }: { patient: Patient }) {
+  const writes = usePatientWrites()
   const [editing, setEditing] = useState(false)
-  const patient = records.patients.find((item) => item.id === patientId)
-  if (patient === undefined) return null
-
   const { address, guarantor } = patient
 
   return (
@@ -42,84 +38,112 @@ export function ProfileSection({ patientId }: { patientId: string }) {
           </Button>
         }
       >
-        <CardGroup title="Demographics" description="Required for billing: date of birth, gender, address">
-          <KeyValue
-            className="max-sm:grid-cols-2"
-            items={[
-              {
-                label: 'Name',
-                value: [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' '),
-              },
-              {
-                label: 'Date of birth',
-                value: `${formatIsoDate(patient.dob)} (${ageOn(patient.dob, todayIso())} years)`,
-              },
-              { label: 'Gender', value: patient.gender },
-              {
-                label: 'SSN',
-                value:
-                  patient.ssn === '' ? (
-                    ''
-                  ) : (
-                    <>
-                      {maskSsn(patient.ssn)} <span className="text-micro text-n500">(masked)</span>
-                    </>
-                  ),
-              },
-              { label: 'Billing ID', value: patient.billingId === null ? '' : String(patient.billingId) },
-              { label: 'EMR ID (sync key)', value: patient.emrId === null ? '' : String(patient.emrId) },
-            ]}
-          />
-        </CardGroup>
-
-        {/* Contact and guarantor side by side from 1280px; a hairline sets
-            them off from the demographics. */}
-        <div className="border-rule-row mt-4 grid border-t xl:grid-cols-2 xl:gap-x-10">
-          <CardGroup title="Contact & address">
-            <KeyValue
-              className="max-sm:grid-cols-2 xl:grid-cols-2"
-              items={[
-                { label: 'Cell phone', value: patient.phoneCell },
-                { label: 'Home phone', value: patient.phoneHome },
-                { label: 'Email', value: patient.email },
-                {
-                  label: 'Address',
-                  value: (
-                    <>
-                      {[address.line1, address.line2].filter(Boolean).join(', ')}
-                      <br />
-                      {address.city}, {address.state} {address.zip}
-                    </>
-                  ),
-                },
-              ]}
-            />
-          </CardGroup>
-
-          <CardGroup title="Guarantor" className="border-rule-row mt-4 border-t xl:mt-0 xl:border-t-0">
-            <KeyValue
-              className="max-sm:grid-cols-2 xl:grid-cols-2"
-              items={[
-                {
-                  label: 'Guarantor',
-                  value:
-                    guarantor === null ? (
-                      'The patient'
-                    ) : (
+        {/* Two by two where the card is wide enough — Demographics beside Contact &
+            address, then Guarantor beside the notes — the rows lined up, so the
+            columns hold about as much; one column on a phone. */}
+        <div className="@container">
+          <div className="grid gap-y-7 pt-4 @xl:grid-cols-2 @xl:gap-x-10">
+            <CardGroup title="Demographics">
+              <KeyValue
+                layout="rows"
+                items={[
+                  {
+                    label: 'Name',
+                    value: [patient.firstName, patient.middleName, patient.lastName]
+                      .filter(Boolean)
+                      .join(' '),
+                  },
+                  {
+                    label: 'Date of birth',
+                    value: (
                       <>
-                        {guarantor.name} ({guarantor.relationship})
-                        <span className="text-micro text-n500 block">{addressLine(guarantor.address)}</span>
+                        {formatIsoDate(patient.dob)}
+                        <span className="text-n500"> · {ageOn(patient.dob, todayIso())} years</span>
                       </>
                     ),
-                },
-                {
-                  label: 'Internal notes',
-                  value:
-                    patient.notes === '' ? '' : <span className="whitespace-pre-line">{patient.notes}</span>,
-                },
-              ]}
-            />
-          </CardGroup>
+                  },
+                  { label: 'Gender', value: genderName(patient) },
+                  { label: 'SSN', value: patient.maskedSsn },
+                  { label: 'Billing ID', value: String(patient.billingId) },
+                  {
+                    label: 'EMR ID',
+                    value: patient.emrId === null ? '' : String(patient.emrId),
+                  },
+                ]}
+              />
+            </CardGroup>
+
+            <CardGroup title="Contact & address">
+              <KeyValue
+                layout="rows"
+                items={[
+                  { label: 'Cell phone', value: showPhone(patient.phoneCell) },
+                  { label: 'Home phone', value: showPhone(patient.phoneHome) },
+                  { label: 'Email', value: patient.email },
+                  {
+                    label: 'Address',
+                    value: (
+                      <>
+                        <span className="block">
+                          {[address.line1, address.line2].filter(Boolean).join(', ')}
+                        </span>
+                        <span className="block">{`${address.city}, ${address.state} ${address.zip}`}</span>
+                      </>
+                    ),
+                  },
+                ]}
+              />
+            </CardGroup>
+
+            <CardGroup title="Guarantor">
+              <KeyValue
+                layout="rows"
+                items={[
+                  guarantor === null
+                    ? { label: 'Responsible party', value: 'The patient' }
+                    : {
+                        label: 'Responsible party',
+                        value: `${guarantor.firstName} ${guarantor.lastName}`.trim(),
+                        sub: [
+                          guarantor.relationship,
+                          guarantor.dob === '' ? '' : `born ${formatIsoDate(guarantor.dob)}`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · '),
+                      },
+                  { label: 'Statements', value: patient.noStatements ? 'Not sent' : 'Sent' },
+                  ...(guarantor?.address === undefined || guarantor.address === null
+                    ? []
+                    : [
+                        {
+                          label: 'Guarantor address',
+                          value: (
+                            <>
+                              <span className="block">{guarantor.address.line1}</span>
+                              <span className="block">{`${guarantor.address.city}, ${guarantor.address.state} ${guarantor.address.zip}`}</span>
+                            </>
+                          ),
+                        },
+                      ]),
+                ]}
+              />
+            </CardGroup>
+
+            {/* The notes are the staff's own, about the patient: a group of their own. */}
+            <CardGroup title="Internal notes">
+              {/* The group's title names them: no label of their own. */}
+              {patient.notes === '' ? (
+                <p className="border-rule-row text-meta text-n400 border-b py-2">
+                  <span aria-hidden="true">—</span>
+                  <span className="sr-only">None</span>
+                </p>
+              ) : (
+                <p className="border-rule-row text-meta text-ink border-b py-2 leading-snug break-words whitespace-pre-line">
+                  {patient.notes}
+                </p>
+              )}
+            </CardGroup>
+          </div>
         </div>
       </ChartCard>
 
@@ -127,10 +151,7 @@ export function ProfileSection({ patientId }: { patientId: string }) {
         <PatientDialog
           patient={patient}
           defaultPracticeId={String(patient.practiceId)}
-          onSave={(values) => {
-            records.updatePatient(patient.id, toPatientValues(values, patient.practiceId))
-            toast.success('Patient saved')
-          }}
+          onSave={(values) => writes.update(patient.id, values)}
           onClose={() => setEditing(false)}
         />
       )}

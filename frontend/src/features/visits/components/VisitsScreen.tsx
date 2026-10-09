@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { CalendarCheck, Plus } from 'lucide-react'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
 import { Pagination } from '@/components/ui/Pagination'
@@ -9,7 +10,8 @@ import { SearchInput } from '@/components/ui/Input'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { PracticeSelect } from '@/features/admin-practices'
 import { formatIsoDate } from '@/lib/utils/dates'
-import { codesSummary } from '../model/charge-line-text'
+import { amountText, codesSummary } from '../model/charge-line-text'
+import { visitStatus } from '../model/visit-status'
 import { useVisitReferences } from '../queries/use-visit-references'
 import { useVisits } from '../queries/use-visits'
 import type { Visit } from '../schemas/visit'
@@ -19,10 +21,10 @@ const PAGE_SIZE = 12
 
 /**
  * Visits: every visit with its patient and case, date of service, location,
- * treating provider and charge lines, newest first. A row opens the visit,
- * where its lines and claims are. Search by patient, case or procedure code;
- * the practice filter is in the URL (`?practice=`), as on the other
- * practice-scoped screens.
+ * treating provider, charge lines, total and status, newest first — as the
+ * server lists them. A row opens the visit, where its lines and claims are.
+ * Search by patient, case or procedure code; the practice filter is in the URL
+ * (`?practice=`), as on the other practice-scoped screens.
  */
 export function VisitsScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
@@ -39,22 +41,20 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
   const filtered = query !== '' || practiceFilter !== undefined
 
   const rows = (visits.data ?? [])
-    .filter(
-      (visit) => practiceFilter === undefined || refs.patientOf(visit.caseId)?.practiceId === practiceFilter,
-    )
+    .filter((visit) => practiceFilter === undefined || refs.practiceOf(visit) === practiceFilter)
     .filter(
       (visit) =>
         query === '' ||
         [
-          refs.patientListName(visit.caseId),
-          refs.patientFullName(visit.caseId),
-          refs.caseName(visit.caseId),
-          ...visit.chargeLines.map((line) => String(line.procedureCode)),
+          refs.patientListName(visit),
+          refs.patientFullName(visit),
+          visit.caseName,
+          ...visit.chargeLines.map((line) => refs.procedure(line.procedureCodeId).code),
         ].some((text) => text.toLowerCase().includes(query)),
     )
     .sort((a, b) => {
       const key = (visit: Visit) =>
-        sort.key === 'patient' ? refs.patientListName(visit.caseId).toLowerCase() : visit.dateOfService
+        sort.key === 'patient' ? refs.patientListName(visit).toLowerCase() : visit.dateOfService
       const order = key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : b.id - a.id
       return sort.direction === 'asc' ? order : -order
     })
@@ -74,8 +74,8 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
       primary: true,
       cell: (visit) => (
         <span className="block min-w-0">
-          <span className="break-words">{refs.patientListName(visit.caseId)}</span>
-          <CellSub>{refs.caseName(visit.caseId)}</CellSub>
+          <span className="break-words">{refs.patientListName(visit)}</span>
+          <CellSub>{visit.caseName}</CellSub>
         </span>
       ),
     },
@@ -90,12 +90,12 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
     {
       key: 'location',
       header: 'Location',
-      cell: (visit) => refs.locationName(visit.locationId),
+      cell: (visit) => visit.locationName || '—',
     },
     {
       key: 'provider',
       header: 'Treating provider',
-      cell: (visit) => refs.providerName(visit.treatingProviderId),
+      cell: (visit) => visit.treatingProvider?.name ?? refs.providerName(visit.treatingProviderId),
     },
     {
       key: 'lines',
@@ -104,8 +104,22 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
         visit.chargeLines.length === 0 ? (
           <span className="text-n400">—</span>
         ) : (
-          <span className="tabular-nums">{codesSummary(visit.chargeLines)}</span>
+          <span className="tabular-nums">{codesSummary(visit.chargeLines, refs)}</span>
         ),
+    },
+    {
+      key: 'total',
+      header: 'Total',
+      align: 'right',
+      cell: (visit) => <span className="tabular-nums">{amountText(visit.totalAmount) || '—'}</span>,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      cell: (visit) => {
+        const status = visitStatus(visit.status)
+        return <Badge tone={status.tone}>{status.label}</Badge>
+      },
     },
   ]
 

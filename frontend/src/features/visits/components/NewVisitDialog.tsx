@@ -1,20 +1,17 @@
 import { useId, useRef, useState } from 'react'
 import { useFieldArray, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useNavigate } from '@tanstack/react-router'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from '@/stores/toast-store'
 import { Button } from '@/components/ui/Button'
-import { DateInput } from '@/components/ui/DateInput'
 import { Dialog } from '@/components/ui/Dialog'
 import { FormGrid, FormSection } from '@/components/ui/Field'
 import { Form, FormField, applyServerErrors } from '@/components/ui/Form'
 import { Notice } from '@/components/ui/Notice'
 import { SearchSelect } from '@/components/ui/SearchSelect'
-import { Select } from '@/components/ui/Select'
 import { listName } from '@/features/patients'
 import { isApiError, userMessage } from '@/lib/api/api-error'
-import { formatIsoDate, todayIso } from '@/lib/utils/dates'
+import { todayIso } from '@/lib/utils/dates'
 import { useCreateVisit } from '../queries/use-visits'
 import { useVisitReferences } from '../queries/use-visit-references'
 import {
@@ -25,23 +22,24 @@ import {
   type VisitFormValues,
 } from '../schemas/visit-form'
 import { ChargeLineFields, type DiagnosisOption } from './ChargeLineFields'
+import { VisitFields } from './VisitFields'
 
 /**
- * New visit, in a dialog: the visit and its first charge lines, in one go, as the visit
- * payload carries them — the case, date of service, location, billing and
- * treating providers, an optional authorization, then one or more lines
- * (procedure code, units, modifiers, diagnosis pointers).
+ * New visit, in a dialog: the visit and its charge lines, in one go, as the
+ * visit payload carries them — the case, date of service, location, billing
+ * and treating providers, an optional authorization, then one or more lines
+ * (procedure code, units, modifiers, diagnosis pointers, place of service,
+ * notes). Lines can be added, edited and deleted later, on the visit.
  *
  * The case decides the rest: its practice's active locations and providers,
  * its authorizations and its diagnoses are what the pickers offer. Changing the
- * case clears what no longer belongs to it. More lines can be added to the
- * visit later, from the visit. Opened from the Visits list, or from a case on
- * the patient chart (`caseId`: the case already chosen). Creating it opens the
- * new visit.
+ * case clears what no longer belongs to it. Opened from the Visits list, or
+ * from a case on the patient chart (`caseId`: the case already chosen). The
+ * server answers with a message, not the new visit, so the dialog closes on
+ * the list it was opened from, which shows it.
  */
 export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: () => void }) {
   const formId = useId()
-  const navigate = useNavigate()
   const refs = useVisitReferences()
   const create = useCreateVisit()
   const today = todayIso()
@@ -55,16 +53,10 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
   })
   const lines = useFieldArray({ control: form.control, name: 'lines' })
   const chosenCaseId = useWatch({ control: form.control, name: 'caseId' })
+  const submitting = create.isPending
 
   const { records } = refs
   const chosenCase = records.cases.find((item) => item.id === chosenCaseId)
-  const patient = records.patients.find((item) => item.id === chosenCase?.patientId)
-  const practiceId = patient?.practiceId
-  const locations = refs.locationsOf(practiceId).filter((location) => location.isActive)
-  const providers = refs.providers.filter(
-    (provider) => provider.practiceId === practiceId && provider.isActive,
-  )
-  const authorizations = records.authorizations.filter((auth) => auth.caseId === chosenCase?.id)
   const diagnoses: DiagnosisOption[] | null =
     chosenCase === undefined
       ? null
@@ -89,25 +81,6 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
     lines.fields.forEach((_, index) => form.setValue(`lines.${index}.diagnosisPointers`, []))
   }
 
-  const pick = (
-    name: 'locationId' | 'billingProviderId' | 'treatingProviderId',
-    label: string,
-    options: Array<{ value: string; label: string }>,
-    placeholder: string,
-  ) => (
-    <FormField name={name} label={label} required span={6}>
-      {(field) => (
-        <Select
-          value={typeof field.value === 'string' ? field.value : null}
-          onChange={field.onChange}
-          options={options}
-          placeholder={chosenCase === undefined ? 'Select a case first' : placeholder}
-          disabled={chosenCase === undefined}
-        />
-      )}
-    </FormField>
-  )
-
   return (
     <Dialog
       open
@@ -117,13 +90,13 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
       title="New visit"
       description="Record a visit on a case with its charge lines."
       size="lg"
-      dismissible={!create.isPending}
+      dismissible={!submitting}
       footer={
         <>
-          <Button variant="quiet" onClick={onClose} disabled={create.isPending}>
+          <Button variant="quiet" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button type="submit" form={formId} variant="primary" loading={create.isPending}>
+          <Button type="submit" form={formId} variant="primary" loading={submitting}>
             Create visit
           </Button>
         </>
@@ -135,10 +108,9 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
         onSubmit={async (values) => {
           setFailure(null)
           try {
-            const visit = await create.mutateAsync(toCreateVisitPayload(values))
-            toast.success('Visit created')
+            const message = await create.mutateAsync(toCreateVisitPayload(values))
+            toast.success(message ?? 'Visit created')
             onClose()
-            void navigate({ to: '/visits/$visitId', params: { visitId: String(visit.id) } })
           } catch (error) {
             const leftover = applyServerErrors(form, error)
             setFailure(isApiError(error) && error.kind !== 'validation' ? userMessage(error) : leftover)
@@ -146,6 +118,11 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
         }}
       >
         <FormGrid>
+          {failure !== null && (
+            <div className="col-span-12">
+              <Notice tone="critical">{failure}</Notice>
+            </div>
+          )}
           <FormSection title="Visit" />
           <FormField name="caseId" label="Case" required span={12}>
             {(field) => (
@@ -155,58 +132,11 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
                 options={caseOptions}
                 placeholder="Select a patient’s case"
                 searchPlaceholder="Search patients or cases"
+                disabled={submitting}
               />
             )}
           </FormField>
-          <FormField name="dateOfService" label="Date of service" required span={6}>
-            {(field) => (
-              <DateInput
-                value={typeof field.value === 'string' ? field.value : ''}
-                onChange={field.onChange}
-                onBlur={field.onBlur}
-                max={today}
-              />
-            )}
-          </FormField>
-          {pick(
-            'locationId',
-            'Location',
-            locations.map((location) => ({ value: String(location.id), label: location.name })),
-            'Select a location',
-          )}
-          {pick(
-            'billingProviderId',
-            'Billing provider',
-            providers.map((provider) => ({
-              value: String(provider.id),
-              label: refs.providerName(provider.id),
-            })),
-            'Select the billing provider',
-          )}
-          {pick(
-            'treatingProviderId',
-            'Treating provider',
-            providers.map((provider) => ({
-              value: String(provider.id),
-              label: refs.providerName(provider.id),
-            })),
-            'Select the treating provider',
-          )}
-          <FormField name="authorizationId" label="Authorization" span={6}>
-            {(field) => (
-              <Select
-                value={typeof field.value === 'string' ? field.value : null}
-                onChange={field.onChange}
-                options={authorizations.map((auth) => ({
-                  value: auth.id,
-                  label: `${auth.number} · ${formatIsoDate(auth.start)} – ${formatIsoDate(auth.end)}`,
-                }))}
-                placeholder={chosenCase === undefined ? 'Select a case first' : 'None'}
-                disabled={chosenCase === undefined}
-                clearable
-              />
-            )}
-          </FormField>
+          <VisitFields refs={refs} caseId={chosenCaseId} today={today} disabled={submitting} />
 
           <FormSection title="Charge lines" />
           {lines.fields.map((line, index) => (
@@ -229,6 +159,7 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
                   className="float-right"
                   icon={<Trash2 size={14} aria-hidden="true" />}
                   aria-label={`Remove charge line ${index + 1}`}
+                  disabled={submitting}
                   onClick={() => {
                     lines.remove(index)
                     // The removed line's place is gone: continue from the add button.
@@ -247,6 +178,7 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
             <Button
               size="sm"
               icon={<Plus size={14} aria-hidden="true" />}
+              disabled={submitting}
               onClick={() => {
                 lines.append(newChargeLineValues(), { shouldFocus: false })
                 // Move to the new line, so a keyboard user carries on there.
@@ -260,12 +192,6 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
             </Button>
           </div>
         </FormGrid>
-
-        {failure !== null && (
-          <Notice tone="critical" className="mt-5">
-            {failure}
-          </Notice>
-        )}
       </Form>
     </Dialog>
   )

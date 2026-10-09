@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { toast } from '@/stores/toast-store'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -7,7 +8,7 @@ import { useProcedureCodes } from '@/features/admin-procedure-codes'
 import { useProviders } from '@/features/admin-providers'
 import { useReferringPhysicians } from '@/features/admin-referring-physicians'
 import { useCurrentUser } from '@/features/auth'
-import { usePatientRecords } from '@/features/patients'
+import { usePatient, usePatientRecords, type Patient } from '@/features/patients'
 import { useBillingExceptions } from '../../data/exceptions-store'
 import { fixKey, recordKey, type BillingException } from '../../model/billing-exception'
 import { FeeFix, ProviderNpiFix } from './BillingFixes'
@@ -57,11 +58,13 @@ export function ResolveDialog({ exception, onClose }: { exception: BillingExcept
     case 'patient-phone':
     case 'patient-address':
     case 'patient-length': {
-      const patient = records.patients.find((item) => item.id === fix.patientId)
-      if (patient === undefined) return <Unavailable loading={!records.ready} onClose={onClose} />
       const Fix =
         fix.type === 'patient-phone' ? PhoneFix : fix.type === 'patient-address' ? AddressFix : LengthFix
-      return <Fix exception={exception} patient={patient} onDone={done} onClose={onClose} />
+      return (
+        <PatientFixLoader patientId={fix.patientId} onClose={onClose}>
+          {(patient) => <Fix exception={exception} patient={patient} onDone={done} onClose={onClose} />}
+        </PatientFixLoader>
+      )
     }
     case 'case': {
       const item = records.cases.find((entry) => entry.id === fix.caseId)
@@ -125,6 +128,21 @@ export function ResolveDialog({ exception, onClose }: { exception: BillingExcept
 }
 
 /** While the record the fix edits is loading — or when it is no longer there. */
+/** A patient fix starts from the patient's whole record, as the server has it now. */
+function PatientFixLoader({
+  patientId,
+  onClose,
+  children,
+}: {
+  patientId: string
+  onClose: () => void
+  children: (patient: Patient) => ReactNode
+}) {
+  const patient = usePatient(patientId)
+  if (patient.data === undefined) return <Unavailable loading={patient.isPending} onClose={onClose} />
+  return <>{children(patient.data)}</>
+}
+
 function Unavailable({ loading, onClose }: { loading: boolean; onClose: () => void }) {
   return (
     <Dialog

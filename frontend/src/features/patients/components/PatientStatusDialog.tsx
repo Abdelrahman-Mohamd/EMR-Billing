@@ -1,19 +1,22 @@
 import { Ban, RotateCcw } from 'lucide-react'
-import { toast } from '@/stores/toast-store'
 import { ConfirmDialog } from '@/components/ui/Dialog'
-import type { Patient } from '../model/patient'
+import { statusChangeFailed, statusChanged } from '@/components/ui/RowActions'
+import { fullName, type PatientSummary } from '../model/patient'
 
 /**
  * The prototype's Deactivate / Reactivate of a patient, after a confirmation —
- * from the roster's Active switch or the chart's More menu.
+ * from the roster's Active switch or the chart's More menu. Confirming waits
+ * for the server with the button busy; the toast then carries the server's
+ * message, or its reason when it refuses.
  */
 export function PatientStatusDialog({
   patient,
   onConfirm,
   onClose,
 }: {
-  patient: Patient
-  onConfirm: (isActive: boolean) => void
+  patient: PatientSummary
+  /** The save; resolves with the server's message. */
+  onConfirm: (isActive: boolean) => Promise<string | null>
   onClose: () => void
 }) {
   const deactivating = patient.isActive
@@ -32,9 +35,12 @@ export function PatientStatusDialog({
       confirmLabel={deactivating ? 'Deactivate' : 'Reactivate'}
       tone={deactivating ? 'destructive' : 'default'}
       icon={deactivating ? <Ban size={20} /> : <RotateCcw size={20} />}
-      onConfirm={() => {
-        onConfirm(!patient.isActive)
-        toast.success(deactivating ? 'Patient deactivated' : 'Patient reactivated')
+      onConfirm={async () => {
+        try {
+          statusChanged(fullName(patient), !patient.isActive, await onConfirm(!patient.isActive))
+        } catch (error) {
+          statusChangeFailed(fullName(patient), !patient.isActive, error)
+        }
       }}
     />
   )

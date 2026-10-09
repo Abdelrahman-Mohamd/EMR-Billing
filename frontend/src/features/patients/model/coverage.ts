@@ -1,42 +1,83 @@
+import type { SelectOption } from '@/components/ui/Select'
+
 /**
- * A patient's insurance policy (coverage), as the prototype shows it: one of
- * the practice's insurances, with the member ID, group number and the like.
- * The patient keeps a list; each case chooses its Primary and optional
- * Secondary from it (client 2026-09-30). **Frontend only** — not a contract.
+ * A case's insurance (a coverage): one of the practice's insurances on one
+ * case, with its rank — Primary, Secondary or Tertiary — and the member ID,
+ * group number and the like. It is the server's (`/case-insurances`); claims
+ * are addressed to it. (The prototype kept a list per patient and had each
+ * case choose from it; the server keeps it per case — user, 2026-10-08.)
  */
 export interface Subscriber {
-  name: string
-  /** ISO date. */
-  dob: string
+  firstName: string
+  lastName: string
   relationship: string
+  /** ISO date, '' when none. */
+  dob: string
+  /** M, F or U, '' when none. */
+  gender: string
 }
 
 export interface Employer {
   name: string
-  address: string
+  address: { line1: string; city: string; state: string; zip: string } | null
 }
 
 export interface Coverage {
+  /** The server's id, as text. */
   id: string
-  patientId: string
+  caseId: string
   /** The insurance (Setup → Insurances). */
   insuranceId: number
+  /** "1039 – Corvel Enterprise", as the server names it. */
+  insuranceLabel: string
+  insuranceName: string
+  /** The insurance's type code: WC, AM… */
+  insuranceType: string
+  /** 1 Primary, 2 Secondary, 3 Tertiary. */
+  rank: number
+  rankLabel: string
   memberId: string
-  /** "NONE" when the plan has none. */
   groupNumber: string
-  /** Box 11b for PIP and Workers' Comp. */
+  /** Box 11b for Workers' Comp (required there) and PIP. */
   claimNumber: string
   /** Null: the patient is the subscriber (Self). */
   subscriber: Subscriber | null
-  /** Workers' Comp only. */
   employer: Employer | null
+  /** ISO dates, '' when none. */
+  effectiveDate: string
+  terminationDate: string
 }
 
+/** The server's ranks. */
+export const RANKS: readonly SelectOption[] = [
+  { value: '1', label: 'Primary' },
+  { value: '2', label: 'Secondary' },
+  { value: '3', label: 'Tertiary' },
+]
+
+export const rankName = (coverage: Pick<Coverage, 'rank' | 'rankLabel'>): string =>
+  coverage.rankLabel ||
+  RANKS.find((rank) => rank.value === String(coverage.rank))?.label ||
+  `Rank ${coverage.rank}`
+
+/** Self — no subscriber — then the server's relationships. */
 export const SUBSCRIBER_RELATIONSHIPS = ['Self', 'Spouse', 'Child', 'Other'] as const
 
 /**
- * The insurance types for which the prototype asks for a claim number — as the
- * server's type codes: Auto / PIP (`AM`) and Workers' Comp (`WC`).
+ * The insurance types that carry a claim number (Box 11b): Auto / PIP (`AM`)
+ * and Workers' Comp (`WC`). The server requires it for Workers' Comp.
  */
 export const CLAIM_NUMBER_TYPES = ['AM', 'WC'] as const
 export const WORKERS_COMP = 'WC'
+
+/** A case's insurances, in rank order. */
+export const coveragesOf = (coverages: readonly Coverage[], caseId: string) =>
+  coverages.filter((coverage) => coverage.caseId === caseId).sort((a, b) => a.rank - b.rank)
+
+/** A case's primary insurance, if it has one. */
+export const primaryOf = (coverages: readonly Coverage[], caseId: string) =>
+  coverages.find((coverage) => coverage.caseId === caseId && coverage.rank === 1)
+
+/** "Mary Doe". */
+export const subscriberName = (subscriber: Subscriber) =>
+  `${subscriber.firstName} ${subscriber.lastName}`.trim()

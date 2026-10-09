@@ -1,27 +1,31 @@
+import type { SelectOption } from '@/components/ui/Select'
+
 /**
- * A case — one episode of care — as the prototype shows it (PRD V2 §3.2,
- * §10.4). Every visit inherits its referring physician, diagnoses, injury type
- * and onset date. **Frontend only** — not a contract.
+ * A case — one episode of care — as the screens see it (PRD V2 §3.2, §10.4).
+ * Every visit inherits its referring physician, diagnoses, injury type and
+ * onset date. The case is the server's (schemas/patient-case.ts); its
+ * insurances are the server's too, each ranked on the case (model/coverage.ts).
  */
 export interface Diagnosis {
   code: string
+  /** From the ICD-10 list when it has the code; '' otherwise. */
   description: string
 }
 
 export interface PatientCase {
+  /** The server's id, as text. */
   id: string
   patientId: string
   name: string
   /** The referring physician (Setup → Referring physicians). */
   referrerId: number | null
-  primaryCoverageId: string | null
-  secondaryCoverageId: string | null
-  /** '' — not related to an injury. */
+  /** '' — not related to an injury; else `auto`, `employment` or `other`. */
   injuryType: string
+  /** As the server words it: "Auto Accident". */
+  injuryTypeLabel: string
   /** ISO dates, '' when none. */
   injuryDate: string
   accidentState: string
-  employmentStatus: string
   startOfCare: string
   dischargeDate: string
   /** Open (true) or closed. */
@@ -30,12 +34,28 @@ export interface PatientCase {
   diagnoses: Diagnosis[]
 }
 
-/** Related cause — "Other" was removed by the client (Q-092). */
-export const INJURY_TYPES = ['Employment Related', 'Auto'] as const
-export const AUTO = 'Auto'
+/** The server's related causes. */
+export const INJURY_TYPES: readonly SelectOption[] = [
+  { value: 'employment', label: 'Employment Related' },
+  { value: 'auto', label: 'Auto Accident' },
+  { value: 'other', label: 'Other' },
+]
+export const AUTO = 'auto'
+
+/** The cause's name: the server's label, else ours, else ''. */
+export function injuryTypeName(item: Pick<PatientCase, 'injuryType' | 'injuryTypeLabel'>): string {
+  return (
+    item.injuryTypeLabel ||
+    INJURY_TYPES.find((type) => type.value === item.injuryType)?.label ||
+    item.injuryType
+  )
+}
+
+/** A case id as the chart's address carries it: a server id as a number, so it reads `?case=20`. */
+export const caseSearch = (id: string): number | string => (/^\d+$/.test(id) ? Number(id) : id)
 
 /** A case holds up to 12 diagnoses — the claim's pointers. */
 export const MAX_DIAGNOSES = 12
 
-/** The case a new patient starts with, as in the prototype. */
+/** The case a new patient starts with, as the server creates it. */
 export const DEFAULT_CASE_NAME = 'Default'

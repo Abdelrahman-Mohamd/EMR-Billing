@@ -1,210 +1,247 @@
 import { useState } from 'react'
-import { Landmark, Pencil, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
-import { Badge, Tag } from '@/components/ui/Badge'
+import { Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/Dialog'
-import { KeyValue } from '@/components/ui/KeyValue'
-import { RowActionButton } from '@/components/ui/RowActions'
-import { EmptyState } from '@/components/ui/States'
-import { insuranceLabel, useInsuranceClasses, useInsurances } from '@/features/admin-insurances'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
+import { RowActionButton, RowActions, actionsColumn } from '@/components/ui/RowActions'
+import { useInsuranceClasses, useInsurances } from '@/features/admin-insurances'
 import { formatIsoDate } from '@/lib/utils/dates'
 import { usePatientRecords } from '../../data/patient-records-store'
-import type { Coverage } from '../../model/coverage'
+import type { PatientCase } from '../../model/case'
+import { RANKS, coveragesOf, rankName, subscriberName, type Coverage } from '../../model/coverage'
 import { effectiveRule } from '../../model/insurance-rules'
-import { toCoverageValues } from '../../schemas/coverage-form'
+import { genderName, type PatientSummary } from '../../model/patient'
+import {
+  useCreateCaseInsurance,
+  useDeleteCaseInsurance,
+  useUpdateCaseInsurance,
+} from '../../queries/use-case-insurances'
+import { toCoveragePayload, toCoverageUpdatePayload } from '../../schemas/coverage-form'
+import { CardEmpty, ChartCard } from './ChartCard'
 import { CoverageDialog } from './CoverageDialog'
 import { NeedsDialog } from './NeedsDialog'
-import { ChartCard } from './ChartCard'
 
 /**
- * The chart's Insurance: the patient's coverage list, as the prototype has it.
- * Each case chooses its Primary and Secondary from this list. A coverage shows
- * its insurance, the cases using it, the insurance's class, type, payer ID and
- * what it requires, then the member ID, group number (marked when missing),
- * claim number, subscriber and employer — with Edit and Remove.
- *
- * Remove is refused while a case uses the coverage, as in the prototype. (Its
- * other refusal — a coverage that has been billed — needs claims, which do not
- * exist here yet.)
+ * The case's Insurance: its insurances, in rank order — Primary, Secondary,
+ * Tertiary — as the server keeps them (user 2026-10-08: a coverage belongs to
+ * a case). A table, a row each (user, 2026-10-08: the chart reads clearer in
+ * tables): the insurance with its class, type, payer ID and what it requires,
+ * the member and group numbers, the claim number, the dates it is in effect,
+ * the subscriber and — when one has — the employer, then Edit and Delete as
+ * the tables' icon buttons. "Add insurance" offers the practice's active
+ * insurances not on the case yet.
  */
-export function InsuranceSection({ patientId }: { patientId: string }) {
+export function InsuranceSection({ patient, caseItem }: { patient: PatientSummary; caseItem: PatientCase }) {
   const records = usePatientRecords()
   const insurances = useInsurances()
   const classes = useInsuranceClasses()
+  const create = useCreateCaseInsurance()
+  const update = useUpdateCaseInsurance()
+  const remove = useDeleteCaseInsurance()
   /** `undefined`: no dialog. `null`: adding. A coverage: editing it. */
   const [editing, setEditing] = useState<Coverage | null | undefined>(undefined)
   const [removing, setRemoving] = useState<Coverage | null>(null)
   const [needsInsurance, setNeedsInsurance] = useState(false)
 
-  const patient = records.patients.find((item) => item.id === patientId)
-  if (patient === undefined) return null
-
-  const coverages = records.coverages.filter((coverage) => coverage.patientId === patient.id)
+  const coverages = coveragesOf(records.coverages, caseItem.id)
   const allInsurances = insurances.data ?? []
   const insuranceOf = (coverage: Coverage) => allInsurances.find((item) => item.id === coverage.insuranceId)
+  const nameOf = (coverage: Coverage) => coverage.insuranceLabel || coverage.insuranceName || 'Insurance'
   const practiceClasses = (classes.data ?? []).filter((item) => item.practiceId === patient.practiceId)
-  // The prototype offers the practice's active insurances.
-  const offered = (current: Coverage | null) =>
-    allInsurances.filter(
-      (item) => item.practiceId === patient.practiceId && (item.isActive || item.id === current?.insuranceId),
-    )
-  const usingCases = (coverage: Coverage) =>
-    records.cases.filter(
-      (item) => item.primaryCoverageId === coverage.id || item.secondaryCoverageId === coverage.id,
-    )
-
+  const onCase = new Set(coverages.map((coverage) => coverage.insuranceId))
+  // The practice's active insurances, those not on the case yet.
+  const offered = allInsurances.filter(
+    (item) => item.practiceId === patient.practiceId && item.isActive && !onCase.has(item.id),
+  )
+  const nextRank = RANKS.find((rank) => !coverages.some((coverage) => String(coverage.rank) === rank.value))
   const add = () => {
-    if (offered(null).length === 0) setNeedsInsurance(true)
+    if (allInsurances.every((item) => item.practiceId !== patient.practiceId || !item.isActive))
+      setNeedsInsurance(true)
     else setEditing(null)
   }
+
+  const columns: Column<Coverage>[] = [
+    {
+      key: 'priority',
+      header: 'Priority',
+      cell: (coverage) => <Tag tone={coverage.rank === 1 ? 'brand' : 'inert'}>{rankName(coverage)}</Tag>,
+    },
+    {
+      key: 'insurance',
+      header: 'Insurance',
+      primary: true,
+      cell: (coverage) => {
+        const insurance = insuranceOf(coverage)
+        const insuranceClass = practiceClasses.find((item) => item.id === insurance?.insuranceClassId)
+        // The class and the type often say the same thing ("Workers' Comp"): once.
+        const kind = [insuranceClass?.name, insurance?.insuranceTypeLabel]
+          .filter((part): part is string => part !== undefined && part !== '')
+          .filter((part, index, parts) => parts.findIndex((other) => sameWords(other, part)) === index)
+        const flags = [
+          ...(effectiveRule(insurance, practiceClasses, 'authorizationRequired')
+            ? ['Authorization required']
+            : []),
+          ...(insurance?.insuranceHold === true ? ['Insurance hold'] : []),
+        ]
+        return (
+          <>
+            <span className="text-ink font-medium break-words">{nameOf(coverage)}</span>
+            {insurance !== undefined && (
+              <CellSub>{[...kind, `Payer ID ${insurance.payerId || '—'}`].join(' · ')}</CellSub>
+            )}
+            {flags.length > 0 && (
+              <span className="mt-1.5 flex flex-wrap gap-1.5">
+                {flags.map((flag) => (
+                  <Tag key={flag} tone="attention">
+                    {flag}
+                  </Tag>
+                ))}
+              </span>
+            )}
+          </>
+        )
+      },
+    },
+    {
+      key: 'member',
+      header: 'Member ID',
+      cell: (coverage) => (
+        <>
+          <span className="whitespace-nowrap">
+            <Plain value={coverage.memberId} />
+          </span>
+          {/* Optional on the server: many plans have none (Box 11 stays blank). */}
+          {coverage.groupNumber !== '' && (
+            <CellSub>
+              <span className="whitespace-nowrap">Group {coverage.groupNumber}</span>
+            </CellSub>
+          )}
+        </>
+      ),
+    },
+    {
+      key: 'claim',
+      header: 'Claim number',
+      cell: (coverage) => <Plain value={coverage.claimNumber} />,
+    },
+    {
+      key: 'dates',
+      header: 'In effect',
+      cell: (coverage) => {
+        const from = coverage.effectiveDate === '' ? '' : formatIsoDate(coverage.effectiveDate)
+        const to = coverage.terminationDate === '' ? '' : formatIsoDate(coverage.terminationDate)
+        if (from === '' && to === '') return <Plain value="" />
+        // Wraps between the two dates, never inside one.
+        return (
+          <span className="tabular-nums">
+            <span className="whitespace-nowrap">{from === '' ? 'Until' : `${from} –`}</span>{' '}
+            <span className="whitespace-nowrap">{to === '' ? 'no end date' : to}</span>
+          </span>
+        )
+      },
+    },
+    {
+      key: 'subscriber',
+      header: 'Subscriber',
+      cell: ({ subscriber }) =>
+        subscriber === null ? (
+          'The patient (self)'
+        ) : (
+          <>
+            <span className="break-words">{subscriberName(subscriber) || '(name missing)'}</span>
+            <CellSub>
+              {[
+                subscriber.relationship,
+                subscriber.dob === '' ? '' : `born ${formatIsoDate(subscriber.dob)}`,
+                genderName({ gender: subscriber.gender, genderLabel: '' }),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </CellSub>
+          </>
+        ),
+    },
+    // Only Workers' Comp names an employer: the column shows when one does.
+    ...(coverages.some((coverage) => coverage.employer !== null)
+      ? [
+          {
+            key: 'employer',
+            header: 'Employer',
+            cell: ({ employer }: Coverage) =>
+              employer === null ? (
+                <Plain value="" />
+              ) : (
+                <>
+                  <span className="break-words">{employer.name}</span>
+                  {employer.address !== null && (
+                    <CellSub>
+                      {`${employer.address.line1}, ${employer.address.city}, ${employer.address.state} ${employer.address.zip}`}
+                    </CellSub>
+                  )}
+                </>
+              ),
+          },
+        ]
+      : []),
+    actionsColumn<Coverage>((coverage) => (
+      <RowActions>
+        <RowActionButton
+          action="edit"
+          label={`Edit ${nameOf(coverage)}`}
+          onClick={() => setEditing(coverage)}
+        />
+        <RowActionButton
+          action="delete"
+          label={`Delete ${nameOf(coverage)}`}
+          onClick={() => setRemoving(coverage)}
+        />
+      </RowActions>
+    )),
+  ]
 
   return (
     <>
       <ChartCard
         id="insurance"
         className="mt-4"
-        title="Insurance coverage"
-        description="The patient’s policies · each case chooses its primary and secondary from this list"
+        headingLevel={3}
+        title="Insurance"
+        info="The insurances this case is billed to. Claims go to the primary first, then the secondary and the tertiary."
         aside={
-          <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden="true" />} onClick={add}>
-            Add coverage
+          <Button size="sm" icon={<Plus size={14} aria-hidden="true" />} onClick={add}>
+            Add insurance
           </Button>
         }
       >
-        {coverages.length === 0 ? (
-          <div className="mt-3">
-            <EmptyState
-              icon={<Landmark size={20} />}
-              title="No insurance for this patient"
-              description="Add the patient’s coverage here, then choose it as a case’s primary insurance. Visits on a case without a primary insurance are pended."
-            />
-          </div>
-        ) : (
-          <ul className="mt-1" aria-label="Coverage">
-            {coverages.map((coverage) => {
-              const insurance = insuranceOf(coverage)
-              const name = insurance === undefined ? 'Insurance' : insuranceLabel(insurance)
-              const insuranceClass = practiceClasses.find((item) => item.id === insurance?.insuranceClassId)
-              const used = usingCases(coverage)
-              const subscriber = coverage.subscriber
-              return (
-                <li key={coverage.id} className="border-rule-row border-t py-4 first:border-t-0 last:pb-0">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <span className="text-row text-ink min-w-0 flex-1 basis-60 font-medium break-words">
-                      {name}
-                    </span>
-                    <span className="flex flex-none items-center gap-1.5">
-                      <Button
-                        size="sm"
-                        icon={<Pencil size={14} aria-hidden="true" />}
-                        aria-label={`Edit coverage ${name}`}
-                        onClick={() => setEditing(coverage)}
-                      >
-                        Edit
-                      </Button>
-                      <RowActionButton
-                        action="delete"
-                        label={`Remove coverage ${name}`}
-                        title="Remove"
-                        onClick={() => {
-                          if (used.length > 0) {
-                            toast.warning(
-                              'This coverage is used on a case',
-                              `Choose another insurance on ${used.map((item) => `“${item.name}”`).join(', ')} first.`,
-                            )
-                            return
-                          }
-                          setRemoving(coverage)
-                        }}
-                      />
-                    </span>
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {used.length === 0 ? (
-                      <span className="text-micro text-n500">Not used on a case yet</span>
-                    ) : (
-                      used.map((item) => (
-                        <Tag key={item.id} tone="brand">
-                          {item.primaryCoverageId === coverage.id ? 'Primary' : 'Secondary'} · {item.name}
-                        </Tag>
-                      ))
-                    )}
-                  </div>
-                  {insurance !== undefined && (
-                    <p className="text-micro text-n500 mt-1.5">
-                      {[
-                        insuranceClass?.name ?? '—',
-                        insurance.insuranceTypeLabel || '—',
-                        `Payer ID ${insurance.payerId || '—'}`,
-                        ...(effectiveRule(insurance, practiceClasses, 'authorizationRequired')
-                          ? ['Authorization required']
-                          : []),
-                        ...(insurance.insuranceHold ? ['Insurance hold (manual release)'] : []),
-                      ].join(' · ')}
-                    </p>
-                  )}
-                  <KeyValue
-                    className="max-sm:grid-cols-2"
-                    items={[
-                      { label: 'Member ID', value: coverage.memberId },
-                      {
-                        label: 'Group number',
-                        value:
-                          coverage.groupNumber === '' ? (
-                            <Badge tone="critical" dot={false}>
-                              Missing — required for billing
-                            </Badge>
-                          ) : (
-                            coverage.groupNumber
-                          ),
-                      },
-                      { label: 'Claim number', value: coverage.claimNumber },
-                      {
-                        label: 'Subscriber',
-                        value:
-                          subscriber === null
-                            ? 'The patient (self)'
-                            : [
-                                subscriber.name || '(name missing)',
-                                subscriber.relationship,
-                                subscriber.dob === '' ? '' : formatIsoDate(subscriber.dob),
-                              ]
-                                .filter(Boolean)
-                                .join(' · '),
-                      },
-                      ...(coverage.employer === null
-                        ? []
-                        : [
-                            {
-                              label: 'Employer (WC)',
-                              value: [coverage.employer.name, coverage.employer.address]
-                                .filter(Boolean)
-                                .join(' — '),
-                            },
-                          ]),
-                    ]}
-                  />
-                </li>
-              )
-            })}
-          </ul>
-        )}
+        <DataTable
+          className="mt-2"
+          caption={`Insurances of ${caseItem.name}`}
+          columns={columns}
+          rows={coverages}
+          getRowId={(coverage) => coverage.id}
+          empty={
+            <CardEmpty title="No insurance on this case">
+              Add the insurance it is billed to — visits on a case without a primary insurance are pended.
+            </CardEmpty>
+          }
+        />
       </ChartCard>
 
       {editing !== undefined && (
         <CoverageDialog
           key={editing?.id ?? 'new'}
           coverage={editing}
-          insurances={offered(editing)}
-          onSave={(values) => {
-            if (editing === null) {
-              records.addCoverage(patient.id, toCoverageValues(values))
-              toast.success('Coverage saved', 'Choose it on a case as the primary or secondary insurance.')
-            } else {
-              records.updateCoverage(editing.id, toCoverageValues(values))
-              toast.success('Coverage saved')
-            }
+          insurances={offered}
+          nextRank={nextRank?.value ?? null}
+          onSave={async (values) => {
+            const message =
+              editing === null
+                ? await create.mutateAsync(toCoveragePayload(caseItem.id, values))
+                : await update.mutateAsync({ id: editing.id, payload: toCoverageUpdatePayload(values) })
+            toast.success(message ?? 'Insurance saved')
           }}
           onClose={() => setEditing(undefined)}
         />
@@ -212,8 +249,8 @@ export function InsuranceSection({ patientId }: { patientId: string }) {
 
       {needsInsurance && (
         <NeedsDialog
-          title="Cannot add coverage yet"
-          description="Coverage links this patient to one of the practice’s insurances, with the member ID and group number for that policy. Claims are addressed to a coverage, never to an insurance directly. The practice has no insurances yet."
+          title="Cannot add insurance yet"
+          description="A case is billed to one of the practice’s insurances, with the member ID and group number of the patient’s policy. The practice has no active insurances yet."
           needs={[
             {
               ok: practiceClasses.some((item) => item.isActive),
@@ -237,19 +274,47 @@ export function InsuranceSection({ patientId }: { patientId: string }) {
         onOpenChange={(open) => {
           if (!open) setRemoving(null)
         }}
-        title="Remove this coverage?"
+        title="Delete this insurance?"
         description={
           removing === null
             ? ''
-            : `${insuranceOf(removing)?.name ?? 'The insurance'} is removed from the patient’s insurance list.`
+            : `${removing.insuranceName || 'The insurance'} is taken off ${caseItem.name}, with the authorizations it issued.`
         }
-        confirmLabel="Remove coverage"
+        confirmLabel="Delete insurance"
         tone="destructive"
-        onConfirm={() => {
-          if (removing !== null) records.removeCoverage(removing.id)
-          setRemoving(null)
+        onConfirm={async () => {
+          if (removing === null) return
+          try {
+            const message = await remove.mutateAsync(removing.id)
+            toast.success(message ?? 'Insurance deleted')
+          } catch (error) {
+            toast.error(
+              'The insurance was not deleted',
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
         }}
       />
     </>
+  )
+}
+
+/**
+ * The same words, whatever their case, punctuation or where the plural "s"
+ * falls: "Worker's Comp" and "Workers' Comp".
+ */
+const sameWords = (a: string, b: string) => {
+  const plain = (text: string) => text.toLowerCase().replace(/[^a-z0-9]|s/g, '')
+  return plain(a) === plain(b)
+}
+
+/** A value, or a dash said as "None" when there is none. */
+function Plain({ value }: { value: string }) {
+  if (value !== '') return <span className="break-words">{value}</span>
+  return (
+    <span className="text-n400">
+      <span aria-hidden="true">—</span>
+      <span className="sr-only">None</span>
+    </span>
   )
 }

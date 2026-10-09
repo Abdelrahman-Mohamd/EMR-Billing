@@ -1,80 +1,79 @@
-import { useId } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
+import { Plus, Stethoscope } from 'lucide-react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { Button, buttonClass } from '@/components/ui/Button'
 import { DateInput } from '@/components/ui/DateInput'
 import { Dialog } from '@/components/ui/Dialog'
-import { FormGrid, FormNote, FormSection } from '@/components/ui/Field'
-import { Form, FormField } from '@/components/ui/Form'
+import { FormGrid, FormSection } from '@/components/ui/Field'
+import { Form, FormField, applyServerErrors } from '@/components/ui/Form'
 import { Input } from '@/components/ui/Input'
+import { Notice } from '@/components/ui/Notice'
 import { SearchSelect } from '@/components/ui/SearchSelect'
 import { Select } from '@/components/ui/Select'
 import { Switch } from '@/components/ui/Switch'
 import type { ReferringPhysician } from '@/features/admin-referring-physicians'
 import { todayIso } from '@/lib/utils/dates'
 import { isValidNpi } from '@/lib/validation/npi'
-import { INJURY_TYPES, type PatientCase } from '../../model/case'
-import { caseFormSchema, newCaseValues, toCaseFormValues, type CaseFormValues } from '../../schemas/case-form'
+import { AUTO, INJURY_TYPES, type PatientCase } from '../../model/case'
+import {
+  CASE_NAME_MAX,
+  caseFormSchema,
+  newCaseValues,
+  toCaseFormValues,
+  type CaseFormValues,
+} from '../../schemas/case-form'
 
-export interface CoverageOption {
-  value: string
-  label: string
-  /** What the coverage's insurance requires. */
+/** What the case's primary insurance requires of it, when it has one. */
+export interface PrimaryNeeds {
   injuryDateRequired: boolean
-  isWorkersComp: boolean
-  /** Its insurance's name, for the injury-date help ("{name} requires it"). */
+  /** Its name, for the injury-date help ("{name} requires it"). */
   insuranceName: string
 }
 
 /**
  * New or edit a case, in the prototype's layout: case name and referring
- * physician; Insurance — the primary and optional secondary, chosen from the
- * patient's coverage; Injury & dates — related cause, injury / onset date,
- * accident state, employment status, start of care, discharge date; and
- * whether the case is open.
+ * physician; Injury & dates — related cause, injury / onset date, accident
+ * state, start of care, discharge date; and whether the case is open. The
+ * case's insurances are added on its own Insurance card, not here; the
+ * prototype's employment status is not in the case contract.
+ *
+ * Saving waits for the server; its field errors land on the fields, its other
+ * refusals show above them, and the dialog stays.
  *
  * As in the prototype, the injury date and accident state wait for a related
  * cause (the injury date stays open when the primary insurance requires it),
  * and closing them clears them. When the practice has no referring physicians,
- * or the patient no insurance, the form says where to add them.
+ * the form says where to add them.
  */
 export function CaseDialog({
   item,
   referrers,
-  coverageOptions,
+  primary,
   onSave,
   onClose,
-  onShowInsurance,
 }: {
   /** `null` adds a case. */
   item: PatientCase | null
   /** The practice's referring physicians. */
   referrers: readonly ReferringPhysician[]
-  /** The patient's coverage, "Aetna · member W2840…". */
-  coverageOptions: readonly CoverageOption[]
-  onSave: (values: CaseFormValues, injuryDateRequired: boolean) => void
+  /** The case's primary insurance, when it has one (a new case has none yet). */
+  primary: PrimaryNeeds | undefined
+  /** Resolves with the server's message. */
+  onSave: (values: CaseFormValues, injuryDateRequired: boolean) => Promise<unknown>
   onClose: () => void
-  /** Closes the form and goes to the patient's insurance list, on the chart. */
-  onShowInsurance: () => void
 }) {
   const formId = useId()
   const today = todayIso()
-  const optionOf = (id: string | null) => coverageOptions.find((option) => option.value === id)
+  const [failure, setFailure] = useState<string | null>(null)
   const form = useForm<CaseFormValues>({
-    resolver: zodResolver(
-      caseFormSchema({
-        injuryDateRequired: (id) => optionOf(id)?.injuryDateRequired ?? false,
-        isWorkersComp: (id) => optionOf(id)?.isWorkersComp ?? false,
-      }),
-    ),
+    resolver: zodResolver(caseFormSchema(today)),
     defaultValues: item === null ? newCaseValues(today) : toCaseFormValues(item),
   })
-  const [injuryType, primaryCoverageId] = useWatch({
-    control: form.control,
-    name: ['injuryType', 'primaryCoverageId'],
-  })
-  const primary = optionOf(primaryCoverageId)
+  const submitting = form.formState.isSubmitting
+  const injuryType = useWatch({ control: form.control, name: 'injuryType' })
   const cause = injuryType !== null && injuryType !== ''
   const injuryDateOpen = cause || (primary?.injuryDateRequired ?? false)
 
@@ -87,16 +86,17 @@ export function CaseDialog({
       title={item === null ? 'New case' : 'Edit case'}
       description={
         item === null
-          ? 'A case is one episode of care, billed to the insurance you choose from the patient’s list. Diagnoses are added to it next.'
+          ? 'A case is one episode of care. Its insurances and diagnoses are added to it next.'
           : 'Visits inherit these values.'
       }
       size="lg"
+      dismissible={!submitting}
       footer={
         <>
-          <Button variant="quiet" onClick={onClose}>
+          <Button variant="quiet" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button type="submit" form={formId} variant="primary">
+          <Button type="submit" form={formId} variant="primary" loading={submitting}>
             {item === null ? 'Create case' : 'Save case'}
           </Button>
         </>
@@ -105,95 +105,79 @@ export function CaseDialog({
       <Form
         id={formId}
         form={form}
-        onSubmit={(values) => {
-          onSave(values, optionOf(values.primaryCoverageId)?.injuryDateRequired ?? false)
-          onClose()
+        onSubmit={async (values) => {
+          setFailure(null)
+          try {
+            await onSave(values, primary?.injuryDateRequired ?? false)
+            onClose()
+          } catch (error) {
+            const leftover = applyServerErrors(form, error)
+            setFailure(isApiError(error) && error.kind !== 'validation' ? userMessage(error) : leftover)
+          }
         }}
       >
         <FormGrid>
-          <FormField name="name" label="Case name" required span={6}>
-            {(field) => (
-              <Input {...field} placeholder="Enter case name, e.g. R shoulder 2026" autoComplete="off" />
-            )}
-          </FormField>
+          {failure !== null && (
+            <div className="col-span-12">
+              <Notice tone="critical">{failure}</Notice>
+            </div>
+          )}
           <FormField
-            name="referrerId"
-            label="Referring physician"
+            name="name"
+            label="Case name"
             required
-            span={6}
-            info="Name and NPI go on the claim (Box 17)."
+            // The whole row when there is no physician to choose beside it.
+            span={referrers.length === 0 ? 12 : 6}
+            info="No two cases of a patient can share a name."
           >
             {(field) => (
-              <SearchSelect
-                value={typeof field.value === 'string' ? field.value : null}
-                onChange={field.onChange}
-                options={referrers.map((referrer) => ({
-                  value: String(referrer.id),
-                  label: `${referrer.name} · NPI ${referrer.npi}${isValidNpi(referrer.npi) ? '' : ' (invalid)'}`,
-                }))}
-                placeholder="Select a referring physician"
-                searchPlaceholder="Search physicians"
+              <Input
+                {...field}
+                placeholder="Enter case name, e.g. R shoulder 2026"
+                maxLength={CASE_NAME_MAX}
+                autoComplete="off"
+                readOnly={submitting}
               />
             )}
           </FormField>
-          {/* Under the row, so the case name and the physician stay side by side. */}
-          {referrers.length === 0 && (
-            <div className="col-span-12 flex flex-wrap items-center gap-3">
-              <FormNote>
-                <strong className="font-medium">No referring physicians yet.</strong> A case needs one for
-                billing — the name and NPI print in Box 17.
-              </FormNote>
-              <Link to="/setup/referring-physicians" className={buttonClass('default', 'sm')}>
-                Add a referring physician
-              </Link>
-            </div>
+          {/* With nothing to choose from, the choice gives way to what to do first. */}
+          {referrers.length === 0 ? (
+            <EmptyChoice
+              icon={<Stethoscope size={18} />}
+              title="No referring physicians yet"
+              action={
+                <Link
+                  to="/setup/referring-physicians"
+                  className={buttonClass('default', 'sm', 'max-sm:ml-13')}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  Add a referring physician
+                </Link>
+              }
+            >
+              Add one to the practice first. Their name and NPI go on the claim (Box 17).
+            </EmptyChoice>
+          ) : (
+            <FormField
+              name="referrerId"
+              label="Referring physician"
+              span={6}
+              info="Name and NPI go on the claim (Box 17)."
+            >
+              {(field) => (
+                <SearchSelect
+                  value={typeof field.value === 'string' ? field.value : null}
+                  onChange={field.onChange}
+                  options={referrers.map((referrer) => ({
+                    value: String(referrer.id),
+                    label: `${referrer.name} · NPI ${referrer.npi}${isValidNpi(referrer.npi) ? '' : ' (invalid)'}`,
+                  }))}
+                  placeholder="Select a referring physician"
+                  searchPlaceholder="Search physicians"
+                />
+              )}
+            </FormField>
           )}
-
-          <FormSection title="Insurance">
-            {coverageOptions.length === 0 && (
-              <div className="col-span-12 flex flex-wrap items-center gap-3">
-                <FormNote>
-                  <strong className="font-medium">This patient has no insurance yet.</strong> Add it to the
-                  patient’s insurance list, then choose it here.
-                </FormNote>
-                <Button size="sm" onClick={onShowInsurance}>
-                  Go to the patient’s insurance
-                </Button>
-              </div>
-            )}
-            <FormField
-              name="primaryCoverageId"
-              label="Primary insurance"
-              required
-              span={6}
-              info="From the patient’s insurance list. Claims go here first."
-            >
-              {(field) => (
-                <Select
-                  value={typeof field.value === 'string' ? field.value : null}
-                  onChange={field.onChange}
-                  options={coverageOptions}
-                  placeholder="Select the primary insurance"
-                />
-              )}
-            </FormField>
-            <FormField
-              name="secondaryCoverageId"
-              label="Secondary insurance"
-              span={6}
-              info="Billed after the primary’s remittance posts."
-            >
-              {(field) => (
-                <Select
-                  value={typeof field.value === 'string' ? field.value : null}
-                  onChange={field.onChange}
-                  options={coverageOptions}
-                  placeholder="None"
-                  clearable
-                />
-              )}
-            </FormField>
-          </FormSection>
 
           <FormSection title="Injury & dates">
             <FormField
@@ -213,7 +197,7 @@ export function CaseDialog({
                       if (!(primary?.injuryDateRequired ?? false)) form.setValue('injuryDate', '')
                     }
                   }}
-                  options={INJURY_TYPES.map((value) => ({ value, label: value }))}
+                  options={INJURY_TYPES}
                   placeholder="Not related to an injury"
                   clearable
                 />
@@ -223,7 +207,6 @@ export function CaseDialog({
               name="injuryDate"
               label="Injury / onset date"
               span={4}
-              required={injuryDateOpen}
               disabled={!injuryDateOpen}
               info={
                 primary?.injuryDateRequired === true
@@ -245,20 +228,18 @@ export function CaseDialog({
               name="accidentState"
               label="Accident state"
               span={4}
-              required={injuryType === 'Auto'}
+              required={injuryType === AUTO}
               disabled={!cause}
               info="Box 10b when auto related."
             >
-              {(field) => <Input {...field} placeholder="Enter state" maxLength={2} disabled={!cause} />}
-            </FormField>
-            <FormField
-              name="employmentStatus"
-              label="Employment status"
-              span={6}
-              required={primary?.isWorkersComp ?? false}
-            >
               {(field) => (
-                <Input {...field} placeholder="Enter status, e.g. Employed full time" autoComplete="off" />
+                <Input
+                  {...field}
+                  onChange={(event) => field.onChange(event.target.value.toUpperCase())}
+                  placeholder="Enter state"
+                  maxLength={2}
+                  disabled={!cause}
+                />
               )}
             </FormField>
             <FormField name="startOfCare" label="Start of care" span={3}>
@@ -296,5 +277,38 @@ export function CaseDialog({
         </FormGrid>
       </Form>
     </Dialog>
+  )
+}
+
+/**
+ * What stands in for a choice that has nothing to choose from yet: an icon,
+ * what is missing, what to do, and the way to do it. The action wraps under
+ * the text on a phone, lined up with it (`max-sm:ml-13` on the action).
+ */
+function EmptyChoice({
+  icon,
+  title,
+  action,
+  children,
+}: {
+  icon: ReactNode
+  title: string
+  action: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div className="bg-n50 rounded-card col-span-12 flex flex-wrap items-start gap-x-4 gap-y-3 px-4 py-3.5 sm:items-center">
+      <span
+        aria-hidden="true"
+        className="bg-canvas text-n500 grid size-9 flex-none place-items-center rounded-full"
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1 basis-56">
+        <span className="text-meta text-ink block font-medium">{title}</span>
+        <span className="text-micro text-n500 mt-0.5 block">{children}</span>
+      </span>
+      {action}
+    </div>
   )
 }

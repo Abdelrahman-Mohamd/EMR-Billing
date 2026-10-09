@@ -1,10 +1,8 @@
+import type { SelectOption } from '@/components/ui/Select'
+
 /**
- * A patient as the prototype shows it (PRD V2 §10.4; guarantor address from the
- * meeting of 2026-09-23). **Frontend only:** no backend exists for patients, so
- * this is the screen's own shape, not a contract.
- *
- * Deliberately absent: Billing preferences / `no_statements` (removed by the
- * client, Q-091), emergency contact (CH-14a), guarantor date of birth (Q-069).
+ * A patient as the screens see them — read from the server (schemas/patient.ts).
+ * The roster's list carries a summary; the chart reads the whole record.
  */
 export interface PostalAddress {
   line1: string
@@ -16,16 +14,21 @@ export interface PostalAddress {
 
 /** The responsible party when it is not the patient. */
 export interface Guarantor {
-  name: string
+  firstName: string
+  lastName: string
   relationship: string
-  address: Omit<PostalAddress, 'line2'>
+  /** ISO date, '' when none. */
+  dob: string
+  address: Omit<PostalAddress, 'line2'> | null
 }
 
-export interface Patient {
+/** What the roster's list carries. */
+export interface PatientSummary {
+  /** The server's id, as text: the chart's address and the key of the records kept in this tab. */
   id: string
+  /** The server's id: the Billing ID. */
+  billingId: number
   practiceId: number
-  /** Assigned by the billing system; unknown for a patient added here until a backend assigns it. */
-  billingId: number | null
   /** The EMR's id — the sync key. Null for a patient added by hand. */
   emrId: number | null
   firstName: string
@@ -33,9 +36,25 @@ export interface Patient {
   lastName: string
   /** ISO date. */
   dob: string
+  /** M, F or U. */
   gender: string
-  /** Never shown in full here — see `maskSsn`. '' when there is none. */
-  ssn: string
+  /** As the server words it: "Male". */
+  genderLabel: string
+  /** As the server sends it — only ever masked ("***-**-6789"); '' when there is none. */
+  maskedSsn: string
+  isActive: boolean
+}
+
+/** A case as the patient's record names it. */
+export interface PatientCaseRef {
+  id: string
+  name: string
+  isActive: boolean
+}
+
+/** The whole record, as the chart reads it. */
+export interface Patient extends PatientSummary {
+  /** Ten digits as stored; see `showPhone`. */
   phoneCell: string
   phoneHome: string
   email: string
@@ -43,22 +62,39 @@ export interface Patient {
   /** Null: the patient receives the statements. */
   guarantor: Guarantor | null
   notes: string
-  isActive: boolean
+  /** True: no statements are sent for this patient. */
+  noStatements: boolean
+  cases: PatientCaseRef[]
 }
 
-export const GENDERS = ['Female', 'Male', 'Other'] as const
-export const GUARANTOR_RELATIONSHIPS = ['Spouse', 'Parent', 'Child', 'Other'] as const
+/** The server's genders, in the prototype's order. */
+export const GENDERS: readonly SelectOption[] = [
+  { value: 'F', label: 'Female' },
+  { value: 'M', label: 'Male' },
+  { value: 'U', label: 'Unknown' },
+]
+
+export function genderName(patient: Pick<PatientSummary, 'gender' | 'genderLabel'>): string {
+  return (
+    patient.genderLabel || GENDERS.find((option) => option.value === patient.gender)?.label || patient.gender
+  )
+}
+
+/** The server's guarantor relationships. */
+export const GUARANTOR_RELATIONSHIPS = ['Spouse', 'Parent', 'Legal Guardian', 'Other'] as const
 
 /** "Okonkwo, Nadia" — how the roster lists a patient. */
-export const listName = (patient: Pick<Patient, 'firstName' | 'lastName'>) =>
+export const listName = (patient: Pick<PatientSummary, 'firstName' | 'lastName'>) =>
   `${patient.lastName}, ${patient.firstName}`
 
 /** "Nadia Okonkwo". */
-export const fullName = (patient: Pick<Patient, 'firstName' | 'lastName'>) =>
+export const fullName = (patient: Pick<PatientSummary, 'firstName' | 'lastName'>) =>
   `${patient.firstName} ${patient.lastName}`
 
-/** The prototype's mask: only the last four digits. */
-export const maskSsn = (ssn: string) => (ssn === '' ? '' : `***-**-${ssn.slice(-4)}`)
+/** Ten stored digits, shown as 718-555-0100; anything else as it came. */
+export function showPhone(value: string): string {
+  return /^\d{10}$/.test(value) ? `${value.slice(0, 3)}-${value.slice(3, 6)}-${value.slice(6)}` : value
+}
 
 /** Whole years on `today` (both ISO dates). */
 export function ageOn(dob: string, today: string): number {

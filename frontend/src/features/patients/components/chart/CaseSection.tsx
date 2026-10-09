@@ -1,35 +1,37 @@
 import { useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, FileCheck, Hash, Pencil, Plus } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import { Badge, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { DataTable, type Column } from '@/components/ui/DataTable'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { KeyValue } from '@/components/ui/KeyValue'
-import { RowActionButton, actionsColumn } from '@/components/ui/RowActions'
-import { Notice } from '@/components/ui/Notice'
-import { EmptyState } from '@/components/ui/States'
-import {
-  insuranceLabel,
-  useInsuranceClasses,
-  useInsurances,
-  type Insurance,
-} from '@/features/admin-insurances'
+import { RowActionButton, RowActions, actionsColumn } from '@/components/ui/RowActions'
+import { useInsuranceClasses, useInsurances, type Insurance } from '@/features/admin-insurances'
 import { useReferringPhysicians } from '@/features/admin-referring-physicians'
 import { cn } from '@/lib/utils/cn'
 import { formatIsoDate, todayIso } from '@/lib/utils/dates'
 import { usePatientRecords } from '../../data/patient-records-store'
-import { authRemaining, authStatus, type Authorization } from '../../model/authorization'
-import { MAX_DIAGNOSES, type PatientCase } from '../../model/case'
-import type { Coverage } from '../../model/coverage'
+import { AUTH_UNITS, authStatus, type Authorization } from '../../model/authorization'
+import { MAX_DIAGNOSES, injuryTypeName, type PatientCase } from '../../model/case'
+import { coveragesOf, primaryOf, rankName, type Coverage } from '../../model/coverage'
 import { effectiveRule } from '../../model/insurance-rules'
 import { casesOf, leadCase } from '../../model/roster'
-import { toAuthorizationValues } from '../../schemas/authorization-form'
+import {
+  useCreateAuthorization,
+  useDeleteAuthorization,
+  useUpdateAuthorization,
+} from '../../queries/use-authorizations'
+import { useDeletePatientCase, useSetCaseDiagnoses } from '../../queries/use-patient-cases'
+import { toAuthorizationPayload, toAuthorizationUpdatePayload } from '../../schemas/authorization-form'
 import { AuthorizationDialog } from './AuthorizationDialog'
 import { CaseEditor } from './CaseEditor'
 import { DiagnosisDialog } from './DiagnosisDialog'
-import { ChartCard } from './ChartCard'
-import { SCROLL_MARGIN, scrollToSection } from './chart-scroll'
+import { InsuranceSection } from './InsuranceSection'
+import { CardEmpty, CardGroup, ChartCard } from './ChartCard'
+import { SCROLL_MARGIN } from './chart-scroll'
 
 const required = (
   <Badge tone="critical" dot={false}>
@@ -46,33 +48,40 @@ const required = (
  * order) and Authorizations. The case chosen is in the URL (`?case=<id>`);
  * with none, the first open case.
  *
- * Not built, because they need visits: the case's visit locations, the Visits &
- * claims list, and authorizations' use (an authorization is never used here, so
- * every one can be deleted).
+ * The authorizations are the server's (contract 2026-10-09): added, edited and
+ * deleted there, each issued by one of the case's insurances; what visits have
+ * used and what is left are the server's counts.
  */
 export function CaseSection({ patientId, caseId }: { patientId: string; caseId: string | undefined }) {
+  const navigate = useNavigate()
   const records = usePatientRecords()
+  const setDiagnoses = useSetCaseDiagnoses()
+  const removeCase = useDeletePatientCase()
+  const [deletingCase, setDeletingCase] = useState(false)
   const insurances = useInsurances()
   const classes = useInsuranceClasses()
   const referrers = useReferringPhysicians()
   const [editing, setEditing] = useState<PatientCase | null | undefined>(undefined)
   const [addingDiagnosis, setAddingDiagnosis] = useState(false)
   const [removingDiagnosis, setRemovingDiagnosis] = useState<number | null>(null)
-  const [addingAuth, setAddingAuth] = useState(false)
+  /** `undefined`: no dialog. `null`: adding. An authorization: editing it. */
+  const [editingAuth, setEditingAuth] = useState<Authorization | null | undefined>(undefined)
   const [deletingAuth, setDeletingAuth] = useState<Authorization | null>(null)
+  const createAuth = useCreateAuthorization()
+  const updateAuth = useUpdateAuthorization()
+  const removeAuth = useDeleteAuthorization()
 
   const patient = records.patients.find((item) => item.id === patientId)
   if (patient === undefined) return null
 
   const cases = casesOf(records.cases, patient.id)
   const current = cases.find((item) => item.id === caseId) ?? leadCase(cases)
-  const coverages = records.coverages.filter((coverage) => coverage.patientId === patient.id)
   const allInsurances = insurances.data ?? []
   const practiceClasses = (classes.data ?? []).filter((item) => item.practiceId === patient.practiceId)
   const practiceReferrers = (referrers.data ?? []).filter((item) => item.practiceId === patient.practiceId)
   const insuranceOf = (coverage: Coverage | undefined): Insurance | undefined =>
     coverage === undefined ? undefined : allInsurances.find((item) => item.id === coverage.insuranceId)
-  const coverageById = (id: string | null) => coverages.find((coverage) => coverage.id === id)
+  const coverageById = (id: string) => records.coverages.find((coverage) => coverage.id === id)
   const caseDialog =
     editing === undefined ? null : (
       <CaseEditor patientId={patient.id} item={editing} onClose={() => setEditing(undefined)} />
@@ -81,7 +90,7 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
   // The case part opens on the case it shows, so what follows is plainly its.
   // Switching and starting a case are on the chart's case card.
   const header = (
-    <div id="case" className={cn('mt-12', SCROLL_MARGIN)}>
+    <div id="case" className={SCROLL_MARGIN}>
       <p aria-hidden="true" className="text-eyebrow text-n500 font-medium uppercase">
         Case
       </p>
@@ -113,7 +122,7 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
           <p className="text-meta text-n500 mt-1.5">
             {[
               current.startOfCare === '' ? 'No start of care' : `Since ${formatIsoDate(current.startOfCare)}`,
-              insuranceOf(coverageById(current.primaryCoverageId))?.name ?? 'No insurance',
+              primaryOf(records.coverages, current.id)?.insuranceName || 'No insurance',
               cases.length > 1
                 ? `${cases.findIndex((item) => item.id === current.id) + 1} of ${cases.length} cases`
                 : '',
@@ -134,11 +143,8 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
       </>
     )
 
-  const primaryCoverage = coverageById(current.primaryCoverageId)
-  const primaryInsurance = insuranceOf(primaryCoverage)
-  const caseCoverages = [primaryCoverage, coverageById(current.secondaryCoverageId)].filter(
-    (coverage): coverage is Coverage => coverage !== undefined,
-  )
+  const primaryInsurance = insuranceOf(primaryOf(records.coverages, current.id))
+  const caseCoverages = coveragesOf(records.coverages, current.id)
   const referrer = practiceReferrers.find((item) => item.id === current.referrerId)
   const injuryDateNeeded =
     current.injuryType !== '' || effectiveRule(primaryInsurance, practiceClasses, 'injuryDateRequired')
@@ -148,44 +154,26 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
   const auths = records.authorizations.filter((auth) => auth.caseId === current.id)
   const today = todayIso()
 
-  const coverageCard = (rank: 'Primary' | 'Secondary', coverage: Coverage | undefined) => {
-    const insurance = insuranceOf(coverage)
-    return (
-      <div
-        className={cn(
-          'min-w-0',
-          // Primary then Secondary: side by side from 640px, a hairline between.
-          rank === 'Secondary' && 'border-rule-row border-t pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6',
-        )}
-      >
-        <p
-          className={cn(
-            'text-eyebrow font-medium uppercase',
-            coverage === undefined ? 'text-n500' : 'text-brand-deep',
-          )}
-        >
-          {rank} insurance
-        </p>
-        {coverage === undefined ? (
-          <p className="text-meta text-n500 mt-1">
-            {rank === 'Primary'
-              ? 'Not chosen — visits on this case are pended until it is.'
-              : 'None. Optional.'}
-          </p>
-        ) : (
-          <>
-            <p className="text-row text-ink mt-1 font-medium break-words">
-              {insurance === undefined ? 'Insurance' : insuranceLabel(insurance)}
-            </p>
-            <p className="text-micro text-n500">
-              Member {coverage.memberId || '—'} · Group {coverage.groupNumber || '—'}
-              {effectiveRule(insurance, practiceClasses, 'authorizationRequired') &&
-                ' · Authorization required'}
-            </p>
-          </>
-        )}
-      </div>
-    )
+  /** The diagnoses, in pointer order, saved on the server: the whole list each time. */
+  const saveDiagnoses = async (codes: readonly string[], done: string) => {
+    try {
+      const message = await setDiagnoses.mutateAsync({ id: current.id, codes })
+      toast.success(done, message ?? undefined)
+    } catch (error) {
+      toast.error(
+        'The diagnoses were not saved',
+        isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+      )
+    }
+  }
+  const codes = current.diagnoses.map((diagnosis) => diagnosis.code)
+  const moved = (index: number, direction: -1 | 1) => {
+    const next = [...codes]
+    const [a, b] = [next[index], next[index + direction]]
+    if (a === undefined || b === undefined) return next
+    next[index] = b
+    next[index + direction] = a
+    return next
   }
 
   const authColumns: ReadonlyArray<Column<Authorization>> = [
@@ -202,9 +190,15 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
     {
       key: 'issuer',
       header: 'Issued by',
-      cell: (auth) => (
-        <span className="break-words">{insuranceOf(coverageById(auth.coverageId))?.name ?? '—'}</span>
-      ),
+      cell: (auth) => {
+        const coverage = coverageById(auth.coverageId)
+        return (
+          <>
+            <span className="break-words">{auth.insuranceName || coverage?.insuranceName || '—'}</span>
+            {coverage !== undefined && <CellSub>{rankName(coverage)}</CellSub>}
+          </>
+        )
+      },
     },
     {
       key: 'dates',
@@ -222,7 +216,7 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
       header: 'Approved',
       cell: (auth) => (
         <span className="whitespace-nowrap tabular-nums">
-          {auth.qty} {auth.unit.toLowerCase()}
+          {auth.qty} {unitName(auth).toLowerCase()}
         </span>
       ),
     },
@@ -235,10 +229,8 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
       key: 'remaining',
       header: 'Remaining',
       cell: (auth) => (
-        <span
-          className={cn('tabular-nums', authRemaining(auth) > 0 ? 'text-ink font-medium' : 'text-critical')}
-        >
-          {authRemaining(auth)}
+        <span className={cn('tabular-nums', auth.remaining > 0 ? 'text-ink font-medium' : 'text-critical')}>
+          {auth.remaining}
         </span>
       ),
     },
@@ -251,20 +243,18 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
       },
     },
     actionsColumn<Authorization>((auth) => (
-      <RowActionButton
-        action="delete"
-        label={`Delete authorization ${auth.number}`}
-        onClick={() => {
-          if (auth.used > 0) {
-            toast.warning(
-              'This authorization has been used',
-              'Visits already consumed it, so it cannot be deleted.',
-            )
-            return
-          }
-          setDeletingAuth(auth)
-        }}
-      />
+      <RowActions>
+        <RowActionButton
+          action="edit"
+          label={`Edit authorization ${auth.number}`}
+          onClick={() => setEditingAuth(auth)}
+        />
+        <RowActionButton
+          action="delete"
+          label={`Delete authorization ${auth.number}`}
+          onClick={() => setDeletingAuth(auth)}
+        />
+      </RowActions>
     )),
   ]
 
@@ -278,98 +268,88 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
         className="mt-4"
         headingLevel={3}
         title="Case details"
-        description="Every visit inherits the referring physician, diagnoses, injury type and onset date"
+        info="Every visit on this case inherits its referring physician, diagnoses, injury type and onset date."
         aside={
-          <Button
-            size="sm"
-            icon={<Pencil size={14} aria-hidden="true" />}
-            onClick={() => setEditing(current)}
-          >
-            Edit case
-          </Button>
-        }
-      >
-        <KeyValue
-          className="max-sm:grid-cols-2"
-          items={[
-            {
-              label: 'Referring physician',
-              wide: true,
-              value:
-                referrer === undefined
-                  ? required
-                  : `${referrer.name} · ${referrer.type === 'DQ' ? 'Supervising (DQ)' : 'Referring (DN)'} · NPI ${referrer.npi}`,
-            },
-            { label: 'Injury type (related cause)', value: current.injuryType || 'Not related to an injury' },
-            {
-              label: 'Injury / onset date',
-              value:
-                current.injuryDate !== ''
-                  ? formatIsoDate(current.injuryDate)
-                  : injuryDateNeeded
-                    ? required
-                    : '',
-            },
-            { label: 'Accident state', value: current.accidentState },
-            { label: 'Employment status', value: current.employmentStatus },
-            {
-              label: 'Start of care',
-              value: current.startOfCare === '' ? '' : formatIsoDate(current.startOfCare),
-            },
-            {
-              label: 'Discharge date',
-              value: current.dischargeDate === '' ? '' : formatIsoDate(current.dischargeDate),
-            },
-          ]}
-        />
-      </ChartCard>
-
-      <ChartCard
-        className="mt-4"
-        headingLevel={3}
-        title="Insurance"
-        description="Chosen from the patient’s insurance list · claims go to the primary first"
-        aside={
-          coverages.length > 0 ? (
+          <>
             <Button
               size="sm"
               icon={<Pencil size={14} aria-hidden="true" />}
               onClick={() => setEditing(current)}
             >
-              {caseCoverages.length > 0 ? 'Change' : 'Choose insurance'}
+              Edit case
             </Button>
-          ) : (
             <Button
               size="sm"
-              variant="primary"
-              icon={<Plus size={14} aria-hidden="true" />}
-              onClick={() => scrollToSection('insurance')}
+              variant="danger"
+              icon={<Trash2 size={14} aria-hidden="true" />}
+              onClick={() => setDeletingCase(true)}
             >
-              Add the patient’s insurance
+              Delete case
             </Button>
-          )
+          </>
         }
       >
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 sm:gap-6">
-          {coverageCard('Primary', primaryCoverage)}
-          {coverageCard('Secondary', coverageById(current.secondaryCoverageId))}
+        {/* Two groups side by side from 768px, each read top to bottom. */}
+        <div className="grid gap-y-7 pt-4 md:grid-cols-2 md:gap-x-10">
+          <CardGroup title="Referral & care">
+            <KeyValue
+              layout="rows"
+              items={[
+                referrer === undefined
+                  ? { label: 'Referring physician', value: required }
+                  : {
+                      label: 'Referring physician',
+                      value: referrer.name,
+                      sub: `${referrer.type === 'DQ' ? 'Supervising (DQ)' : 'Referring (DN)'} · NPI ${referrer.npi}`,
+                    },
+                {
+                  label: 'Start of care',
+                  value: current.startOfCare === '' ? '' : formatIsoDate(current.startOfCare),
+                },
+                {
+                  label: 'Discharge date',
+                  value: current.dischargeDate === '' ? '' : formatIsoDate(current.dischargeDate),
+                },
+              ]}
+            />
+          </CardGroup>
+          <CardGroup title="Injury">
+            <KeyValue
+              layout="rows"
+              items={[
+                { label: 'Related cause', value: injuryTypeName(current) || 'Not related to an injury' },
+                {
+                  label: 'Injury / onset date',
+                  value:
+                    current.injuryDate !== ''
+                      ? formatIsoDate(current.injuryDate)
+                      : injuryDateNeeded
+                        ? required
+                        : '',
+                },
+                { label: 'Accident state', value: current.accidentState },
+              ]}
+            />
+          </CardGroup>
         </div>
       </ChartCard>
+
+      <InsuranceSection patient={patient} caseItem={current} />
 
       <ChartCard
         className="mt-4"
         id="diagnoses"
         headingLevel={3}
-        title="Diagnoses (ICD-10)"
-        description={`${current.diagnoses.length} of ${MAX_DIAGNOSES} · the position is the diagnosis pointer on the claim (Box 21 / 24E)`}
+        title="Diagnoses"
+        meta={`${current.diagnoses.length} of ${MAX_DIAGNOSES}`}
+        info="The case’s ICD-10 codes, in order: the position is the diagnosis pointer on the claim (Box 21 / 24E). Each visit copies these codes when it arrives, so later edits here never change a claim already billed."
         aside={
           <Button
             size="sm"
-            variant="primary"
             icon={<Plus size={14} aria-hidden="true" />}
             onClick={() => {
               if (current.diagnoses.length >= MAX_DIAGNOSES) {
-                toast.warning('A case holds up to 12 diagnoses', 'Remove one before adding another.')
+                toast.warning('A case holds up to 12 diagnoses', 'Delete one before adding another.')
                 return
               }
               setAddingDiagnosis(true)
@@ -380,13 +360,9 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
         }
       >
         {current.diagnoses.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState
-              icon={<Hash size={20} />}
-              title="No diagnoses on this case"
-              description="At least one ICD-10 code is needed before a claim can point to it."
-            />
-          </div>
+          <CardEmpty title="No diagnoses on this case">
+            At least one ICD-10 code is needed before a claim can point to it.
+          </CardEmpty>
         ) : (
           <ol aria-label="Diagnoses" className="mt-3">
             {current.diagnoses.map((diagnosis, index) => (
@@ -415,21 +391,20 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
                   <IconAction
                     label={`Move ${diagnosis.code} up`}
                     disabled={index === 0}
-                    onClick={() => records.moveDiagnosis(current.id, index, -1)}
+                    onClick={() => void saveDiagnoses(moved(index, -1), `${diagnosis.code} moved up`)}
                   >
                     <ArrowUp size={14} aria-hidden="true" />
                   </IconAction>
                   <IconAction
                     label={`Move ${diagnosis.code} down`}
                     disabled={index === current.diagnoses.length - 1}
-                    onClick={() => records.moveDiagnosis(current.id, index, 1)}
+                    onClick={() => void saveDiagnoses(moved(index, 1), `${diagnosis.code} moved down`)}
                   >
                     <ArrowDown size={14} aria-hidden="true" />
                   </IconAction>
                   <RowActionButton
                     action="delete"
-                    label={`Remove ${diagnosis.code}`}
-                    title="Remove"
+                    label={`Delete ${diagnosis.code}`}
                     onClick={() => setRemovingDiagnosis(index)}
                   />
                 </span>
@@ -437,10 +412,6 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
             ))}
           </ol>
         )}
-        <Notice tone="info" title="Visits keep a snapshot." className="mt-4">
-          Each visit copies these codes when it arrives, so later edits here never change a claim that was
-          already billed.
-        </Notice>
       </ChartCard>
 
       <ChartCard
@@ -448,18 +419,20 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
         id="authorizations"
         headingLevel={3}
         title="Authorizations"
-        description={
-          authNeeded
-            ? 'The primary insurance requires authorization — visits without one are pended'
-            : 'Not required by the primary insurance'
+        info="A payer’s approval for a number of visits or units between two dates. When the primary insurance requires one, visits without it are pended."
+        meta={
+          authNeeded ? (
+            <Tag tone="attention">Required by the primary insurance</Tag>
+          ) : (
+            'Not required by the primary insurance'
+          )
         }
         aside={
           caseCoverages.length > 0 ? (
             <Button
               size="sm"
-              variant="primary"
               icon={<Plus size={14} aria-hidden="true" />}
-              onClick={() => setAddingAuth(true)}
+              onClick={() => setEditingAuth(null)}
             >
               Add authorization
             </Button>
@@ -473,17 +446,11 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
           rows={[...auths].sort((a, b) => b.start.localeCompare(a.start))}
           getRowId={(auth) => auth.id}
           empty={
-            <div className="mt-3">
-              <EmptyState
-                icon={<FileCheck size={20} />}
-                title="No authorizations recorded"
-                description={
-                  authNeeded
-                    ? 'Add the payer’s approval to release pended visits and held claims.'
-                    : 'This payer does not require one.'
-                }
-              />
-            </div>
+            <CardEmpty title="No authorizations recorded">
+              {authNeeded
+                ? 'Add the payer’s approval to release pended visits and held claims.'
+                : 'This payer does not require one.'}
+            </CardEmpty>
           }
         />
       </ChartCard>
@@ -494,10 +461,12 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
         <DiagnosisDialog
           pointer={current.diagnoses.length + 1}
           codes={records.icd10.filter((code) => !takenCodes.has(code.code))}
-          onAdd={(code) => {
-            records.addDiagnosis(current.id, { code: code.code, description: code.description })
-            toast.success(`${code.code} added as pointer ${current.diagnoses.length + 1}`)
-          }}
+          onAdd={(code) =>
+            void saveDiagnoses(
+              [...codes, code.code],
+              `${code.code} added as pointer ${current.diagnoses.length + 1}`,
+            )
+          }
           onClose={() => setAddingDiagnosis(false)}
         />
       )}
@@ -507,27 +476,67 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
         onOpenChange={(open) => {
           if (!open) setRemovingDiagnosis(null)
         }}
-        title={`Remove ${removingDiagnosis === null ? '' : (current.diagnoses[removingDiagnosis]?.code ?? '')}?`}
-        description="Pointers after it move up by one. Visits already received keep their snapshot."
-        confirmLabel="Remove diagnosis"
+        title={`Delete ${removingDiagnosis === null ? '' : (current.diagnoses[removingDiagnosis]?.code ?? '')}?`}
+        description="It is taken off this case; pointers after it move up by one. Visits already received keep their snapshot."
+        confirmLabel="Delete diagnosis"
         tone="destructive"
-        onConfirm={() => {
-          if (removingDiagnosis !== null) records.removeDiagnosis(current.id, removingDiagnosis)
+        onConfirm={async () => {
+          if (removingDiagnosis === null) return
+          const removed = codes[removingDiagnosis] ?? ''
+          await saveDiagnoses(
+            codes.filter((_, position) => position !== removingDiagnosis),
+            `${removed} deleted`,
+          )
           setRemovingDiagnosis(null)
         }}
       />
 
-      {addingAuth && (
+      <ConfirmDialog
+        open={deletingCase}
+        onOpenChange={setDeletingCase}
+        title={`Delete the case ${current.name}?`}
+        description="Its diagnoses and authorizations go with it. This cannot be undone."
+        confirmLabel="Delete case"
+        tone="destructive"
+        onConfirm={async () => {
+          try {
+            const message = await removeCase.mutateAsync(current.id)
+            toast.success(message ?? 'Case deleted')
+            // The chart shows the patient's next case.
+            void navigate({
+              to: '/patients/$patientId',
+              params: { patientId: patient.id },
+              search: {},
+              resetScroll: false,
+            })
+          } catch (error) {
+            toast.error(
+              `${current.name} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
+        }}
+      />
+
+      {editingAuth !== undefined && (
         <AuthorizationDialog
+          key={editingAuth?.id ?? 'new'}
+          authorization={editingAuth}
           issuers={caseCoverages.map((coverage) => ({
             value: coverage.id,
-            label: `${insuranceOf(coverage)?.name ?? 'Insurance'} (${coverage.id === current.primaryCoverageId ? 'primary' : 'secondary'})`,
+            label: `${coverage.insuranceLabel || coverage.insuranceName || 'Insurance'} (${rankName(coverage).toLowerCase()})`,
           }))}
-          onSave={(values) => {
-            records.addAuthorization(current.id, toAuthorizationValues(values))
-            toast.success(`Authorization ${values.number} saved`)
+          onSave={async (values) => {
+            const message =
+              editingAuth === null
+                ? await createAuth.mutateAsync(toAuthorizationPayload(values))
+                : await updateAuth.mutateAsync({
+                    id: editingAuth.id,
+                    payload: toAuthorizationUpdatePayload(values),
+                  })
+            toast.success(message ?? `Authorization ${values.number} saved`)
           }}
-          onClose={() => setAddingAuth(false)}
+          onClose={() => setEditingAuth(undefined)}
         />
       )}
 
@@ -540,14 +549,25 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
         description="It will no longer be available to visits."
         confirmLabel="Delete authorization"
         tone="destructive"
-        onConfirm={() => {
-          if (deletingAuth !== null) records.removeAuthorization(deletingAuth.id)
-          setDeletingAuth(null)
+        onConfirm={async () => {
+          if (deletingAuth === null) return
+          try {
+            const message = await removeAuth.mutateAsync(deletingAuth.id)
+            toast.success(message ?? `Authorization ${deletingAuth.number} deleted`)
+          } catch (error) {
+            toast.error(
+              `Authorization ${deletingAuth.number} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
         }}
       />
     </>
   )
 }
+
+const unitName = (auth: Authorization) =>
+  AUTH_UNITS.find((unit) => unit.value === auth.unit)?.label ?? auth.unit
 
 /** A small icon button beside a diagnosis, in the row actions' style. */
 function IconAction({

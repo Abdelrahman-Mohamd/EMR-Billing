@@ -296,7 +296,11 @@ describe('forgot password against the backend', () => {
 })
 
 describe('change password against the backend', () => {
-  const values = { currentPassword: 'password', newPassword: 'Example-pass-24', confirmPassword: 'Example-pass-24' }
+  const values = {
+    currentPassword: 'password',
+    newPassword: 'Example-pass-24',
+    confirmPassword: 'Example-pass-24',
+  }
 
   it('posts the exact payload to /auth/change-password with the session’s token', async () => {
     fetchMock

@@ -16,35 +16,38 @@ import {
   User,
   Users,
 } from 'lucide-react'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Menu } from '@/components/ui/Menu'
-import { EmptyState } from '@/components/ui/States'
+import { EmptyState, ErrorState } from '@/components/ui/States'
 import { PageContainer } from '@/components/shared/PageLayout'
 import { useInsurances } from '@/features/admin-insurances'
 import { cn } from '@/lib/utils/cn'
 import { formatIsoDate, todayIso } from '@/lib/utils/dates'
 import { usePatientRecords } from '../../data/patient-records-store'
-import type { PatientCase } from '../../model/case'
-import { ageOn, fullName } from '../../model/patient'
+import { caseSearch, type PatientCase } from '../../model/case'
+import { ageOn, fullName, showPhone } from '../../model/patient'
+import { usePatientCases } from '../../queries/use-patient-cases'
+import { useDeletePatient, usePatient, useSetPatientActive } from '../../queries/use-patients'
+import { coveragesOf } from '../../model/coverage'
 import { casesOf, leadCase, primaryInsuranceId } from '../../model/roster'
 import { PatientStatusDialog } from '../PatientStatusDialog'
 import { CaseEditor } from './CaseEditor'
 import { ChartCard } from './ChartCard'
 import { CaseSection } from './CaseSection'
-import { InsuranceSection } from './InsuranceSection'
 import { ProfileSection } from './ProfileSection'
 import { scrollToSection, useScrollSpy, useScrollToHashOnce } from './chart-scroll'
 
 /**
  * A patient's chart — one page, read top to bottom (user, 2026-10-02): the
- * patient (Profile, then their Insurance), then the chosen case — its header,
- * details, insurance, diagnoses and authorizations.
+ * patient's Profile, then the chosen case — its header, details, insurances
+ * (a case's own, user 2026-10-08), diagnoses and authorizations.
  *
  * Beside it (from 1024px) or above it (a sticky row of pills), the chart's
- * menu: Patient — Profile, Insurance — then the prototype's case card, where
+ * menu: Patient — Profile — then the prototype's case card, where
  * the case is switched or a new one started, with the case's parts under it.
  * The links jump to each part and mark the one being read. Above everything:
  * back to Patients; the name with Active / Inactive; Billing ID, EMR ID, date
@@ -52,6 +55,11 @@ import { scrollToSection, useScrollSpy, useScrollToHashOnce } from './chart-scro
  * or Reactivate, Delete patient).
  *
  * The case shown is in the URL (`?case=<id>`); with none, the first open case.
+ *
+ * The patient is read from the server (`GET /patients/{id}`) each time the
+ * chart opens; their cases are the server's too (`GET /patient-cases`). The
+ * coverage, each case's choice of insurance and the authorizations are still
+ * kept in this tab.
  *
  * The case's visits (from Visits, handed over by the route) follow the case's
  * cards, each opening the visit with its charge lines and claims.
@@ -80,30 +88,50 @@ export function PatientChart({
 }) {
   const navigate = useNavigate()
   const records = usePatientRecords()
+  const detail = usePatient(patientId)
+  const caseList = usePatientCases()
+  const setActive = useSetPatientActive()
+  const remove = useDeletePatient()
   const insurances = useInsurances()
   const [changingStatus, setChangingStatus] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [addingCase, setAddingCase] = useState(false)
 
-  const patient = records.patients.find((item) => item.id === patientId)
+  const patient = detail.data
   const cases = patient === undefined ? [] : casesOf(records.cases, patient.id)
   const current = cases.find((item) => item.id === caseId) ?? leadCase(cases)
   const sections =
     current === undefined
-      ? ['profile', 'insurance', 'case']
+      ? ['profile', 'case']
       : [
           'profile',
-          'insurance',
           'case',
+          'insurance',
           'diagnoses',
           'authorizations',
           ...(visits === undefined ? [] : ['visits']),
         ]
-  const drawn = records.ready && patient !== undefined
+  const drawn = patient !== undefined
   const active = useScrollSpy(sections, drawn)
   useScrollToHashOnce(drawn)
 
-  if (!records.ready) return <PageContainer>{null}</PageContainer>
+  // The cases are the server's too: the chart waits for them.
+  if (detail.isPending || (caseList.isPending && !detail.isError))
+    return <PageContainer>{null}</PageContainer>
+  const notFound = detail.isError && isApiError(detail.error) && detail.error.kind === 'not_found'
+  if ((detail.isError && !notFound) || (caseList.isError && !notFound))
+    return (
+      <PageContainer>
+        <div className="pt-8">
+          <ErrorState
+            onRetry={() => {
+              if (detail.isError) void detail.refetch()
+              if (caseList.isError) void caseList.refetch()
+            }}
+          />
+        </div>
+      </PageContainer>
+    )
   if (patient === undefined)
     return (
       <PageContainer>
@@ -122,19 +150,21 @@ export function PatientChart({
       </PageContainer>
     )
 
-  const coverages = records.coverages.filter((coverage) => coverage.patientId === patient.id)
+  // A case's insurances are its own; the header and the case card name the primary.
   const insuranceNameOf = (item: PatientCase | undefined) =>
-    insurances.data?.find((entry) => entry.id === primaryInsuranceId(item, coverages))?.name ?? 'No insurance'
+    insurances.data?.find((entry) => entry.id === primaryInsuranceId(item, records.coverages))?.name ??
+    'No insurance'
+  const coverageCount = current === undefined ? 0 : coveragesOf(records.coverages, current.id).length
   const insuranceName = insuranceNameOf(current)
   // Choosing a case keeps the reader where they are, as in the prototype.
   const pickCase = (id: string) =>
     void navigate({
       to: '/patients/$patientId',
       params: { patientId: patient.id },
-      search: { case: id },
+      search: { case: caseSearch(id) },
       resetScroll: false,
     })
-  const phone = patient.phoneCell || patient.phoneHome
+  const phone = showPhone(patient.phoneCell || patient.phoneHome)
   const authCount =
     current === undefined ? 0 : records.authorizations.filter((auth) => auth.caseId === current.id).length
 
@@ -161,7 +191,7 @@ export function PatientChart({
             </Badge>
           </h1>
           <p className="text-meta text-n500 mt-2 flex flex-wrap gap-x-2.5 gap-y-1">
-            <span>Billing ID {patient.billingId ?? '—'}</span>
+            <span>Billing ID {patient.billingId}</span>
             <Dot />
             <span>EMR {patient.emrId ?? '—'}</span>
             <Dot />
@@ -204,9 +234,6 @@ export function PatientChart({
         <MenuGroup label="Patient" />
         <MenuLink id="profile" active={active} icon={<User size={18} />}>
           Profile
-        </MenuLink>
-        <MenuLink id="insurance" active={active} icon={<Landmark size={18} />} count={coverages.length}>
-          Insurance
         </MenuLink>
         <div aria-hidden="true" className="bg-rule-section -mx-3 my-3 hidden h-px lg:block" />
         {current === undefined ? (
@@ -270,6 +297,9 @@ export function PatientChart({
             <MenuLink id="case" active={active} icon={<FileText size={18} />}>
               Case details
             </MenuLink>
+            <MenuLink id="insurance" active={active} icon={<Landmark size={18} />} count={coverageCount}>
+              Insurance
+            </MenuLink>
             <MenuLink
               id="diagnoses"
               active={active}
@@ -291,28 +321,32 @@ export function PatientChart({
       </ChartMenu>
 
       <div className="page-x min-w-0 pb-16 [grid-area:body]">
-        <ProfileSection patientId={patient.id} />
-        <InsuranceSection patientId={patient.id} />
-        <CaseSection patientId={patient.id} caseId={current?.id} />
-        {/* Case → Visit: the case's visits, each opening its charge lines and claims. */}
-        {visits !== undefined && current !== undefined && (
-          <ChartCard
-            id="visits"
-            className="mt-4"
-            headingLevel={3}
-            title="Visits"
-            aside={<visits.Action caseId={current.id} />}
-          >
-            <visits.List caseId={current.id} />
-          </ChartCard>
-        )}
+        <ProfileSection patient={patient} />
+        {/* The case and all that is its — details, insurance, diagnoses,
+            authorizations, visits — hang off one rule under the case's
+            heading, so what belongs to the case reads as one block. */}
+        <div className="md:border-rule-structural mt-12 md:border-l-2 md:pl-5">
+          <CaseSection patientId={patient.id} caseId={current?.id} />
+          {/* Case → Visit: the case's visits, each opening its charge lines and claims. */}
+          {visits !== undefined && current !== undefined && (
+            <ChartCard
+              id="visits"
+              className="mt-4"
+              headingLevel={3}
+              title="Visits"
+              aside={<visits.Action caseId={current.id} />}
+            >
+              <visits.List caseId={current.id} />
+            </ChartCard>
+          )}
+        </div>
       </div>
 
       {addingCase && <CaseEditor patientId={patient.id} item={null} onClose={() => setAddingCase(false)} />}
       {changingStatus && (
         <PatientStatusDialog
           patient={patient}
-          onConfirm={(isActive) => records.setPatientActive(patient.id, isActive)}
+          onConfirm={(isActive) => setActive.mutateAsync({ id: patient.id, isActive })}
           onClose={() => setChangingStatus(false)}
         />
       )}
@@ -323,10 +357,17 @@ export function PatientChart({
         description="The patient and their cases are removed. This cannot be undone."
         confirmLabel="Delete patient"
         tone="destructive"
-        onConfirm={() => {
-          records.deletePatient(patient.id)
-          toast.success('Patient deleted')
-          void navigate({ to: '/patients' })
+        onConfirm={async () => {
+          try {
+            const message = await remove.mutateAsync(patient.id)
+            toast.success(message ?? 'Patient deleted')
+            void navigate({ to: '/patients' })
+          } catch (error) {
+            toast.error(
+              `${fullName(patient)} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
         }}
       />
     </div>

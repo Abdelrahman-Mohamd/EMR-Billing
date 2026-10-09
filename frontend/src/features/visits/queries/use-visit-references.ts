@@ -1,70 +1,57 @@
 import { useLocations } from '@/features/admin-practices'
 import { useProcedureCodes } from '@/features/admin-procedure-codes'
 import { providerName, useProviders } from '@/features/admin-providers'
-import { fullName, listName, usePatientRecords } from '@/features/patients'
+import { usePatientRecords } from '@/features/patients'
 import { formatIsoDate } from '@/lib/utils/dates'
-import type { RecordRef } from '../schemas/visit'
-
-const same = (a: RecordRef | null, b: RecordRef) => a !== null && String(a) === String(b)
+import type { Visit } from '../schemas/visit'
 
 /**
- * Turns a visit's references into what a person reads: the patient and case
- * behind `case_id`, the location, the providers, the authorization, the
- * procedure code and the diagnoses a pointer names. Never a raw id on screen.
- * Reads the features that own those records (Patients, Practices & locations,
- * Providers, Procedure codes).
+ * Turns a visit's references into what a person reads, where the visit does
+ * not carry the name itself: a procedure code's code and description (by its
+ * id), a provider, an authorization, the practice a visit's patient belongs
+ * to. Never a raw id on screen. Reads the features that own those records
+ * (Patients, Practices & locations, Providers, Procedure codes), which also
+ * fill the new visit's pickers.
  */
 export function useVisitReferences() {
   const records = usePatientRecords()
-  // Every location of every practice: a visit names its location.
+  // Every location of every practice: the pickers offer the patient's practice's.
   const allLocations = useLocations()
   const providers = useProviders()
   const codes = useProcedureCodes()
 
   const locations = allLocations.data ?? []
 
-  const caseOf = (caseId: RecordRef) => records.cases.find((item) => same(item.id, caseId))
-  const patientOf = (caseId: RecordRef) => {
-    const item = caseOf(caseId)
-    return item === undefined ? undefined : records.patients.find((patient) => patient.id === item.patientId)
-  }
-
   return {
     /** False until the lists the names come from have arrived. */
     ready: records.ready && !codes.isPending && !allLocations.isPending && !providers.isPending,
-    caseOf,
-    patientOf,
-    /** "Okonkwo, Nadia". */
-    patientListName: (caseId: RecordRef) => {
-      const patient = patientOf(caseId)
-      return patient === undefined ? 'Patient' : listName(patient)
-    },
+    /** The practice of the visit's patient — for the practice filter. */
+    practiceOf: (visit: Pick<Visit, 'patientId'>) =>
+      records.patients.find((patient) => patient.id === visit.patientId)?.practiceId,
+    /** "Okonkwo, Nadia", as the visit names its patient. */
+    patientListName: (visit: Pick<Visit, 'patientFirstName' | 'patientLastName'>) =>
+      `${visit.patientLastName}, ${visit.patientFirstName}`,
     /** "Nadia Okonkwo". */
-    patientFullName: (caseId: RecordRef) => {
-      const patient = patientOf(caseId)
-      return patient === undefined ? 'Patient' : fullName(patient)
-    },
-    caseName: (caseId: RecordRef) => caseOf(caseId)?.name ?? 'Case',
-    locationName: (id: number) => locations.find((location) => location.id === id)?.name ?? '—',
+    patientFullName: (visit: Pick<Visit, 'patientFirstName' | 'patientLastName'>) =>
+      `${visit.patientFirstName} ${visit.patientLastName}`,
     providerName: (id: number) => {
       const provider = providers.data?.find((item) => item.id === id)
       return provider === undefined ? '—' : providerName(provider)
     },
-    authorizationLabel: (id: RecordRef | null) => {
+    /** "0VJL671TT · 07/10/2026 – 12/31/2026", by the authorization's id. */
+    authorizationLabel: (id: string | null) => {
       if (id === null) return ''
-      const auth = records.authorizations.find((item) => same(item.id, id))
+      const auth = records.authorizations.find((item) => item.id === id)
       return auth === undefined
         ? '—'
         : `${auth.number} · ${formatIsoDate(auth.start)} – ${formatIsoDate(auth.end)}`
     },
-    /** "97110" and "Therapeutic exercise". */
-    procedure: (code: RecordRef) => {
-      const found = (codes.data ?? []).find((item) => item.code === String(code))
-      return { code: String(code), description: found?.description ?? '' }
+    /** "98110" and "Therapeutic exercise", by the procedure code's id. */
+    procedure: (id: number) => {
+      const found = (codes.data ?? []).find((item) => item.id === id)
+      return { code: found?.code ?? '—', description: found?.description ?? '' }
     },
-    /** The case's diagnosis at a pointer (1 = the first), e.g. "M54.50". */
-    diagnosisAt: (caseId: RecordRef, pointer: number) => caseOf(caseId)?.diagnoses[pointer - 1]?.code ?? '',
-    // Pickers for a new visit or line.
+    // Pickers for a new visit, or a visit's save.
     records,
     /** A practice's locations, active or not. */
     locationsOf: (practiceId: number | undefined) =>

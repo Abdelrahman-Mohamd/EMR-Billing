@@ -2,34 +2,42 @@ import type { Tone } from '@/components/ui/Badge'
 
 /**
  * A payer's pre-approval for a number of visits or units within a date range,
- * issued by the case's primary or secondary insurance — as the prototype shows
- * it. **Frontend only** — not a contract. `used` is counted by visits, which
- * the server records; nothing here consumes an authorization.
+ * issued by one of the case's insurances — as the server holds it
+ * (schemas/authorization.ts). `used` and `remaining` are the server's: visits
+ * use an authorization, nothing here does. The case is the issuing insurance's.
  */
 export interface Authorization {
   id: string
+  /** The case of the insurance that issued it. */
   caseId: string
-  /** The coverage that issued it. */
+  /** The case insurance that issued it. */
   coverageId: string
+  /** The issuing insurance as the server names it: "1039 – Corvel Enterprise". */
+  insuranceName: string
   number: string
   /** ISO dates. */
   start: string
   end: string
   qty: number
-  unit: string
+  unit: AuthUnit
   used: number
+  remaining: number
 }
 
-export const AUTH_UNITS = ['Visits', 'Units'] as const
+export type AuthUnit = 'visits' | 'units'
 
-export const authRemaining = (auth: Pick<Authorization, 'qty' | 'used'>) => Math.max(0, auth.qty - auth.used)
+/** The server's units, with the words the screens show. */
+export const AUTH_UNITS: ReadonlyArray<{ value: AuthUnit; label: string }> = [
+  { value: 'visits', label: 'Visits' },
+  { value: 'units', label: 'Units' },
+]
 
 /** The prototype's status of an authorization on `today` (ISO date). */
 export function authStatus(auth: Authorization, today: string): { label: string; tone: Tone } {
   if (today < auth.start) return { label: 'Not started', tone: 'info' }
   if (today > auth.end) return { label: 'Expired', tone: 'inert' }
-  const remaining = authRemaining(auth)
-  if (remaining === 0) return { label: 'Exhausted', tone: 'critical' }
-  if (remaining <= 1) return { label: 'Last visit', tone: 'warning' }
+  if (auth.remaining === 0) return { label: 'Exhausted', tone: 'critical' }
+  if (auth.remaining <= 1)
+    return { label: auth.unit === 'units' ? 'Last unit' : 'Last visit', tone: 'warning' }
   return { label: 'Active', tone: 'success' }
 }

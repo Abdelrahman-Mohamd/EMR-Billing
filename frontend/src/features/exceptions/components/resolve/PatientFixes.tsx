@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from '@/stores/toast-store'
@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { FormGrid } from '@/components/ui/Field'
 import { Form, FormField } from '@/components/ui/Form'
 import { Input } from '@/components/ui/Input'
-import { fullName, usePatientRecords, type Patient } from '@/features/patients'
+import { userMessage } from '@/lib/api/api-error'
+import { fullName, showPhone, useUpdatePatientFields, type Patient } from '@/features/patients'
 import type { BillingException } from '../../model/billing-exception'
 import { LIMITS, isDummyPhone, truncated, zipState } from '../../model/checks'
 import {
@@ -27,22 +28,37 @@ interface PatientFixProps {
   onClose: () => void
 }
 
-/** The patient as the store takes it back: everything but what the system assigns. */
-function valuesOf(patient: Patient) {
-  const { id: _id, billingId: _billingId, emrId: _emrId, isActive: _isActive, ...values } = patient
-  return values
+const digits = (value: string) => value.replace(/\D/g, '')
+
+/**
+ * A fix saves the fields it changes and nothing else — the rest of the
+ * patient's record stays as it is on the server. Its error stays in the dialog.
+ */
+function usePatientFix(patient: Patient, onDone: (label: string) => void) {
+  const update = useUpdatePatientFields()
+  const [failure, setFailure] = useState<string | null>(null)
+  const save = async (fields: Parameters<typeof update.mutateAsync>[0]['fields']) => {
+    setFailure(null)
+    try {
+      await update.mutateAsync({ id: patient.id, fields })
+      onDone('Patient updated')
+    } catch (error) {
+      setFailure(userMessage(error))
+    }
+  }
+  return { save, busy: update.isPending, failure }
 }
 
 /** "Fix phone — Victor Moreau": a placeholder number such as 000-000-0000. */
 export function PhoneFix({ exception, patient, onDone, onClose }: PatientFixProps) {
   const formId = useId()
-  const records = usePatientRecords()
+  const fix = usePatientFix(patient, onDone)
   const form = useForm<PhoneFixValues>({
     resolver: zodResolver(phoneFixSchema),
     // A placeholder is not offered back for editing, as in the prototype.
     defaultValues: {
-      phoneCell: isDummyPhone(patient.phoneCell) ? '' : patient.phoneCell,
-      phoneHome: isDummyPhone(patient.phoneHome) ? '' : patient.phoneHome,
+      phoneCell: isDummyPhone(patient.phoneCell) ? '' : showPhone(patient.phoneCell),
+      phoneHome: isDummyPhone(patient.phoneHome) ? '' : showPhone(patient.phoneHome),
     },
   })
   return (
@@ -51,15 +67,19 @@ export function PhoneFix({ exception, patient, onDone, onClose }: PatientFixProp
       title={`Fix phone — ${fullName(patient)}`}
       description="Placeholder numbers such as 000-000-0000 are flagged."
       formId={formId}
+      busy={fix.busy}
+      failure={fix.failure}
       onClose={onClose}
     >
       <Form
         id={formId}
         form={form}
-        onSubmit={(values) => {
-          records.updatePatient(patient.id, { ...valuesOf(patient), ...values })
-          onDone('Patient updated')
-        }}
+        onSubmit={(values) =>
+          fix.save({
+            phone_cell: values.phoneCell === '' ? null : digits(values.phoneCell),
+            phone_home: values.phoneHome === '' ? null : digits(values.phoneHome),
+          })
+        }
       >
         <FormGrid>
           <FormField name="phoneCell" label="Cell phone" span={6}>
@@ -91,7 +111,7 @@ export function PhoneFix({ exception, patient, onDone, onClose }: PatientFixProp
 /** "Fix address — Grace Holloway": the ZIP code does not belong to the state. */
 export function AddressFix({ exception, patient, onDone, onClose }: PatientFixProps) {
   const formId = useId()
-  const records = usePatientRecords()
+  const fix = usePatientFix(patient, onDone)
   const { line1, city, state, zip } = patient.address
   const form = useForm<AddressFixValues>({
     resolver: zodResolver(addressFixSchema),
@@ -103,18 +123,16 @@ export function AddressFix({ exception, patient, onDone, onClose }: PatientFixPr
       title={`Fix address — ${fullName(patient)}`}
       description={`ZIP codes are cross-referenced against the state. ${zip} belongs to ${zipState(zip) ?? 'an unknown state'}.`}
       formId={formId}
+      busy={fix.busy}
+      failure={fix.failure}
       onClose={onClose}
     >
       <Form
         id={formId}
         form={form}
-        onSubmit={(values) => {
-          records.updatePatient(patient.id, {
-            ...valuesOf(patient),
-            address: { ...patient.address, ...values },
-          })
-          onDone('Patient updated')
-        }}
+        onSubmit={(values) =>
+          fix.save({ address: values.line1, city: values.city, state: values.state, zip_code: values.zip })
+        }
       >
         <FormGrid>
           <FormField name="line1" label="Street address" required span={12}>
@@ -146,7 +164,7 @@ export function AddressFix({ exception, patient, onDone, onClose }: PatientFixPr
 /** "Fix field length": the name or the address line is longer than a claim allows. */
 export function LengthFix({ exception, patient, onDone, onClose }: PatientFixProps) {
   const formId = useId()
-  const records = usePatientRecords()
+  const fix = usePatientFix(patient, onDone)
   const form = useForm<LengthFixValues>({
     resolver: zodResolver(lengthFixSchema),
     defaultValues: {
@@ -162,20 +180,21 @@ export function LengthFix({ exception, patient, onDone, onClose }: PatientFixPro
       title={`Fix field length — ${fullName(patient)}`}
       description="Some values are longer than a claim allows. Edit them, or use the shortened version and review it before saving."
       formId={formId}
+      busy={fix.busy}
+      failure={fix.failure}
       onClose={onClose}
     >
       <Form
         id={formId}
         form={form}
-        onSubmit={(values) => {
-          const { line1, ...name } = values
-          records.updatePatient(patient.id, {
-            ...valuesOf(patient),
-            ...name,
-            address: { ...patient.address, line1 },
+        onSubmit={(values) =>
+          fix.save({
+            first_name: values.firstName,
+            middle_name: values.middleName === '' ? null : values.middleName,
+            last_name: values.lastName,
+            address: values.line1,
           })
-          onDone('Patient updated')
-        }}
+        }
       >
         <FormGrid>
           <FormField name="firstName" label="First name" required span={6}>

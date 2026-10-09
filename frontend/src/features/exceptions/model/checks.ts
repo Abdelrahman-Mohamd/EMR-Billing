@@ -5,14 +5,10 @@
  */
 
 /** Placeholder phone numbers the prototype flags. */
-const DUMMY_PHONES: ReadonlySet<string> = new Set([
-  '000-000-0000',
-  '111-111-1111',
-  '999-999-9999',
-  '123-456-7890',
-])
+const DUMMY_PHONES: ReadonlySet<string> = new Set(['0000000000', '1111111111', '9999999999', '1234567890'])
 
-export const isDummyPhone = (phone: string): boolean => DUMMY_PHONES.has(phone)
+/** A placeholder number such as 000-000-0000 — compared by its digits, however it is written. */
+export const isDummyPhone = (phone: string): boolean => DUMMY_PHONES.has(phone.replace(/\D/g, ''))
 
 /** The prototype's character limits on a claim: the patient's name and an address line. */
 export const LIMITS = { name: 30, addressLine: 35 } as const

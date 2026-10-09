@@ -5,14 +5,7 @@
 export { VisitsScreen } from './components/VisitsScreen'
 export { VisitDetail } from './components/VisitDetail'
 export { CaseVisitsAction, CaseVisitsList } from './components/CaseVisits'
-// Claims: a claim is made from a visit's charge line and shown with its visit.
-export { useVisits } from './queries/use-visits'
-export { useVisitReferences, type VisitReferences } from './queries/use-visit-references'
-export {
-  chargeLineFields,
-  type ChargeLine,
-  type ChargeLineFields,
-  type RecordRef,
-  type Visit,
-} from './schemas/visit'
-export { lineCode, modifiersText, pointersText, type LineLike } from './model/charge-line-text'
+// Claims: a claim bills a released visit, and is shown with it.
+export { useVisitReferences } from './queries/use-visit-references'
+export { type Visit } from './schemas/visit'
+export { isReleased } from './model/visit-status'

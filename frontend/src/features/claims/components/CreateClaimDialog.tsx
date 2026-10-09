@@ -1,51 +1,55 @@
 import { useId, useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from '@/stores/toast-store'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { FormGrid } from '@/components/ui/Field'
-import { Form, FormField } from '@/components/ui/Form'
-import { KeyValue } from '@/components/ui/KeyValue'
+import { Form, FormField, applyServerErrors } from '@/components/ui/Form'
 import { Notice } from '@/components/ui/Notice'
 import { Select } from '@/components/ui/Select'
-import {
-  chargeLineFields,
-  lineCode,
-  modifiersText,
-  pointersText,
-  useVisitReferences,
-  type Visit,
-} from '@/features/visits'
-import { userMessage } from '@/lib/api/api-error'
+import type { Coverage } from '@/features/patients'
+import type { Visit } from '@/features/visits'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { formatIsoDate } from '@/lib/utils/dates'
+import { formatMoney } from '@/lib/utils/money'
 import { useCreateClaim } from '../queries/use-claims'
 
 const schema = z.object({
-  lineId: z
+  coverageId: z
     .string()
     .nullable()
-    .refine((value): boolean => value !== null, 'Select a charge line.'),
+    .refine((value): boolean => value !== null, 'Select the insurance to bill.'),
 })
 type Values = z.infer<typeof schema>
 
 /**
- * Create a claim from one of the visit's charge lines: the claim payload is
- * the visit and that line's procedure code, units, modifiers and diagnosis
- * pointers, copied as they are and shown before creating.
+ * Bill a released visit: the server makes one claim for the whole visit — all
+ * its charge lines — to one of the case's insurances. Offered: the case's
+ * insurances not billed for this visit yet, the first by priority chosen. The
+ * server says when one may not be billed yet (the secondary before the
+ * primary's claim is paid or denied); its message shows above the form.
  */
-export function CreateClaimDialog({ visit, onClose }: { visit: Visit; onClose: () => void }) {
+export function CreateClaimDialog({
+  visit,
+  coverages,
+  onClose,
+}: {
+  visit: Visit
+  /** The case's insurances without a claim for this visit, by priority. */
+  coverages: readonly Coverage[]
+  onClose: () => void
+}) {
   const formId = useId()
-  const refs = useVisitReferences()
   const create = useCreateClaim()
   const [failure, setFailure] = useState<string | null>(null)
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { lineId: visit.chargeLines.length === 1 ? String(visit.chargeLines[0]?.id) : null },
+    defaultValues: { coverageId: coverages[0]?.id ?? null },
   })
-  const lineId = useWatch({ control: form.control, name: 'lineId' })
-  const line = visit.chargeLines.find((item) => String(item.id) === lineId)
+  const total = Number(visit.totalAmount)
+  const lines = visit.chargeLines.length
 
   return (
     <Dialog
@@ -54,7 +58,7 @@ export function CreateClaimDialog({ visit, onClose }: { visit: Visit; onClose: (
         if (!open) onClose()
       }}
       title="Create claim"
-      description={`${refs.patientFullName(visit.caseId)} · ${formatIsoDate(visit.dateOfService)}`}
+      description={`The visit on ${formatIsoDate(visit.dateOfService)} — ${lines === 1 ? 'its charge line' : `all ${lines} of its charge lines`}${visit.totalAmount === '' || Number.isNaN(total) ? '' : `, ${formatMoney(total)}`}.`}
       size="md"
       dismissible={!create.isPending}
       footer={
@@ -71,63 +75,48 @@ export function CreateClaimDialog({ visit, onClose }: { visit: Visit; onClose: (
       <Form
         id={formId}
         form={form}
-        onSubmit={async () => {
-          if (line === undefined) return
+        onSubmit={async (values) => {
           setFailure(null)
           try {
-            await create.mutateAsync({ visit_id: visit.id, ...chargeLineFields(line) })
-            toast.success('Claim created')
+            const message = await create.mutateAsync({
+              visit_id: visit.id,
+              case_insurance_id: Number(values.coverageId),
+            })
+            toast.success(message ?? 'Claim created')
             onClose()
           } catch (error) {
-            setFailure(userMessage(error))
+            const leftover = applyServerErrors(form, error)
+            setFailure(isApiError(error) && error.kind !== 'validation' ? userMessage(error) : leftover)
           }
         }}
       >
         <FormGrid>
+          {failure !== null && (
+            <div className="col-span-12">
+              <Notice tone="critical">{failure}</Notice>
+            </div>
+          )}
           <FormField
-            name="lineId"
-            label="Charge line"
+            name="coverageId"
+            label="Bill to"
             required
             span={12}
-            info="The claim takes this line’s procedure code, units, modifiers and diagnosis pointers."
+            info="A visit has one claim per insurance. The secondary is billed once the primary’s claim is paid or denied."
           >
             {(field) => (
               <Select
                 value={typeof field.value === 'string' ? field.value : null}
                 onChange={field.onChange}
-                options={visit.chargeLines.map((item) => ({
-                  value: String(item.id),
-                  label: [lineCode(item), modifiersText(item)].filter(Boolean).join(' · '),
+                options={coverages.map((coverage) => ({
+                  value: coverage.id,
+                  label: `${coverage.insuranceLabel || coverage.insuranceName || 'Insurance'}${coverage.rankLabel === '' ? '' : ` (${coverage.rankLabel.toLowerCase()})`}`,
                 }))}
-                placeholder="Select a charge line"
+                placeholder="Select the insurance"
+                disabled={create.isPending}
               />
             )}
           </FormField>
         </FormGrid>
-        {line !== undefined && (
-          <KeyValue
-            className="mt-2"
-            items={[
-              {
-                label: 'Procedure',
-                value: [
-                  refs.procedure(line.procedureCode).code,
-                  refs.procedure(line.procedureCode).description,
-                ]
-                  .filter(Boolean)
-                  .join(' — '),
-              },
-              { label: 'Units', value: String(line.units) },
-              { label: 'Modifiers', value: modifiersText(line) },
-              { label: 'Diagnosis pointers', value: pointersText(line, visit.caseId, refs) },
-            ]}
-          />
-        )}
-        {failure !== null && (
-          <Notice tone="critical" className="mt-4">
-            {failure}
-          </Notice>
-        )}
       </Form>
     </Dialog>
   )

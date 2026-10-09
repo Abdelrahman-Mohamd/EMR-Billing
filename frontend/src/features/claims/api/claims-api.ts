@@ -1,44 +1,76 @@
-import { z } from 'zod'
-import { ApiError } from '@/lib/api/api-error'
-import { claimResponseSchema, type Claim, type CreateClaimPayload } from '../schemas/claim'
+import { renameFieldErrors } from '@/lib/api/api-error'
+import { request } from '@/lib/api/http-client'
+import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import {
+  claimFormFieldFor,
+  claimPageResponseSchema,
+  type Claim,
+  type CreateClaimPayload,
+  type UpdateClaimPayload,
+} from '../schemas/claim'
 
 /**
- * Claims' only door to a server.
- *
- * **No endpoints exist yet.** The request body is known (the claim payload
- * example); paths, methods and responses are not, so none are written. Until
- * they exist, the calls reject as `unavailable` and the screens show their
- * load-failed state.
- *
- * Assumed until the contract says otherwise: one list of every claim the user
- * can see, filtered on screen, and creating one — nothing else. No payload
- * exists for submitting, correcting, voiding or deleting a claim, so none is
- * built.
+ * Claims' only door to a server. **Live** (contract given 2026-10-09),
+ * carrying the session's token: `GET /claims?page=N`, `POST /claims`,
+ * `PUT /claims/{id}` and `DELETE`. Only `page` is sent to the list. Writes
+ * resolve with the server's message. Shapes in schemas/claim.ts.
  */
 export interface ClaimsApi {
-  list: (signal?: AbortSignal) => Promise<unknown>
-  create: (payload: CreateClaimPayload) => Promise<unknown>
+  list: (page: number, signal?: AbortSignal) => Promise<{ claims: Claim[]; pageCount: number }>
+  create: (payload: CreateClaimPayload) => Promise<ServerMessage>
+  update: (id: number, payload: UpdateClaimPayload) => Promise<ServerMessage>
+  remove: (id: number) => Promise<ServerMessage>
 }
 
-const notConnected = (): Promise<never> =>
-  Promise.reject(
-    new ApiError({
-      kind: 'unavailable',
-      message: 'Claims are not available right now.',
-      detail: 'No claim endpoints exist yet. features/claims/api/claims-api.ts is the integration point.',
-    }),
-  )
+const path = (id: number) => `/claims/${encodeURIComponent(String(id))}`
 
-const live: ClaimsApi = { list: notConnected, create: notConnected }
+const live: ClaimsApi = {
+  list: (page, signal) =>
+    request({
+      method: 'GET',
+      path: '/claims',
+      searchParams: { page },
+      schema: claimPageResponseSchema,
+      ...(signal ? { signal } : {}),
+    }),
+  // The answer carries the new claim too; its message is what is shown.
+  create: (payload) =>
+    request({ method: 'POST', path: '/claims', body: payload, schema: serverMessageSchema }),
+  update: (id, payload) =>
+    request({ method: 'PUT', path: path(id), body: payload, schema: serverMessageSchema }),
+  remove: (id) => request({ method: 'DELETE', path: path(id), schema: serverMessageSchema }),
+}
 
 function backend(): Promise<ClaimsApi> {
   return Promise.resolve(live)
 }
 
-export async function listClaims(signal?: AbortSignal): Promise<Claim[]> {
-  return z.array(claimResponseSchema).parse(await (await backend()).list(signal))
+async function send(call: (api: ClaimsApi) => Promise<ServerMessage>): Promise<ServerMessage> {
+  try {
+    return await call(await backend())
+  } catch (error) {
+    throw renameFieldErrors(error, claimFormFieldFor)
+  }
 }
 
-export async function createClaim(payload: CreateClaimPayload): Promise<Claim> {
-  return claimResponseSchema.parse(await (await backend()).create(payload))
+/** Every claim. The list is paged by the server, so this reads page 1, then the rest at once. */
+export async function listClaims(signal?: AbortSignal): Promise<Claim[]> {
+  const api = await backend()
+  const first = await api.list(1, signal)
+  const rest = await Promise.all(
+    Array.from({ length: first.pageCount - 1 }, (_, index) => api.list(index + 2, signal)),
+  )
+  return [first, ...rest].flatMap((page) => page.claims)
+}
+
+export function createClaim(payload: CreateClaimPayload): Promise<ServerMessage> {
+  return send((api) => api.create(payload))
+}
+
+export function updateClaim(id: number, payload: UpdateClaimPayload): Promise<ServerMessage> {
+  return send((api) => api.update(id, payload))
+}
+
+export function deleteClaim(id: number): Promise<ServerMessage> {
+  return send((api) => api.remove(id))
 }

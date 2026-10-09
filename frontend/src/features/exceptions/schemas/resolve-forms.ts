@@ -70,11 +70,10 @@ export const lengthFixSchema = z
 export type LengthFixValues = z.infer<typeof lengthFixSchema>
 
 // ---------------------------------------------------------------- case fields
-export const caseFixSchema = (missing: 'injuryDate' | 'employmentStatus' | 'referrer') =>
+export const caseFixSchema = (missing: 'injuryDate' | 'referrer') =>
   z
     .object({
       injuryDate: z.string(),
-      employmentStatus: z.string().trim(),
       referrerId: z.string().nullable(),
     })
     .superRefine((v, ctx) => {
@@ -82,8 +81,6 @@ export const caseFixSchema = (missing: 'injuryDate' | 'employmentStatus' | 'refe
       // The prototype requires the field the exception names.
       if (missing === 'injuryDate' && v.injuryDate === '')
         issue('injuryDate', 'Enter the injury or onset date.')
-      if (missing === 'employmentStatus' && v.employmentStatus === '')
-        issue('employmentStatus', 'Enter the employment status.')
       if (missing === 'referrer' && v.referrerId === null)
         issue('referrerId', 'Select the referring physician.')
     })
@@ -91,10 +88,11 @@ export type CaseFixValues = z.infer<ReturnType<typeof caseFixSchema>>
 
 // ---------------------------------------------------------------- coverage subscriber
 export const subscriberFixSchema = z
-  .object({ name: z.string().trim(), dob: z.string() })
+  .object({ firstName: z.string().trim(), lastName: z.string().trim(), dob: z.string() })
   .superRefine((v, ctx) => {
     const issue = issuer(ctx)
-    if (v.name === '') issue('name', 'Enter the subscriber’s name.')
+    if (v.firstName === '') issue('firstName', 'Enter the subscriber’s first name.')
+    if (v.lastName === '') issue('lastName', 'Enter the subscriber’s last name.')
     if (v.dob === '') issue('dob', 'Enter the subscriber’s date of birth.')
   })
 export type SubscriberFixValues = z.infer<typeof subscriberFixSchema>

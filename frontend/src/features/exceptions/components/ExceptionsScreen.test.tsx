@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderHook, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { routeTree } from '@/routeTree.gen'
@@ -10,7 +10,7 @@ import type { Insurance } from '@/features/admin-insurances'
 import type { Practice } from '@/features/admin-practices'
 import type { Provider } from '@/features/admin-providers'
 import type { ReferringPhysician } from '@/features/admin-referring-physicians'
-import { usePatientRecords } from '@/features/patients'
+import type { Patient } from '@/features/patients'
 import { resetBillingExceptions } from '../data/exceptions-store'
 import type { BillingException } from '../model/billing-exception'
 
@@ -22,6 +22,7 @@ import type { BillingException } from '../model/billing-exception'
 // tests read, through each store's own test reset (faked by path — never
 // imported, as lint requires).
 const seed = vi.hoisted(() => {
+  // A patient as the server sends them, parsed: phones as digits, the SSN masked.
   const patient = (id: string, firstName: string, lastName: string, extra: Record<string, unknown> = {}) => ({
     id,
     practiceId: 1,
@@ -31,43 +32,54 @@ const seed = vi.hoisted(() => {
     middleName: '',
     lastName,
     dob: '1980-01-01',
-    gender: 'Female',
-    ssn: '',
-    phoneCell: '718-555-0100',
+    gender: 'F',
+    genderLabel: 'Female',
+    maskedSsn: '',
+    phoneCell: '7185550100',
     phoneHome: '',
     email: '',
     address: { line1: '1 Court Street', line2: '', city: 'Brooklyn', state: 'NY', zip: '11201' },
     guarantor: null,
     notes: '',
+    noStatements: false,
     isActive: true,
+    cases: [],
     ...extra,
   })
+  // A case as the server sends it, parsed; its insurance is chosen in the tab (below).
   const patientCase = (patientId: string, name: string, extra: Record<string, unknown> = {}) => ({
     id: `${patientId}-case`,
     patientId,
     name,
     referrerId: 1,
-    primaryCoverageId: `${patientId}-cov-1`,
-    secondaryCoverageId: null,
     injuryType: '',
+    injuryTypeLabel: '',
     injuryDate: '',
     accidentState: '',
-    employmentStatus: '',
     startOfCare: '2026-09-14',
     dischargeDate: '',
     isActive: true,
-    diagnoses: [],
+    icd10Codes: [],
     ...extra,
   })
-  const coverage = (patientId: string, insuranceId: number) => ({
+  // A case's primary insurance as the server sends it, parsed.
+  const coverage = (patientId: string, insuranceId: number, extra: Record<string, unknown> = {}) => ({
     id: `${patientId}-cov-1`,
-    patientId,
+    caseId: `${patientId}-case`,
     insuranceId,
+    insuranceLabel: `${1000 + insuranceId} – Aetna`,
+    insuranceName: 'Aetna',
+    insuranceType: 'CI',
+    rank: 1,
+    rankLabel: 'Primary',
     memberId: 'W0001',
     groupNumber: '0001',
     claimNumber: '',
     subscriber: null,
     employer: null,
+    effectiveDate: '',
+    terminationDate: '',
+    ...extra,
   })
   const code = (value: string, description: string, extra: Record<string, unknown> = {}) => ({
     id: Number(value.replace(/\D/g, '')),
@@ -84,33 +96,39 @@ const seed = vi.hoisted(() => {
   })
   return { patient, patientCase, coverage, code }
 })
-const { SEED_RECORDS, SEED_CODES } = vi.hoisted(() => ({
-  SEED_RECORDS: {
-    patients: [
-      seed.patient('p10', 'Victor', 'Moreau', { phoneCell: '000-000-0000' }),
-      seed.patient('p11', 'Grace', 'Holloway', {
-        address: { line1: '44 Hudson Place', line2: '', city: 'Brooklyn', state: 'NY', zip: '07030' },
-      }),
-      seed.patient('p12', 'Dmitri', 'Volkov'),
-      seed.patient('p14', 'Thomas', 'Reilly'),
-      seed.patient('p21', 'Rachel', 'Adler'),
-      seed.patient('p25', 'Maximilian Alexander', 'Castellanos-Whitmore', {
-        address: {
-          line1: '240 Prospect Park Southwest',
-          line2: '',
-          city: 'Brooklyn',
-          state: 'NY',
-          zip: '11218',
-        },
-      }),
-    ],
-    cases: [
-      seed.patientCase('p10', 'Plantar fasciitis'),
-      seed.patientCase('p12', 'Chronic low back', { referrerId: 5 }),
-      seed.patientCase('p14', 'R knee OA'),
-    ],
-    coverages: [seed.coverage('p10', 3), seed.coverage('p12', 3), seed.coverage('p14', 3)],
-  },
+const { SEED_PATIENTS, SEED_CASES, SEED_COVERAGES, SEED_RECORDS, SEED_CODES } = vi.hoisted(() => ({
+  SEED_PATIENTS: [
+    seed.patient('p10', 'Victor', 'Moreau', { phoneCell: '0000000000' }),
+    seed.patient('p11', 'Grace', 'Holloway', {
+      address: { line1: '44 Hudson Place', line2: '', city: 'Brooklyn', state: 'NY', zip: '07030' },
+    }),
+    seed.patient('p12', 'Dmitri', 'Volkov'),
+    seed.patient('p14', 'Thomas', 'Reilly'),
+    seed.patient('p21', 'Rachel', 'Adler'),
+    seed.patient('p25', 'Maximilian Alexander', 'Castellanos-Whitmore', {
+      address: {
+        line1: '240 Prospect Park Southwest',
+        line2: '',
+        city: 'Brooklyn',
+        state: 'NY',
+        zip: '11218',
+      },
+    }),
+  ],
+  SEED_CASES: [
+    seed.patientCase('p10', 'Plantar fasciitis'),
+    seed.patientCase('p12', 'Chronic low back', { referrerId: 5 }),
+    seed.patientCase('p14', 'R knee OA'),
+  ],
+  SEED_COVERAGES: [
+    // Someone else is p10's subscriber, with their details still missing.
+    seed.coverage('p10', 3, {
+      subscriber: { firstName: '', lastName: '', relationship: 'Spouse', dob: '', gender: 'F' },
+    }),
+    seed.coverage('p12', 3),
+    seed.coverage('p14', 3),
+  ],
+  SEED_RECORDS: {},
   SEED_CODES: [
     seed.code('97033', 'Iontophoresis', {
       defaultFee: 0,
@@ -118,6 +136,28 @@ const { SEED_RECORDS, SEED_CODES } = vi.hoisted(() => ({
       procedureTypeLabel: 'Modality',
     }),
   ],
+}))
+// The patients themselves are the server's: faked at their api, answering as it does.
+const patientsState = vi.hoisted(() => ({ patients: [] as Patient[] }))
+const updatePatientFieldsMock = vi.hoisted(() => vi.fn())
+vi.mock('@/features/patients/api/patients-api', () => ({
+  listPatients: () => Promise.resolve(structuredClone(patientsState.patients)),
+  getPatient: (id: string) => {
+    const found = patientsState.patients.find((item) => item.id === id)
+    return found ? Promise.resolve(structuredClone(found)) : Promise.reject(new Error('Not found'))
+  },
+  updatePatientFields: updatePatientFieldsMock,
+}))
+// So are their cases, and the cases' insurances.
+const setSubscriberMock = vi.hoisted(() => vi.fn())
+vi.mock('@/features/patients/api/case-insurances-api', () => ({
+  listCaseInsurances: () => Promise.resolve(structuredClone(SEED_COVERAGES)),
+  setCaseInsuranceSubscriber: setSubscriberMock,
+}))
+const updateCaseFieldsMock = vi.hoisted(() => vi.fn())
+vi.mock('@/features/patients/api/patient-cases-api', () => ({
+  listPatientCases: () => Promise.resolve(structuredClone(SEED_CASES)),
+  updatePatientCaseFields: updateCaseFieldsMock,
 }))
 vi.mock('@/features/patients/data/patient-records-store', async (importOriginal) => {
   const actual = await importOriginal<{ resetPatientRecords: (records: object) => void }>()
@@ -310,6 +350,10 @@ beforeEach(() => {
   referrersMock.mockReset().mockResolvedValue(referrers)
   updateReferrerMock.mockReset().mockResolvedValue('Referring physician updated successfully')
   resetBillingExceptions([LENGTH, NPI, FEE, REFERRER, ADDRESS, PHONE, PAYMENT])
+  patientsState.patients = structuredClone(SEED_PATIENTS)
+  updatePatientFieldsMock.mockReset().mockResolvedValue('Patient updated successfully')
+  updateCaseFieldsMock.mockReset().mockResolvedValue('Patient case updated successfully')
+  setSubscriberMock.mockReset().mockResolvedValue('Case insurance updated successfully')
 })
 afterEach(() => {
   useToastStore.getState().clear()
@@ -454,9 +498,11 @@ describe('Exceptions — resolving', () => {
     expect(screen.getByRole('link', { name: 'Billing exceptions 6' })).toBeInTheDocument()
     expect(screen.queryByText('Invalid patient phone number (dummy data)')).not.toBeInTheDocument()
 
-    // The patient record itself was corrected.
-    const { result } = renderHook(() => usePatientRecords())
-    expect(result.current.patients.find((patient) => patient.id === 'p10')?.phoneCell).toBe('718-555-0177')
+    // The patient record itself was corrected on the server — the phones alone.
+    expect(updatePatientFieldsMock).toHaveBeenCalledWith('p10', {
+      phone_cell: '7185550177',
+      phone_home: null,
+    })
 
     // And the exception is in Resolved.
     await userEvent.click(screen.getByRole('link', { name: 'Resolved 1' }))
@@ -471,7 +517,6 @@ describe('Exceptions — resolving', () => {
     ])
     renderAt('/exceptions')
     const dialog = await resolve('Invalid patient phone number (dummy data)')
-    // The patients sample is shared by this file's tests: start from an empty field.
     const cell = within(dialog).getByRole('textbox', { name: /cell phone/i })
     await userEvent.clear(cell)
     await userEvent.type(cell, '718-555-0177')
@@ -499,6 +544,12 @@ describe('Exceptions — resolving', () => {
     await userEvent.type(zip, '11201')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(updatePatientFieldsMock).toHaveBeenCalledWith('p11', {
+      address: '44 Hudson Place',
+      city: 'Brooklyn',
+      state: 'NY',
+      zip_code: '11201',
+    })
     expect(toasts()).toEqual([expect.objectContaining({ title: 'Patient updated — exception resolved' })])
   }, 15_000)
 
@@ -515,8 +566,10 @@ describe('Exceptions — resolving', () => {
     expect(toasts()).toEqual([expect.objectContaining({ tone: 'info', title: 'Truncated values filled in' })])
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    const { result } = renderHook(() => usePatientRecords())
-    expect(result.current.patients.find((patient) => patient.id === 'p25')?.firstName).toBe('Maximilian')
+    expect(updatePatientFieldsMock).toHaveBeenCalledWith(
+      'p25',
+      expect.objectContaining({ first_name: 'Maximilian', middle_name: null }),
+    )
   }, 15_000)
 
   it('corrects a dummy referring NPI on the directory profile', async () => {
@@ -551,8 +604,8 @@ describe('Exceptions — resolving', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(updateReferrerMock).not.toHaveBeenCalled()
-    const { result } = renderHook(() => usePatientRecords())
-    expect(result.current.cases.find((item) => item.id === 'p12-case')?.referrerId).toBe(1)
+    // The case's physician alone, on the server.
+    expect(updateCaseFieldsMock).toHaveBeenCalledWith('p12-case', { referring_physician_id: 1 })
   }, 15_000)
 
   it('adds the rendering NPI on the provider — and keeps the dialog open if the save fails', async () => {
@@ -611,8 +664,8 @@ describe('Exceptions — resolving', () => {
       exception('ex-case', {
         level: 'Case',
         trigger: 'Missing mandatory EMR case fields',
-        detail: 'Employment status is missing.',
-        fix: { type: 'case', caseId: 'p10-case', field: 'employmentStatus' },
+        detail: 'The injury / onset date is missing.',
+        fix: { type: 'case', caseId: 'p10-case', field: 'injuryDate' },
       }),
       exception('ex-sub', {
         level: 'Case',
@@ -628,28 +681,35 @@ describe('Exceptions — resolving', () => {
       within(dialog).getByRole('heading', { name: 'Complete case fields — Plantar fasciitis' }),
     ).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
-    expect(await within(dialog).findByText('Enter the employment status.')).toBeVisible()
-    await userEvent.type(
-      within(dialog).getByRole('textbox', { name: /employment status/i }),
-      'Employed full time',
-    )
+    expect(await within(dialog).findByText('Enter the injury or onset date.')).toBeVisible()
+    // The prototype's employment status is not in the case contract.
+    expect(within(dialog).queryByRole('textbox', { name: /employment status/i })).not.toBeInTheDocument()
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /injury \/ onset date/i }), '09/01/2026')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(toasts()).toEqual([expect.objectContaining({ title: 'Case updated — exception resolved' })])
+    // What is filled in — the date, and the physician the case already had — and nothing else.
+    expect(updateCaseFieldsMock).toHaveBeenCalledWith('p10-case', {
+      injury_date: '2026-09-01',
+      referring_physician_id: 1,
+    })
 
     dialog = await resolve('Missing subscriber details')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
-    expect(await within(dialog).findByText('Enter the subscriber’s name.')).toBeVisible()
-    await userEvent.type(within(dialog).getByRole('textbox', { name: /subscriber name/i }), 'Claire Moreau')
+    expect(await within(dialog).findByText('Enter the subscriber’s first name.')).toBeVisible()
+    expect(within(dialog).getByText('Enter the subscriber’s last name.')).toBeVisible()
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /^first name/i }), 'Claire')
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /^last name/i }), 'Moreau')
     await userEvent.type(within(dialog).getByRole('textbox', { name: /subscriber dob/i }), '03/02/1974')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    const { result } = renderHook(() => usePatientRecords())
-    expect(result.current.cases.find((item) => item.id === 'p10-case')?.employmentStatus).toBe(
-      'Employed full time',
-    )
-    expect(result.current.coverages.find((item) => item.id === 'p10-cov-1')?.subscriber).toEqual(
-      expect.objectContaining({ name: 'Claire Moreau', dob: '1974-03-02' }),
-    )
+    // The subscriber alone, on the case's insurance — keeping its relationship and gender.
+    expect(setSubscriberMock).toHaveBeenCalledWith('p10-cov-1', {
+      first_name: 'Claire',
+      last_name: 'Moreau',
+      date_of_birth: '1974-03-02',
+      relationship: 'Spouse',
+      gender: 'F',
+    })
   }, 25_000)
 })

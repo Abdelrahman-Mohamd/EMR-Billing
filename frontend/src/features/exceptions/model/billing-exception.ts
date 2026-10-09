@@ -44,7 +44,7 @@ export type ExceptionFix =
       type: 'case'
       caseId: string
       /** The case field that is missing. */
-      field: 'injuryDate' | 'employmentStatus' | 'referrer'
+      field: 'injuryDate' | 'referrer'
     }
   | { type: 'coverage'; coverageId: string }
   | { type: 'referrer'; referrerId: number; caseId: string }

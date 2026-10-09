@@ -7,22 +7,19 @@ import { Select } from '@/components/ui/Select'
 import { DEFAULT_FILTERS, STATUS_FILTERS, type PatientFilters } from '../model/roster'
 
 /**
- * The prototype's "Filter patients" drawer: primary insurance and status. The
- * choices apply when Search is pressed; Reset puts them back to the default
- * (any insurance, Active).
+ * The prototype's "Filter patients" drawer: status. The choice applies when
+ * Search is pressed; Reset puts it back to the default (Active).
  *
- * Not offered, because what they filter on does not exist yet: the location
- * (it lives on the visit) and "Only patients with an open balance" (from billed
- * charges).
+ * Not offered, because the patient list does not carry what they filter on:
+ * the primary insurance (a case's coverage), the location (it lives on the
+ * visit) and "Only patients with an open balance" (from billed charges).
  */
 export function PatientFiltersDrawer({
   filters,
-  insuranceNames,
   onApply,
   onClose,
 }: {
   filters: PatientFilters
-  insuranceNames: readonly string[]
   onApply: (filters: PatientFilters) => void
   onClose: () => void
 }) {
@@ -54,21 +51,12 @@ export function PatientFiltersDrawer({
       }
     >
       <div className="grid gap-5">
-        <Field label="Primary insurance">
-          <Select
-            value={draft.insurance === '' ? null : draft.insurance}
-            onChange={(next) => setDraft({ ...draft, insurance: next ?? '' })}
-            options={insuranceNames.map((name) => ({ value: name, label: name }))}
-            placeholder="Any insurance"
-            clearable
-          />
-        </Field>
         <Field label="Status">
           <Select
             value={draft.status}
             onChange={(next) => {
               const status = STATUS_FILTERS.find((option) => option === next)
-              if (status !== undefined) setDraft({ ...draft, status })
+              if (status !== undefined) setDraft({ status })
             }}
             options={STATUS_FILTERS.map((status) => ({ value: status, label: status }))}
           />

@@ -1,7 +1,8 @@
 import { type CSSProperties, type ReactNode } from 'react'
 import { Link, type LinkProps } from '@tanstack/react-router'
-import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronRight, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { buttonClass } from './Button'
 import { Checkbox } from './Choice'
 import { EmptyState, ErrorState, SkeletonRows } from './States'
 
@@ -68,6 +69,14 @@ export interface DataTableProps<T> {
   rowLink?: (row: T) => LinkProps
   /** What the row opens when it is not a URL. Use one of rowLink / rowAction. */
   rowAction?: { label: (row: T) => string; onAction: (row: T) => void }
+  /**
+   * A button-like label at the end of each row — "View chart" — saying the row
+   * opens (with `rowLink` or `rowAction`). It looks like a button but is not a
+   * second control: the row's own link or button, named after the row, is
+   * under it, so a click on it opens the row and a keyboard or screen reader
+   * meets one control per row.
+   */
+  openHint?: string
   /** Pagination or a summary line, under the table. */
   footer?: ReactNode
   className?: string
@@ -93,10 +102,12 @@ export function DataTable<T>({
   onSelectionChange,
   rowLink,
   rowAction,
+  openHint,
   footer,
   className,
 }: DataTableProps<T>) {
   const selectable = selectedIds !== undefined && onSelectionChange !== undefined
+  const hint = openHint !== undefined && (rowLink !== undefined || rowAction !== undefined)
   const selected = new Set(selectedIds ?? [])
   const allIds = rows.map(getRowId)
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id))
@@ -182,6 +193,12 @@ export function DataTable<T>({
                   </th>
                 )
               })}
+              {hint && (
+                <th
+                  aria-hidden="true"
+                  className="border-rule-structural border-b pt-3.5 pb-2.5 pl-3 last:pr-0"
+                />
+              )}
             </tr>
           </thead>
           <tbody>
@@ -194,7 +211,7 @@ export function DataTable<T>({
                 <tr
                   key={id}
                   className={cn(
-                    'hover:bg-paper relative transition-colors duration-100',
+                    'hover:bg-paper group relative transition-colors duration-100',
                     openable && 'cursor-pointer',
                     isSelected && 'bg-brand-wash',
                   )}
@@ -243,6 +260,24 @@ export function DataTable<T>({
                       </td>
                     )
                   })}
+                  {hint && (
+                    <td
+                      aria-hidden="true"
+                      className="border-rule-row border-b py-[11px] pl-3 text-right align-middle last:pr-0"
+                    >
+                      {/* Drawn as a button; the row's link beneath it takes the click. */}
+                      <span
+                        className={buttonClass(
+                          'default',
+                          'sm',
+                          'group-hover:border-brand-deep group-hover:text-brand-deep pr-2',
+                        )}
+                      >
+                        {openHint}
+                        <ChevronRight size={14} />
+                      </span>
+                    </td>
+                  )}
                 </tr>
               )
             })}

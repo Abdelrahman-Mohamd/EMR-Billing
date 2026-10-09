@@ -68,6 +68,25 @@ describe('DataTable', () => {
     expect(onAction).toHaveBeenCalledWith(ROWS[0])
   })
 
+  it('ends an opening row with a button-like label when asked — not another control or column name', () => {
+    const rowAction = { label: (row: Row) => `Open ${row.name}`, onAction: vi.fn() }
+    const { unmount } = renderTable({ rowAction })
+    // Off unless asked.
+    expect(document.querySelectorAll('tbody td[aria-hidden="true"]')).toHaveLength(0)
+    unmount()
+
+    renderTable({ rowAction, openHint: 'View chart' })
+    const hints = document.querySelectorAll('tbody td[aria-hidden="true"]')
+    expect([...hints].map((hint) => hint.textContent)).toEqual(['View chart', 'View chart'])
+    expect(screen.queryByRole('button', { name: /view chart/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Payer',
+      'Amount',
+    ])
+    // Still one way to open each row.
+    expect(screen.getAllByRole('button', { name: /^Open / })).toHaveLength(2)
+  })
+
   it('does not open the row when the selection box is ticked', async () => {
     const onAction = vi.fn()
     renderTable({
