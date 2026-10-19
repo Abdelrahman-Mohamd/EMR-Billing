@@ -1,0 +1,21 @@
+# Only what the build needs goes into the image's build context.
+node_modules
+dist
+coverage
+.tanstack
+.vite
+*.log
+.git
+.gitignore
+
+# Local settings are not baked in: the API address is given at run time
+# (API_BASE_URL). Without these, the build's fallback is "no backend".
+.env
+.env.*
+
+# Not needed to build or serve.
+docs
+CLAUDE.md
+README.md
+Dockerfile
+.dockerignore

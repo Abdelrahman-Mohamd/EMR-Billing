@@ -40,6 +40,7 @@ data. To point at another backend on your machine, copy `.env.example` to `.env.
 | [docs/SECURITY.md](./docs/SECURITY.md)                                             | What we can and cannot protect             |
 | [docs/TESTING_STRATEGY.md](./docs/TESTING_STRATEGY.md)                             | What to test and what not to               |
 | [docs/PERFORMANCE.md](./docs/PERFORMANCE.md)                                       | Budgets and the levers that matter         |
+| [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)                                         | Notes on the Docker image                  |
 | [docs/decisions/](./docs/decisions/)                                               | Why things are the way they are            |
 
 Product requirements are one level up: [`../PROJECT_MEMORY.md`](../PROJECT_MEMORY.md) is the index.

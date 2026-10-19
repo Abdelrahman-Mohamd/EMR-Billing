@@ -5,7 +5,14 @@ import { z } from 'zod'
  * `import.meta.env`. A missing or misspelled variable fails immediately and
  * loudly instead of turning into `undefined` three screens later.
  *
- * Nothing here is secret: every VITE_* value is compiled into the bundle.
+ * Two sources, the first that is there wins:
+ * - **At run time**, `window.__APP_CONFIG__`, written by the container into
+ *   `/config.js` when it starts (`docker/40-app-config.sh`, from its
+ *   `API_BASE_URL` and `APP_ENVIRONMENT`), so one image runs in any
+ *   environment (docs/DEPLOYMENT.md);
+ * - **At build time**, the `VITE_*` values (`.env`) — `npm run dev`, the tests.
+ *
+ * Nothing here is secret: both are readable by anyone using the app.
  * See docs/SECURITY.md "Environment variables".
  */
 const envSchema = z.object({
@@ -40,4 +47,18 @@ export function parseEnv(raw: unknown): Env {
   }
 }
 
-export const env: Env = parseEnv(import.meta.env)
+/** What `/config.js` sets in a container; absent in development and the tests. */
+declare global {
+  interface Window {
+    __APP_CONFIG__?: { apiBaseUrl?: string; environment?: string }
+  }
+}
+
+/** The container's run-time values, when it wrote some; else the build's. */
+function rawEnv(): unknown {
+  const runtime = typeof window === 'undefined' ? undefined : window.__APP_CONFIG__
+  if (runtime === undefined) return import.meta.env
+  return { VITE_API_BASE_URL: runtime.apiBaseUrl, VITE_ENVIRONMENT: runtime.environment }
+}
+
+export const env: Env = parseEnv(rawEnv())

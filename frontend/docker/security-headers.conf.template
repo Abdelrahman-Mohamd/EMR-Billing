@@ -1,0 +1,11 @@
+# Security headers on every answer (docs/SECURITY.md §10). Included in each
+# location: nginx drops a level's add_header lines when a location adds its own.
+# ${API_ORIGIN} is filled in at start-up from API_BASE_URL.
+#
+# Inline styles are allowed (components and popovers position themselves with
+# style attributes); scripts are not: no inline script, no eval, same origin only.
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${API_ORIGIN}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "same-origin" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
