@@ -250,13 +250,13 @@ Rules:
   `kind`; it never parses a message or a status code.
 - Every request carries an `AbortSignal` from TanStack Query and a 20 s timeout.
 
-**The backend (2026-10-07):** a Laravel API at `VITE_API_BASE_URL` (`.env`: staging,
-`https://api.example.test/api/v1`). The session is a Bearer token kept in `localStorage`
+**The backend (2026-10-07):** a Laravel API at `VITE_API_BASE_URL` (set in each machine's `.env`, not
+committed). The session is a Bearer token kept in `localStorage`
 (`lib/auth/session.ts`; docs/SECURITY.md §2), sent as `Authorization: Bearer …` with `credentials: 'omit'`; errors are
 `{ message, errors? }` (Laravel), with FastAPI's `{ detail }` still read. `x-request-id` remains an assumption.
 All of it is confined to `lib/api/` and `lib/auth/`.
 
-**No mock data (user, 2026-10-07).** `npm run dev` talks to the backend in `.env`, with no extra setup. A
+**No mock data (user, 2026-10-07).** `npm run dev` talks to the backend set in `.env` (copied from `.env.example`). A
 feature's `api/` module calls `request()` for the endpoints that are confirmed (so far: `POST /auth/login`,
 `POST /auth/logout`); every other call rejects as `unavailable` rather than guess at an endpoint, and the
 screen shows its load-failed state until the endpoint is wired — a change inside `api/` only. In-memory

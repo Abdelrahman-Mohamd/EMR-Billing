@@ -37,8 +37,8 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
     restoreMocks: true,
     // No backend in tests: an empty API address makes every request be refused
-    // as "unavailable" without being sent, so no test can reach staging (which
-    // `.env` points at). Tests fake what they need — the api module, or `fetch`
+    // as "unavailable" without being sent, so no test can reach the backend a
+    // local `.env` points at. Tests fake what they need — the api module, or `fetch`
     // for the http client itself.
     env: { VITE_API_BASE_URL: '', VITE_ENVIRONMENT: 'test' },
     // Screen tests drive the real router, forms and dialogs key by key; 5 s

@@ -2,8 +2,9 @@ node_modules
 dist
 coverage
 *.local
-# .env holds only public settings (the API address) and is committed;
-# anything machine-specific goes in .env.local (ignored).
+# Environment settings are per machine and per deployment, never committed:
+# copy .env.example to .env and fill it in.
+.env
 .env.*
 !.env.example
 .vite

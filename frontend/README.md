@@ -13,8 +13,9 @@ npm install
 npm run dev
 ```
 
-Node 20.19+ (or 22+). `npm run dev` talks to the staging API set in `.env` — no extra setup, and no mock
-data. To point at another backend on your machine, copy `.env.example` to `.env.local`.
+Node 20.19+ (or 22+). Before the first run, copy `.env.example` to `.env` and set the API address
+(`VITE_API_BASE_URL`); `.env` is not committed. `npm run dev` then talks to that backend — there is no mock
+data.
 
 ## Scripts
 

@@ -17,8 +17,8 @@ import { z } from 'zod'
  */
 const envSchema = z.object({
   /**
-   * The Billing API, e.g. https://api.example.test/api/v1 (set
-   * in `.env`). Empty means no backend: every request is refused as
+   * The Billing API, e.g. https://api.example.test/api/v1 (set in a local,
+   * uncommitted `.env`). Empty means no backend: every request is refused as
    * `unavailable` without being sent — what the tests use (`test.env` in vite.config.ts).
    */
   VITE_API_BASE_URL: z.union([z.url(), z.literal('')]).default(''),
