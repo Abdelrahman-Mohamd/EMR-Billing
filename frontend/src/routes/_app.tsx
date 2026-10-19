@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 import { AppShell } from '@/app/layouts/AppShell'
 import { navigationGroups } from '@/app/layouts/navigation'
-import { AccountMenu, currentUserQuery } from '@/features/auth'
+import { AccountMenu, currentUserQuery, useSessionEndRedirect } from '@/features/auth'
 import { isApiError } from '@/lib/api/api-error'
 import { hasSession } from '@/lib/auth/session'
 import { env } from '@/lib/config/env'
@@ -17,7 +17,9 @@ import { env } from '@/lib/config/env'
  * storage may hold a token the server has since dropped, so the guard asks
  * who is signed in (`GET /auth/me`, once — then cached; right after sign-in
  * it is already known) and sends a refused token to sign in too. Any other
- * failure lets the app load: its screens show their own error states. Without
+ * failure lets the app load: its screens show their own error states. Once
+ * in, a session that ends by itself (a refused request, another tab signing
+ * out) goes to sign-in at once, saying why (`useSessionEndRedirect`). Without
  * a backend (the tests) there is no session to check. The server enforces
  * access on every request regardless; this only spares the user a screen that
  * cannot load.
@@ -25,20 +27,27 @@ import { env } from '@/lib/config/env'
 export const Route = createFileRoute('/_app')({
   beforeLoad: async ({ location, context }) => {
     if (!env.isLive) return
-    const toSignIn = () => redirect({ to: '/login', search: { redirect: location.href }, replace: true })
+    const toSignIn = (ended?: 'rejected') =>
+      redirect({
+        to: '/login',
+        search: { redirect: location.href, ...(ended === undefined ? {} : { ended }) },
+        replace: true,
+      })
     // eslint-disable-next-line @typescript-eslint/only-throw-error -- redirect() is TanStack Router's control flow, not an error.
     if (!hasSession()) throw toSignIn()
     try {
       await context.queryClient.ensureQueryData({ ...currentUserQuery(), retry: false })
     } catch (error) {
+      // A restored session the server no longer accepts: say so on the sign-in page.
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- as above.
-      if (isApiError(error) && error.kind === 'unauthenticated') throw toSignIn()
+      if (isApiError(error) && error.kind === 'unauthenticated') throw toSignIn('rejected')
     }
   },
   component: AppLayout,
 })
 
 function AppLayout() {
+  useSessionEndRedirect()
   return (
     <AppShell
       groups={navigationGroups()}

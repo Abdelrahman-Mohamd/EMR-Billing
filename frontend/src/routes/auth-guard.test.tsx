@@ -126,8 +126,63 @@ describe('signing in to the application', () => {
     )
     const router = renderAt('/patients')
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'), { timeout: 5000 })
-    expect(router.state.location.search).toEqual({ redirect: '/patients' })
+    // Said so on the sign-in page (user, 2026-10-19: a refresh signed them out without a word).
+    expect(router.state.location.search).toEqual({ redirect: '/patients', ended: 'rejected' })
+    expect(await screen.findByText('Your session has ended. Please sign in again.')).toBeVisible()
     expect(hasSession()).toBe(false)
+  }, 15_000)
+
+  it('goes to sign in at once when the server refuses the session on a screen, saying why', async () => {
+    setSession({ accessToken: 'kept-token', tokenType: 'Bearer' })
+    // Who is signed in answers; the screen's next read is refused (the password was
+    // changed elsewhere, the user deactivated…).
+    fetchMock.mockImplementation((url) =>
+      Promise.resolve(
+        (url as string).endsWith('/auth/me')
+          ? new Response(
+              JSON.stringify({
+                success: true,
+                message: 'User retrieved successfully',
+                data: LOGIN_OK.data.user,
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            )
+          : new Response(JSON.stringify({ message: 'Unauthenticated.' }), {
+              status: 401,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+      ),
+    )
+    const router = renderAt('/admin/users')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'), { timeout: 5000 })
+    expect(router.state.location.search).toEqual({ redirect: '/admin/users', ended: 'rejected' })
+    expect(await screen.findByText('Your session has ended. Please sign in again.')).toBeVisible()
+    expect(hasSession()).toBe(false)
+  }, 15_000)
+
+  it('says nothing about an ended session after signing out on purpose', async () => {
+    setSession({ accessToken: 'kept-token', tokenType: 'Bearer' })
+    fetchMock.mockImplementation((url) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(
+            (url as string).endsWith('/auth/me')
+              ? { success: true, message: 'User retrieved successfully', data: LOGIN_OK.data.user }
+              : { success: true, message: 'Successfully logged out.', data: null },
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    )
+    const router = renderAt('/patients')
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Account: Super Admin' }, { timeout: 5000 }),
+    )
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Sign out' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out', hidden: false }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'), { timeout: 5000 })
+    expect(router.state.location.search).toEqual({})
+    expect(screen.queryByText(/Your session has ended/)).not.toBeInTheDocument()
   }, 15_000)
 
   it('keeps the user on sign in with the server message when the credentials are refused', async () => {

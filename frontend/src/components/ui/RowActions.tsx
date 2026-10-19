@@ -82,16 +82,19 @@ export function actionsColumn<T>(cell: (row: T) => ReactNode): Column<T> {
  * `label` names the row ("Harborline"); the switch is announced as
  * "Harborline: active", on or off. Its `onChange` opens the confirmation
  * (`StatusChangeDialog`); nothing changes on the click itself. Just the switch
- * — no text beside or under it.
+ * — no text beside or under it. `disabled` turns a row's switch off (the
+ * signed-in user's own, in Users).
  */
 export function activeColumn<T>({
   isActive,
   label,
   onChange,
+  disabled,
 }: {
   isActive: (row: T) => boolean
   label: (row: T) => string
   onChange: (row: T, isActive: boolean) => void
+  disabled?: (row: T) => boolean
 }): Column<T> {
   return {
     key: 'active',
@@ -102,6 +105,7 @@ export function activeColumn<T>({
         label={<span className="sr-only">{`${label(row)}: active`}</span>}
         checked={isActive(row)}
         onCheckedChange={(next) => onChange(row, next)}
+        disabled={disabled?.(row) ?? false}
       />
     ),
   }

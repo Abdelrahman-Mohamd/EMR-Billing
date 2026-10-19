@@ -158,7 +158,7 @@ export async function request<TResponse = void>(options: RequestOptions<TRespons
   if (!response.ok) {
     // The token this request carried is no longer accepted: the session is
     // over. The route guard sends the user to sign in on their next step.
-    if (response.status === 401 && authorization !== null) clearSession()
+    if (response.status === 401 && authorization !== null) clearSession('rejected')
     const raw: unknown = await response.json().catch(() => undefined)
     const { message, fieldErrors } = readErrorBody(raw)
     const kind = errorKindFor(response.status)

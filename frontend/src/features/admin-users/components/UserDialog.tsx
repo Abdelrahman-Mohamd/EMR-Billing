@@ -1,7 +1,10 @@
 import { useId, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
+import { useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { currentUserQuery, useCurrentUser } from '@/features/auth'
 import { isApiError, userMessage } from '@/lib/api/api-error'
+import { clearSession, expectSessionEnd } from '@/lib/auth/session'
 import { toast } from '@/stores/toast-store'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -32,6 +35,13 @@ import {
  *
  * A password lives only in this form while it is open, and in the one request
  * that sends it.
+ *
+ * On the signed-in user's own row (user, 2026-10-19): Active cannot be turned
+ * off (the server would sign them out and lock them out); a new password is
+ * warned about before the save and, once saved, goes to sign-in — the server
+ * ends every session of a user whose password is set here, this one too; a
+ * new name or email shows in the account menu at once, and a new email is the
+ * one to sign in with next time.
  */
 export function UserDialog({ user, onClose }: { user: User | null; onClose: () => void }) {
   const formId = useId()
@@ -98,6 +108,9 @@ function UserForm({
 }) {
   const create = useCreateUser()
   const update = useUpdateUser()
+  const queryClient = useQueryClient()
+  const me = useCurrentUser()
+  const self = user !== null && me.data?.id === user.id
   const [failure, setFailure] = useState<string | null>(null)
   const form = useForm<UserFormValues | NewUserFormValues>({
     resolver: zodResolver(user ? userFormSchema : newUserFormSchema),
@@ -107,16 +120,35 @@ function UserForm({
         { name: '', email: '', password: '', isActive: true },
   })
   const submitting = form.formState.isSubmitting
+  const typedPassword = useWatch({ control: form.control, name: 'password' })
+  const ownNewPassword = self && typedPassword !== ''
 
   const onSubmit = async (values: UserFormValues | NewUserFormValues) => {
     setFailure(null)
     onSubmittingChange(true)
+    // The save ends this session: the refusals it brings read as that.
+    const endsSession = self && values.password !== ''
+    if (endsSession) expectSessionEnd('password-changed')
     try {
       const message = user ? await update(user.id, values) : await create(values)
+      if (endsSession) {
+        // The server's words, then sign-in with the new password.
+        toast.success(message ?? 'User saved')
+        onDone()
+        clearSession('password-changed')
+        return
+      }
+      const newEmail = self && values.email.trim().toLowerCase() !== user.email.trim().toLowerCase()
       // The server's words; ours only when it sent none.
-      toast.success(message ?? (user ? 'User saved' : 'User created'))
+      toast.success(
+        message ?? (user ? 'User saved' : 'User created'),
+        newEmail ? 'Sign in with your new email next time.' : undefined,
+      )
+      // The account menu shows who is signed in: a new name or email shows there now.
+      if (self) void queryClient.invalidateQueries({ queryKey: currentUserQuery().queryKey })
       onDone()
     } catch (error) {
+      if (endsSession) expectSessionEnd(null)
       // The server's words about a field go on the field, and anything else
       // above the form; nothing here ever repeats what was typed into the password.
       const leftover = applyServerErrors(form, error)
@@ -175,6 +207,14 @@ function UserForm({
             />
           )}
         </FormField>
+        {ownNewPassword && (
+          <div className="col-span-12">
+            <Notice tone="warning">
+              Saving a new password for your own account signs you out everywhere, this browser included. You
+              will sign in again with the new password.
+            </Notice>
+          </div>
+        )}
         <FormField name="isActive">
           {(field) => (
             <Switch
@@ -183,7 +223,10 @@ function UserForm({
               checked={field.value === true}
               onCheckedChange={field.onChange}
               onBlur={field.onBlur}
-              disabled={submitting}
+              disabled={submitting || self}
+              {...(self
+                ? { info: 'You cannot deactivate your own account: it would sign you out and lock you out.' }
+                : {})}
             />
           )}
         </FormField>

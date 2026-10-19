@@ -78,6 +78,9 @@ export function UsersScreen() {
       label: (user) => user.name,
       // As in the prototype, a change of status asks first (UserStatusDialog).
       onChange: (user) => setOpen({ kind: 'status', user }),
+      // Not oneself: the server takes it, signs the user out and locks them out
+      // at once, with no way back (user, 2026-10-19).
+      disabled: (user) => user.id === me.data?.id,
     }),
     actionsColumn<User>((user) => (
       <>

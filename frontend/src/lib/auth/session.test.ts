@@ -65,3 +65,51 @@ describe('session', () => {
     expect(session.hasSession()).toBe(false)
   })
 })
+
+describe('the session ending', () => {
+  it('says why when it ends by itself, and nothing when this tab signed out', async () => {
+    const session = await reload()
+    const heard = vi.fn()
+    session.onSessionEnd(heard)
+    session.setSession(credential)
+    session.clearSession()
+    expect(heard).not.toHaveBeenCalled()
+    session.setSession(credential)
+    session.clearSession('rejected')
+    expect(heard).toHaveBeenLastCalledWith('rejected')
+    // Already signed out: nothing more to say.
+    session.clearSession('rejected')
+    expect(heard).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the first refusal after one’s own new password as that, and sign-out as silent', async () => {
+    const session = await reload()
+    const heard = vi.fn()
+    session.onSessionEnd(heard)
+    session.setSession(credential)
+    session.expectSessionEnd('password-changed')
+    session.clearSession('rejected')
+    expect(heard).toHaveBeenLastCalledWith('password-changed')
+    session.setSession(credential)
+    session.expectSessionEnd('signed-out')
+    session.clearSession('rejected')
+    expect(heard).toHaveBeenCalledTimes(1)
+    // A withdrawn expectation (the save failed) leaves the reason as it comes.
+    session.setSession(credential)
+    session.expectSessionEnd('password-changed')
+    session.expectSessionEnd(null)
+    session.clearSession('rejected')
+    expect(heard).toHaveBeenLastCalledWith('rejected')
+  })
+
+  it('says so when another tab signs out', async () => {
+    const session = await reload()
+    const heard = vi.fn()
+    session.onSessionEnd(heard)
+    session.setSession(credential)
+    localStorage.removeItem(KEY)
+    window.dispatchEvent(new StorageEvent('storage', { key: KEY }))
+    expect(session.hasSession()).toBe(false)
+    expect(heard).toHaveBeenLastCalledWith('elsewhere')
+  })
+})

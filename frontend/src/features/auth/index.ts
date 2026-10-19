@@ -9,3 +9,5 @@ export { AccountMenu } from './components/AccountMenu'
 export { safeRedirect } from './model/safe-redirect'
 // Who is signed in — for a record of who did something (EMR integration requests).
 export { currentUserQuery, useCurrentUser } from './queries/use-current-user'
+// The app shell: a session that ends by itself goes to sign-in, saying why.
+export { useSessionEndRedirect } from './queries/use-session-end'

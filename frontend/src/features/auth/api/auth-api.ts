@@ -1,7 +1,7 @@
 import { ApiError, isApiError, renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
-import { clearSession, hasSession, setSession } from '@/lib/auth/session'
+import { clearSession, expectSessionEnd, hasSession, setSession } from '@/lib/auth/session'
 import type {
   ChangePasswordRequest,
   ResetPasswordRequest,
@@ -169,6 +169,9 @@ export async function getCurrentUser(): Promise<CurrentUser> {
  * signed out too.
  */
 export async function signOut(): Promise<ServerMessage> {
+  // This tab's own doing: the refusal of a request still in flight, or of the
+  // logout itself, must not read as the session having ended on its own.
+  expectSessionEnd('signed-out')
   try {
     return await send((api) => api.signOut())
   } catch (error) {

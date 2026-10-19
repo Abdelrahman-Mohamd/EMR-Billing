@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { routeTree } from '@/routeTree.gen'
 import { ApiError } from '@/lib/api/api-error'
+import { clearSession, hasSession, setSession } from '@/lib/auth/session'
 import { useToastStore } from '@/stores/toast-store'
 import { createTestQueryClient, renderWithProviders } from '@/test/render'
 import { createUser, deleteUser, getUser, listUsers, setUserActive, updateUser } from '../api/users-api'
@@ -95,6 +96,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   useToastStore.getState().clear()
+  clearSession()
 })
 
 function renderAt(path = '/admin/users') {
@@ -387,5 +389,74 @@ describe('Admin → Users', () => {
         }),
       ]),
     )
+  })
+})
+
+describe('Admin → Users — one’s own account (user, 2026-10-19)', () => {
+  it('cannot be deactivated: its switch is off in the list and in the form', async () => {
+    renderAt()
+    const rows = within(await table())
+      .getAllByRole('row')
+      .slice(1)
+    await waitFor(() =>
+      expect(
+        within(rows[1] as HTMLElement).getByRole('switch', { name: 'Dana Whitfield: active' }),
+      ).toBeDisabled(),
+    )
+    expect(within(rows[0] as HTMLElement).getByRole('switch', { name: 'Marcus Reyes: active' })).toBeEnabled()
+    const dialog = await openEdit('Dana Whitfield')
+    expect(within(dialog).getByRole('switch', { name: 'Active' })).toBeDisabled()
+  })
+
+  it('warns before saving a new password of one’s own, then goes to sign-in to use it', async () => {
+    setSession({ accessToken: 'test-token', tokenType: 'Bearer' })
+    const { router } = renderAt()
+    const dialog = await openEdit('Dana Whitfield')
+    const warning = 'Saving a new password for your own account signs you out everywhere'
+    expect(within(dialog).queryByText(new RegExp(warning))).not.toBeInTheDocument()
+    await userEvent.type(passwordField(), SECRET)
+    expect(within(dialog).getByText(new RegExp(warning))).toBeVisible()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save user' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'), { timeout: 5000 })
+    expect(router.state.location.search).toEqual({ redirect: '/admin/users', ended: 'password-changed' })
+    expect(
+      await screen.findByText('Your password was changed. Sign in with your new password.'),
+    ).toBeVisible()
+    expect(hasSession()).toBe(false)
+    // The server's words, as they are.
+    expect(useToastStore.getState().toasts[0]).toEqual(
+      expect.objectContaining({ title: 'User updated successfully' }),
+    )
+  })
+
+  it('says nothing of the kind for someone else’s new password', async () => {
+    setSession({ accessToken: 'test-token', tokenType: 'Bearer' })
+    const { router } = renderAt()
+    const dialog = await openEdit('Marcus Reyes')
+    await userEvent.type(passwordField(), SECRET)
+    expect(within(dialog).queryByText(/signs you out everywhere/)).not.toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save user' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(router.state.location.pathname).toBe('/admin/users')
+    expect(hasSession()).toBe(true)
+  })
+
+  it('a new email of one’s own: the account menu reads it again, and says to sign in with it', async () => {
+    renderAt()
+    const dialog = await openEdit('Dana Whitfield')
+    await waitFor(() => expect(meMock).toHaveBeenCalled())
+    const before = meMock.mock.calls.length
+    const email = field(/^email/i)
+    await userEvent.clear(email)
+    await userEvent.type(email, 'dana.w@example.test')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save user' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(useToastStore.getState().toasts.at(-1)).toEqual(
+      expect.objectContaining({
+        title: 'User updated successfully',
+        description: 'Sign in with your new email next time.',
+      }),
+    )
+    await waitFor(() => expect(meMock.mock.calls.length).toBeGreaterThan(before))
   })
 })

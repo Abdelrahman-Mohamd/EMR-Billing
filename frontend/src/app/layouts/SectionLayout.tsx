@@ -47,7 +47,7 @@ export function SectionLayout({
                 {...section.link}
                 activeProps={{ className: 'bg-brand-wash text-brand-deep font-medium [&_svg]:text-brand' }}
                 inactiveProps={{ className: 'text-n600 hover:bg-n50 hover:text-ink [&_svg]:text-n400' }}
-                className="text-meta flex h-[38px] flex-none items-center gap-2.5 rounded-full px-3 whitespace-nowrap no-underline"
+                className="text-meta flex h-[38px] flex-none items-center gap-2.5 rounded-md px-3 whitespace-nowrap no-underline"
               >
                 <span aria-hidden="true" className="flex-none">
                   {section.icon}
