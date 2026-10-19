@@ -1,0 +1,9 @@
+# Also used on its own (the Billing-FE repo): the rules travel with the folder.
+* text=auto
+*.png binary
+*.webp binary
+*.woff2 binary
+# Run inside Linux containers: always LF, whatever the checkout.
+*.sh text eol=lf
+docker/** text eol=lf
+Dockerfile text eol=lf
