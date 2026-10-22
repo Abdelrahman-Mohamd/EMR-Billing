@@ -3,18 +3,26 @@ import { authorizationKeys } from '@/features/patients'
 import { createVisit, deleteVisit, getVisit, listVisits, releaseVisit, updateVisit } from '../api/visits-api'
 import { addChargeLine, deleteChargeLine, updateChargeLine } from '../api/charge-lines-api'
 import type { ChargeLinePayload, ChargeLineUpdatePayload } from '../schemas/charge-line'
+import type { VisitFilter } from '../api/visits-api'
 import type { CreateVisitPayload, UpdateVisitPayload } from '../schemas/visit'
 
 /** Every key for this domain, built in one place (docs/FRONTEND_ARCHITECTURE.md §5). */
 export const visitKeys = {
   all: ['visits'] as const,
-  list: () => [...visitKeys.all, 'list'] as const,
+  list: (filter: VisitFilter) => [...visitKeys.all, 'list', filter] as const,
   detail: (id: number) => [...visitKeys.all, 'detail', id] as const,
 }
 
-/** Every visit. Read again on each visit to a screen: deleting a patient or case takes their visits with it. */
-export function useVisits() {
-  return useQuery({ queryKey: visitKeys.list(), queryFn: ({ signal }) => listVisits(signal), staleTime: 0 })
+/**
+ * Every visit, or a case's (`filter`). Read again on each visit to a screen:
+ * deleting a patient or case takes their visits with it.
+ */
+export function useVisits(filter: VisitFilter = {}) {
+  return useQuery({
+    queryKey: visitKeys.list(filter),
+    queryFn: ({ signal }) => listVisits(filter, signal),
+    staleTime: 0,
+  })
 }
 
 /** One visit, read on its own, as it stands now. */

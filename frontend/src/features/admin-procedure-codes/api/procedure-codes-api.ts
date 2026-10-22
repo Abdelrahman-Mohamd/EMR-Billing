@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   procedureCodeDetailResponseSchema,
   procedureCodeFormFieldFor,
@@ -14,7 +15,7 @@ import { toProcedureCodePayload, type ProcedureCodeFormValues } from '../schemas
  * Procedure codes' only door to a server. **Live** (contracts confirmed
  * 2026-10-08), carrying the session's token: `GET /procedure-codes?page=N`,
  * `GET /procedure-codes/{id}`, `POST /procedure-codes`,
- * `PUT /procedure-codes/{id}` and `DELETE`. Only `page` is sent to the list.
+ * `PUT /procedure-codes/{id}` and `DELETE`. The list is asked for `page` and `per_page=100` (lib/api/pagination.ts).
  * Writes resolve with the server's message, which the screens show. Shapes in
  * schemas/procedure-code.ts.
  */
@@ -34,7 +35,7 @@ const live: ProcedureCodesApi = {
     request({
       method: 'GET',
       path: '/procedure-codes',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: procedureCodePageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

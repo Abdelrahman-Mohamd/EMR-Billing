@@ -22,8 +22,8 @@ import { VisitFields } from './VisitFields'
 
 /**
  * Edit a visit not yet released: what a save may change — the date of service,
- * location, providers and authorization. Its case and charge lines stay (the
- * server refuses them on a save). The save waits for the server: its field
+ * location, providers, authorization and diagnoses. Its case and charge lines
+ * stay (the server refuses them on a save). The save waits for the server: its field
  * errors land on the fields, anything else shows above the form.
  */
 export function EditVisitDialog({ visit, onClose }: { visit: Visit; onClose: () => void }) {
@@ -80,7 +80,13 @@ export function EditVisitDialog({ visit, onClose }: { visit: Visit; onClose: () 
               <Notice tone="critical">{failure}</Notice>
             </div>
           )}
-          <VisitFields refs={refs} caseId={visit.caseId} today={today} disabled={submitting} />
+          <VisitFields
+            refs={refs}
+            caseId={visit.caseId}
+            today={today}
+            disabled={submitting}
+            savedCodes={visit.diagnosisCodes}
+          />
         </FormGrid>
       </Form>
     </Dialog>

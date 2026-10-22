@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import type { LocationFormValues, NewPracticeFormValues, PracticeFormValues } from '../schemas/practice-form'
 import type { LocationPayload, LocationUpdatePayload, PracticePayload } from '../schemas/practice-payload'
 import {
@@ -25,7 +26,9 @@ import {
  * session's token. All confirmed 2026-10-07 and tried on staging:
  *
  * - `GET /practices?page=N` — the list, paged by the server, as summaries (no
- *   address, no locations). Only `page` is sent.
+ *   address, no locations). `page` and `per_page=100` are sent; the server
+ *   also filters by `organization_id`, `search` and `is_active`, which the
+ *   screens, reading the whole list, do not need.
  * - `GET /practices/{id}` — one practice in full, with its locations.
  * - `POST /practices` — the practice with its first location in
  *   `locations[]`. `PUT /practices/{id}` — the practice without `locations`
@@ -64,7 +67,7 @@ const live: PracticesApi = {
     request({
       method: 'GET',
       path: '/practices',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: practicePageResponseSchema,
       ...(signal ? { signal } : {}),
     }),
@@ -85,7 +88,7 @@ const live: PracticesApi = {
     request({
       method: 'GET',
       path: '/locations',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: locationPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

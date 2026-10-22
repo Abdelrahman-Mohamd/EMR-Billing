@@ -112,6 +112,9 @@ export function VisitDetail({ visitId, claims }: { visitId: number; claims?: (vi
           <span className="block min-w-0">
             <span className="tabular-nums">{procedure.code}</span>
             {procedure.description !== '' && <CellSub>{procedure.description}</CellSub>}
+            {line.originalProcedureCodeId !== null && (
+              <CellSub>Replaced {refs.procedure(line.originalProcedureCodeId).code} by a coding rule</CellSub>
+            )}
             {line.notes !== '' && (
               <CellSub>
                 <span className="break-words whitespace-pre-line">Note: {line.notes}</span>
@@ -280,6 +283,12 @@ export function VisitDetail({ visitId, claims }: { visitId: number; claims?: (vi
                 layout="rows"
                 items={[
                   { label: 'Total', value: amountText(visit.totalAmount) },
+                  {
+                    label: 'Diagnoses',
+                    value:
+                      visit.diagnosisCodes.map((code, index) => `${index + 1} · ${code}`).join(', ') ||
+                      'None',
+                  },
                   visit.authorization === null
                     ? {
                         label: 'Authorization',

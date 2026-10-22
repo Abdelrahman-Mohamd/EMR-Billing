@@ -15,19 +15,23 @@ import { isApiError, userMessage } from '@/lib/api/api-error'
 import { formatIsoDate } from '@/lib/utils/dates'
 import { formatMoney } from '@/lib/utils/money'
 import { useCreateClaim } from '../queries/use-claims'
+import { CLAIM_FORMATS } from '../schemas/claim'
 
 const schema = z.object({
   coverageId: z
     .string()
     .nullable()
     .refine((value): boolean => value !== null, 'Select the insurance to bill.'),
+  format: z.string(),
 })
 type Values = z.infer<typeof schema>
 
 /**
  * Bill a released visit: the server makes one claim for the whole visit — all
- * its charge lines — to one of the case's insurances. Offered: the case's
- * insurances not billed for this visit yet, the first by priority chosen. The
+ * its charge lines — to one of the case's insurances, in a format (837P, the
+ * server's own default, or CMS-1500) — the payload's fields, and only those.
+ * Offered: the case's insurances not billed for this visit yet, the highest
+ * priority chosen. The
  * server says when one may not be billed yet (the secondary before the
  * primary's claim is paid or denied); its message shows above the form.
  */
@@ -37,7 +41,7 @@ export function CreateClaimDialog({
   onClose,
 }: {
   visit: Visit
-  /** The case's insurances without a claim for this visit, by priority. */
+  /** The case's insurances without a claim for this visit, in the server's order. */
   coverages: readonly Coverage[]
   onClose: () => void
 }) {
@@ -46,7 +50,15 @@ export function CreateClaimDialog({
   const [failure, setFailure] = useState<string | null>(null)
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { coverageId: coverages[0]?.id ?? null },
+    // The highest priority not billed yet (the lowest rank) is the one offered first.
+    defaultValues: {
+      coverageId:
+        coverages.reduce<Coverage | undefined>(
+          (best, item) => (best === undefined || item.rank < best.rank ? item : best),
+          undefined,
+        )?.id ?? null,
+      format: '837P',
+    },
   })
   const total = Number(visit.totalAmount)
   const lines = visit.chargeLines.length
@@ -81,6 +93,7 @@ export function CreateClaimDialog({
             const message = await create.mutateAsync({
               visit_id: visit.id,
               case_insurance_id: Number(values.coverageId),
+              format: values.format,
             })
             toast.success(message ?? 'Claim created')
             onClose()
@@ -112,6 +125,23 @@ export function CreateClaimDialog({
                   label: `${coverage.insuranceLabel || coverage.insuranceName || 'Insurance'}${coverage.rankLabel === '' ? '' : ` (${coverage.rankLabel.toLowerCase()})`}`,
                 }))}
                 placeholder="Select the insurance"
+                disabled={create.isPending}
+              />
+            )}
+          </FormField>
+          <FormField
+            name="format"
+            label="Format"
+            required
+            span={12}
+            info="It can be changed until the claim is sent."
+          >
+            {(field) => (
+              <Select
+                value={typeof field.value === 'string' ? field.value : null}
+                onChange={(next) => field.onChange(next ?? '837P')}
+                options={CLAIM_FORMATS}
+                placeholder="Select the format"
                 disabled={create.isPending}
               />
             )}

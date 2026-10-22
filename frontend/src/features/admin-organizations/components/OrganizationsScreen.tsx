@@ -6,7 +6,9 @@ import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Pagination } from '@/components/ui/Pagination'
 import { RowActionButton, StatusChangeDialog, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
-import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
+import { SearchInput } from '@/components/ui/Input'
+import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
+import { useDebouncedValue } from '@/lib/hooks/use-debounced-value'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import {
@@ -22,9 +24,10 @@ import { OrganizationDialog } from './OrganizationDialog'
  * delete (after a confirmation).
  *
  * The list is the server's: 15 a page, in the server's order, with "Showing
- * 1–15 of N organizations" and a pager. No sort, search or filter parameter is
- * part of the contract, so the name column does not sort — sorting one page
- * would misstate the order of the whole list.
+ * 1–15 of N organizations" and a pager. The search is the server's (`search`,
+ * the name in part; asked once typing pauses, from page 1). The server takes
+ * no sort, so the name column does not sort — sorting one page would misstate
+ * the order of the whole list.
  *
  * Practices: the count the list sends (`practices_count`). The prototype also
  * names them in a column, and picks them in the dialog; the list does not send
@@ -37,7 +40,9 @@ import { OrganizationDialog } from './OrganizationDialog'
  */
 export function OrganizationsScreen() {
   const [page, setPage] = useState(1)
-  const organizations = useOrganizationsPage(page)
+  const [search, setSearch] = useState('')
+  const query = useDebouncedValue(search.trim())
+  const organizations = useOrganizationsPage(page, query)
   const setActive = useSetOrganizationActive()
   const remove = useDeleteOrganization()
   /** `undefined`: no dialog. `null`: creating. An organization: editing it. */
@@ -124,6 +129,22 @@ export function OrganizationsScreen() {
         }
       />
 
+      <FilterBar
+        search={
+          <SearchInput
+            aria-label="Search organizations by name"
+            placeholder="Search by name…"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setPage(1)
+            }}
+            autoComplete="off"
+          />
+        }
+        {...(search === '' ? {} : { onReset: () => setSearch('') })}
+      />
+
       <DataTable
         caption="Organizations"
         columns={columns}
@@ -133,20 +154,29 @@ export function OrganizationsScreen() {
         error={organizations.isError}
         onRetry={() => void organizations.refetch()}
         empty={
-          <EmptyState
-            icon={<Layers size={20} />}
-            title="No organizations"
-            description="Create an organization to group practices that share an owner."
-            action={
-              <Button
-                variant="primary"
-                icon={<Plus size={16} aria-hidden="true" />}
-                onClick={() => setEditing(null)}
-              >
-                New organization
-              </Button>
-            }
-          />
+          query !== '' ? (
+            <EmptyState
+              icon={<Layers size={20} />}
+              title="No organizations match"
+              description="Try another name."
+              action={<Button onClick={() => setSearch('')}>Clear search</Button>}
+            />
+          ) : (
+            <EmptyState
+              icon={<Layers size={20} />}
+              title="No organizations"
+              description="Create an organization to group practices that share an owner."
+              action={
+                <Button
+                  variant="primary"
+                  icon={<Plus size={16} aria-hidden="true" />}
+                  onClick={() => setEditing(null)}
+                >
+                  New organization
+                </Button>
+              }
+            />
+          )
         }
         footer={
           total > 0 ? (

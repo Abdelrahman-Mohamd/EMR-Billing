@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { Layers, Pencil, Plus, Trash2 } from 'lucide-react'
 import { StatusDot } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { CardGroup, DetailCard } from '@/components/ui/DetailCard'
 import { KeyValue } from '@/components/ui/KeyValue'
 import { formatAddress } from '../model/format-address'
 import type { Location, Practice } from '../schemas/practice'
@@ -11,8 +11,10 @@ import { LocationsTable } from './LocationsTable'
 
 /**
  * The selected practice, full width: a header that says which practice this
- * is (name; code, DBA, status, organization; Edit), then two separate cards —
- * its billing details and its locations — each with its own title and action.
+ * is (name; code, DBA, status, organization; Edit), then two cards in the
+ * record-page style (`DetailCard`, as on the patient chart and the visit page)
+ * — Billing details, in groups, and Locations — each with its title band and
+ * action.
  */
 export function PracticeDetails({
   practice,
@@ -34,8 +36,6 @@ export function PracticeDetails({
   onDeleteLocation: (location: Location) => void
 }) {
   const nameId = useId()
-  const billingId = useId()
-  const locationsId = useId()
   const activeLocations = practice.locations.filter((location) => location.isActive).length
 
   return (
@@ -86,56 +86,56 @@ export function PracticeDetails({
         </div>
       </header>
 
-      <div className="mt-6 flex flex-col gap-6">
-        <Card labelledBy={billingId}>
-          <CardHeader
-            id={billingId}
-            title="Billing details"
-            info="Printed on every claim this practice sends (CMS-1500 boxes 25, 32a and 33)."
-          />
-          <CardBody className="pt-1 pb-5">
+      {/* A card per topic, as on the patient chart and the visit page. */}
+      <DetailCard
+        className="mt-6"
+        headingLevel={3}
+        title="Billing details"
+        info="Printed on every claim this practice sends (CMS-1500 boxes 25, 32a and 33)."
+      >
+        {/* Two groups side by side from 768px, each read top to bottom. */}
+        <div className="grid gap-y-7 pt-4 md:grid-cols-2 md:gap-x-10">
+          <CardGroup title="Billing address">
+            <KeyValue layout="rows" items={[{ label: 'Address', value: formatAddress(practice.address) }]} />
+          </CardGroup>
+          <CardGroup title="Identifiers">
             <KeyValue
+              layout="rows"
               items={[
-                { label: 'Billing address', value: formatAddress(practice.address), wide: true },
                 { label: 'Tax ID', value: practice.taxId },
                 { label: 'Taxonomy code', value: practice.taxonomyCode },
                 { label: 'Group NPI', value: practice.npi },
               ]}
             />
-          </CardBody>
-        </Card>
+          </CardGroup>
+        </div>
+      </DetailCard>
 
-        <Card labelledBy={locationsId}>
-          <CardHeader
-            id={locationsId}
-            title={
-              <>
-                Locations{' '}
-                <span className="text-n500 font-normal tabular-nums">
-                  {activeLocations === practice.locations.length
-                    ? practice.locations.length
-                    : `${activeLocations} of ${practice.locations.length} active`}
-                </span>
-              </>
-            }
-            info="A practice needs at least one location."
-            infoLabel="About locations"
-            aside={
-              <Button size="sm" icon={<Plus size={14} aria-hidden="true" />} onClick={onAddLocation}>
-                Add location
-              </Button>
-            }
+      <DetailCard
+        className="mt-4"
+        headingLevel={3}
+        title="Locations"
+        info="A practice needs at least one location."
+        meta={
+          activeLocations === practice.locations.length
+            ? `${practice.locations.length} ${practice.locations.length === 1 ? 'location' : 'locations'}`
+            : `${activeLocations} of ${practice.locations.length} active`
+        }
+        aside={
+          <Button size="sm" icon={<Plus size={14} aria-hidden="true" />} onClick={onAddLocation}>
+            Add location
+          </Button>
+        }
+      >
+        <div className="mt-2">
+          <LocationsTable
+            locations={practice.locations}
+            onEdit={onEditLocation}
+            onToggleActive={onToggleLocationActive}
+            onDelete={onDeleteLocation}
           />
-          <CardBody className="pt-0 pb-2">
-            <LocationsTable
-              locations={practice.locations}
-              onEdit={onEditLocation}
-              onToggleActive={onToggleLocationActive}
-              onDelete={onDeleteLocation}
-            />
-          </CardBody>
-        </Card>
-      </div>
+        </div>
+      </DetailCard>
     </section>
   )
 }

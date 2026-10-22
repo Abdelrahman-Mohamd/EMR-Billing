@@ -157,15 +157,5 @@ export const authorization = (
   ...overrides,
 })
 
-export const ICD10 = [
-  { code: 'M54.50', description: 'Low back pain, unspecified' },
-  { code: 'M54.2', description: 'Cervicalgia' },
-  { code: 'M25.511', description: 'Pain in right shoulder' },
-  { code: 'M75.101', description: 'Unspecified rotator cuff tear of right shoulder, not traumatic' },
-]
-
-/** A case as the server holds it: its codes without descriptions. */
-export const asServerCase = ({ diagnoses, ...item }: PatientCase): ServerCase => ({
-  ...item,
-  icd10Codes: diagnoses.map((diagnosis) => diagnosis.code),
-})
+/** A case as the server holds it — the same shape: its diagnoses come with it. */
+export const asServerCase = (item: PatientCase): ServerCase => structuredClone(item)

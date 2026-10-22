@@ -48,14 +48,16 @@ beforeEach(() => {
     organization(1, 'Harborline Rehab Group', true, 3),
     organization(2, 'Alder Therapy Partners', false, 0),
   ]
-  listMock.mockReset().mockImplementation((page) => {
+  // As the server pages and searches (the name, in part).
+  listMock.mockReset().mockImplementation((page, search = '') => {
+    const found = server.filter((o) => o.name.toLowerCase().includes(search.toLowerCase()))
     const start = (page - 1) * PER_PAGE
-    const slice = server.slice(start, start + PER_PAGE)
+    const slice = found.slice(start, start + PER_PAGE)
     return Promise.resolve({
       organizations: slice.map((o) => ({ ...o })),
       page,
-      pageCount: Math.max(1, Math.ceil(server.length / PER_PAGE)),
-      total: server.length,
+      pageCount: Math.max(1, Math.ceil(found.length / PER_PAGE)),
+      total: found.length,
       from: slice.length === 0 ? 0 : start + 1,
       to: start + slice.length,
     })
@@ -166,11 +168,27 @@ describe('Admin → Organizations', () => {
     expect(
       await screen.findByText('Showing 1–15 of 32 organizations', {}, { timeout: 5000 }),
     ).toBeInTheDocument()
-    expect(listMock).toHaveBeenLastCalledWith(1, expect.anything())
+    expect(listMock).toHaveBeenLastCalledWith(1, '', expect.anything())
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
     expect(await screen.findByText('Showing 16–30 of 32 organizations')).toBeInTheDocument()
-    expect(listMock).toHaveBeenLastCalledWith(2, expect.anything())
+    expect(listMock).toHaveBeenLastCalledWith(2, '', expect.anything())
     expect(within(table()).getByText('Group 16')).toBeInTheDocument()
+  })
+
+  it('searches on the server by name, from page 1', async () => {
+    server = Array.from({ length: 32 }, (_, index) => organization(index + 1, `Group ${index + 1}`))
+    renderAt()
+    await screen.findByText('Showing 1–15 of 32 organizations', {}, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await screen.findByText('Showing 16–30 of 32 organizations')
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search organizations by name' }), 'group 3')
+    await waitFor(() => expect(listMock).toHaveBeenLastCalledWith(1, 'group 3', expect.anything()))
+    expect(await screen.findByText('4 organizations')).toBeInTheDocument()
+    await userEvent.clear(screen.getByRole('searchbox', { name: 'Search organizations by name' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search organizations by name' }), 'nothing')
+    expect(await screen.findByText('No organizations match')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(await screen.findByText('Showing 1–15 of 32 organizations')).toBeInTheDocument()
   })
 
   it('shows a loading state until the list arrives', async () => {

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { caseDiagnosisResponseSchema } from './case-diagnosis'
 
 /**
  * A patient's case, as the backend sends and takes it (contract given
@@ -6,7 +7,7 @@ import { z } from 'zod'
  * made-up patient):
  *
  * - `GET /patient-cases?page=N` → Laravel pagination of `{ id, patient_id,
- *   name, referring_physician_id, icd10_codes, injury_type, injury_type_label,
+ *   name, referring_physician_id, diagnoses, injury_type, injury_type_label,
  *   injury_date, start_of_care, discharge_date, accident_state, is_active,
  *   referring_physician, insurances, created_at, updated_at }`;
  *   `GET /patient-cases/{id}` → the same, with the `patient`;
@@ -20,15 +21,17 @@ import { z } from 'zod'
  * active one of the patient's practice. `injury_type` is `auto` (Auto
  * Accident), `employment` (Employment Related) or `other`; an auto accident
  * needs an accident state (Box 10b); the injury date is not after today; the
- * discharge date not before the start of care. `icd10_codes` holds up to 12
- * valid ICD-10-CM codes, none twice, kept in the order sent — the position is
- * the claim's pointer. `is_active` (open or closed) is taken. A `PUT` changes
+ * discharge date not before the start of care. `is_active` (open or closed)
+ * is taken. Since 2026-10-20 the case's diagnoses are records of their own
+ * (`/case-diagnoses`, schemas/case-diagnosis.ts): the case lists them as
+ * `diagnoses: [{ id, case_id, icd10_code, description }]`, and a case's save
+ * no longer carries them. A `PUT` changes
  * only the fields it carries. Every new patient comes with a "Default" case;
  * deleting a patient deletes their cases.
  *
  * Not taken, so not here: the employment status (ignored if sent), and the
  * case's insurances (`insurances` comes back empty; sending it is ignored) —
- * the primary and secondary are kept in this tab with the coverage list.
+ * they are the case insurances' own (`/case-insurances`).
  */
 const text = z
   .string()
@@ -42,7 +45,7 @@ export const patientCaseResponseSchema = z
     patient_id: z.number().int(),
     name: z.string(),
     referring_physician_id: z.number().int().nullable().optional(),
-    icd10_codes: z.array(z.string()).nullable().optional(),
+    diagnoses: z.array(caseDiagnosisResponseSchema).nullable().optional(),
     // A string, not an enum: a value the frontend does not know yet must not
     // make the whole list fail to load. Known values: model/case.ts.
     injury_type: text,
@@ -58,7 +61,7 @@ export const patientCaseResponseSchema = z
     patientId: String(wire.patient_id),
     name: wire.name,
     referrerId: wire.referring_physician_id ?? null,
-    icd10Codes: wire.icd10_codes ?? [],
+    diagnoses: wire.diagnoses ?? [],
     injuryType: wire.injury_type,
     injuryTypeLabel: wire.injury_type_label,
     injuryDate: wire.injury_date,
@@ -68,7 +71,7 @@ export const patientCaseResponseSchema = z
     isActive: wire.is_active,
   }))
 
-/** A case as the server holds it — without what this tab adds (insurance, descriptions). */
+/** A case as the server holds it. */
 export type ServerCase = z.output<typeof patientCaseResponseSchema>
 
 export const patientCasePageResponseSchema = z

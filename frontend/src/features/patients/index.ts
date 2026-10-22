@@ -1,8 +1,8 @@
 /**
  * Public surface of Patients. Routes import from here only
- * (docs/FRONTEND_ARCHITECTURE.md §3). Patients, their cases, the cases'
- * insurances and the authorizations those issued are the server's; only the
- * ICD-10 list is kept in this tab until it has an endpoint.
+ * (docs/FRONTEND_ARCHITECTURE.md §3). Patients, their cases and the cases'
+ * diagnoses, the cases' insurances and the authorizations those issued are
+ * all the server's.
  */
 export { PatientsScreen } from './components/PatientsScreen'
 export { PatientChart } from './components/chart/PatientChart'

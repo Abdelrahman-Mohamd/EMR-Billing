@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   patientCaseFormFieldFor,
   patientCasePageResponseSchema,
@@ -13,17 +14,14 @@ import {
 /**
  * Patient cases' only door to a server. **Live** (contract given 2026-10-08,
  * not final), carrying the session's token: `GET /patient-cases?page=N`,
- * `POST /patient-cases`, `PUT /patient-cases/{id}` and `DELETE`. Only `page`
- * is sent to the list. Writes resolve with the server's message. Shapes in
+ * `POST /patient-cases`, `PUT /patient-cases/{id}` and `DELETE`. The list is asked for `page` and
+ * `per_page=100` (lib/api/pagination.ts). Writes resolve with the server's message. Shapes in
  * schemas/patient-case.ts.
  */
 export interface PatientCasesApi {
   list: (page: number, signal?: AbortSignal) => Promise<{ cases: ServerCase[]; pageCount: number }>
   create: (payload: PatientCasePayload) => Promise<ServerMessage>
-  update: (
-    id: string,
-    payload: PatientCaseUpdatePayload | PatientCaseFieldsPayload | { icd10_codes: string[] },
-  ) => Promise<ServerMessage>
+  update: (id: string, payload: PatientCaseUpdatePayload | PatientCaseFieldsPayload) => Promise<ServerMessage>
   remove: (id: string) => Promise<ServerMessage>
 }
 
@@ -35,7 +33,7 @@ const live: PatientCasesApi = {
     request({
       method: 'GET',
       path: '/patient-cases',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: patientCasePageResponseSchema,
       ...(signal ? { signal } : {}),
     }),
@@ -86,11 +84,6 @@ export function updatePatientCaseFields(
   fields: PatientCaseFieldsPayload,
 ): Promise<ServerMessage> {
   return send((api) => api.update(id, fields))
-}
-
-/** The case's diagnoses, in pointer order — the whole list each time. */
-export function setCaseDiagnoses(id: string, codes: readonly string[]): Promise<ServerMessage> {
-  return send((api) => api.update(id, { icd10_codes: [...codes] }))
 }
 
 export function deletePatientCase(id: string): Promise<ServerMessage> {

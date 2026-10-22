@@ -26,7 +26,11 @@ export interface RequestOptions<TResponse> {
   path: string
   /** Serialized as JSON. */
   body?: unknown
-  /** Values that are `undefined` are dropped. Never put PHI in a query string. */
+  /**
+   * Values that are `undefined` are dropped. No PHI here — with one exception
+   * the user chose (2026-10-20): the patient roster's search term, sent to the
+   * API over HTTPS. It never enters the app's own URL, history or logs.
+   */
   searchParams?: Record<string, string | number | boolean | undefined>
   /**
    * Schema the response body must satisfy. A 2xx body that fails it is an

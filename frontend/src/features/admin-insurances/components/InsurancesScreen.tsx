@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Landmark, Plus } from 'lucide-react'
 import { Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { RowActionButton, StatusChangeDialog, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
@@ -52,7 +52,6 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
   /** The row whose Active switch was flipped, waiting for confirmation. */
   const [statusOf, setStatusOf] = useState<Insurance | null>(null)
   const [deleting, setDeleting] = useState<Insurance | null>(null)
-  const [sort, setSort] = useState<Sort>({ key: 'code', direction: 'asc' })
 
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
   const classOf = (insurance: Insurance) =>
@@ -65,9 +64,9 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
       replace: true,
     })
 
-  const rows = (insurances.data ?? [])
-    .filter((insurance) => practiceFilter === undefined || insurance.practiceId === practiceFilter)
-    .sort((a, b) => (sort.direction === 'asc' ? a.code - b.code : b.code - a.code))
+  const rows = (insurances.data ?? []).filter(
+    (insurance) => practiceFilter === undefined || insurance.practiceId === practiceFilter,
+  )
 
   const confirmDelete = async (insurance: Insurance) => {
     try {
@@ -86,7 +85,6 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
       key: 'code',
       header: 'Payer',
       primary: true,
-      sortable: true,
       // Room for "1002 – Empire BlueCross BlueShield" on two lines, not four.
       width: '15rem',
       cell: (insurance) => (
@@ -204,8 +202,6 @@ export function InsurancesScreen({ practiceFilter }: { practiceFilter: number | 
         loading={insurances.isPending}
         error={insurances.isError}
         onRetry={() => void insurances.refetch()}
-        sort={sort}
-        onSortChange={setSort}
         empty={
           filter === null ? (
             <EmptyState

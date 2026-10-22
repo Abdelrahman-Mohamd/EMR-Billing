@@ -9,8 +9,8 @@ const KINDS = SCHEDULE_KINDS.map((kind) => kind.value) as [ScheduleKind, ...Sche
  * field they are about:
  * - **Every few hours:** how many hours apart is required ("Say how many hours
  *   apart."), a whole number from 1 to 12 (the prototype's input range).
- * - **Every day / Weekdays at a time:** the time is required ("Choose a time of
- *   day.").
+ * - **Every day / Weekdays at a time:** the time is required ("Enter a time,
+ *   e.g. 6:07.") — empty also while what is typed is not a time yet.
  * Only the field the chosen kind shows is checked. An option already on the
  * list is refused by the list itself (`addOption`), as in the prototype.
  */
@@ -27,7 +27,7 @@ export const scheduleOptionFormSchema = z
       else if (!/^\d+$/.test(values.hours) || Number(values.hours) < 1 || Number(values.hours) > 12)
         ctx.addIssue({ code: 'custom', path: ['hours'], message: 'Please enter a valid number.' })
     } else if (values.time === '') {
-      ctx.addIssue({ code: 'custom', path: ['time'], message: 'Choose a time of day.' })
+      ctx.addIssue({ code: 'custom', path: ['time'], message: 'Enter a time, e.g. 6:07.' })
     }
   })
 

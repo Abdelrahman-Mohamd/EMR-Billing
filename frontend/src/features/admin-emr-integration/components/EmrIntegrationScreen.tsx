@@ -152,8 +152,8 @@ export function EmrIntegrationScreen({ practiceFilter }: { practiceFilter: numbe
           description="EMR integration is set up per location. Create the practice and its primary location first."
         />
       ) : (
-        // Whitespace, not boxes, sets the two parts apart.
-        <div className="flex flex-col gap-8">
+        // A card each, spaced as the record pages space theirs.
+        <div className="mt-6 flex flex-col gap-4">
           <LocationsSection
             practiceName={practice?.name ?? ''}
             status={

@@ -1,32 +1,35 @@
-import { useState } from 'react'
-import { Clock } from 'lucide-react'
+import { useId, useState } from 'react'
 import { toast } from '@/stores/toast-store'
+import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { StatusDot } from '@/components/ui/Badge'
-import { Section } from '@/components/ui/Card'
-import { Field } from '@/components/ui/Field'
-import { Select } from '@/components/ui/Select'
+import { CardGroup, DetailCard } from '@/components/ui/DetailCard'
+import { ConfirmDialog } from '@/components/ui/Dialog'
+import { KeyValue } from '@/components/ui/KeyValue'
+import { RowActionButton } from '@/components/ui/RowActions'
 import { Skeleton } from '@/components/ui/States'
 import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
+import { cn } from '@/lib/utils/cn'
 import { formatWhen } from '@/lib/utils/format-when'
 import { useAutomation } from '../data/automation-store'
-import { SUBMIT_MANUALLY } from '../model/schedule'
-import { ScheduleOptionsDialog } from './ScheduleOptionsDialog'
+import { SUBMIT_MANUALLY, type ScheduleOption } from '../model/schedule'
+import { AddScheduleForm } from './AddScheduleForm'
+
+const OFF_LABEL = 'Off — submit manually'
 
 /**
- * Admin → Submission & automation, as the prototype has it — a short settings
- * page, at a readable width, laid out so it reads at a glance: the setting in
- * effect beside the section title; "Manage the list" beside the dropdown it
- * fills; "Save settings" with the setting it saves, enabled once something
- * changed.
- * - **Scheduled submission:** "Submit released charges automatically" — Off
- *   (submit manually) or one of the options — with when the scheduled job
- *   last ran; and the list of options, which the practice fills itself
- *   ("Manage the list").
- * - **Save settings**, which keeps the chosen setting.
+ * Admin → Submission & automation: when released charges are submitted
+ * automatically. Two cards side by side from 1024px (stacked below):
+ * - **Scheduled submission** — the choice itself, shown, not hidden in a
+ *   dropdown: Off (submit manually) or one of the practice's schedules, a
+ *   radio each; the one in use marked, every other one deletable (after
+ *   asking). Under them, "Add a schedule" in one row (How often, then Every or
+ *   At). "Save settings" at the card's foot, enabled once the choice changed.
+ * - **In effect** — what is saved now and when the scheduled job last ran.
  *
- * The prototype's "Payer SLA" section (a pointer to Setup → Insurances) is left
- * out, at the user's request: each insurance's SLA is set on the insurance.
+ * The prototype's "Scheduled submission options" dialog is folded into the
+ * card (user, 2026-10-22: the page was too empty, the dialog awkward). The
+ * prototype's "Payer SLA" section is left out, at the user's request: each
+ * insurance's SLA is set on the insurance.
  *
  * **Frontend only.** There is no backend for these settings: they live in this
  * browser tab (`data/automation-store.ts`). Nothing here runs a schedule or
@@ -40,19 +43,20 @@ import { ScheduleOptionsDialog } from './ScheduleOptionsDialog'
 export function AutomationScreen() {
   const automation = useAutomation()
   const { settings } = automation
+  const groupName = useId()
   const [chosen, setChosen] = useState<string | null>(null)
-  const [managing, setManaging] = useState(false)
+  const [deleting, setDeleting] = useState<ScheduleOption | null>(null)
 
-  // The setting being edited: what was chosen here, else what is saved. An
-  // option removed meanwhile falls back to what is saved.
+  // The choice being edited: what was picked here, else what is saved. A
+  // schedule deleted meanwhile falls back to what is saved.
   const offered = (value: string) =>
     value === SUBMIT_MANUALLY || settings.options.some((option) => option.id === value)
   const value = chosen !== null && offered(chosen) ? chosen : settings.schedule
-
-  const lastRun = settings.lastScheduledRun === null ? 'never' : formatWhen(settings.lastScheduledRun).label
-  // The saved option, if any — what is in effect now.
-  const inEffect = settings.options.find((option) => option.id === settings.schedule)
   const changed = value !== settings.schedule
+
+  const lastRun = settings.lastScheduledRun === null ? 'Never' : formatWhen(settings.lastScheduledRun).label
+  // The saved schedule, if any — what is in effect now.
+  const inEffect = settings.options.find((option) => option.id === settings.schedule)
 
   const save = () => {
     automation.saveSchedule(value)
@@ -65,6 +69,41 @@ export function AutomationScreen() {
     )
   }
 
+  /** One choice: its radio and name, then "In use" or its Delete. */
+  const choice = (id: string, label: string, option?: ScheduleOption) => {
+    const inUse = settings.schedule === id
+    return (
+      <li
+        key={id}
+        className="border-rule-row flex min-h-12 items-center gap-3 border-b py-1.5 last:border-b-0"
+      >
+        <label className="text-meta text-ink flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 py-1.5">
+          <input
+            type="radio"
+            name={groupName}
+            value={id}
+            checked={value === id}
+            onChange={() => setChosen(id)}
+          />
+          <span className={cn('min-w-0 [overflow-wrap:anywhere]', value === id && 'font-medium')}>
+            {label}
+          </span>
+        </label>
+        {inUse ? (
+          <Tag tone="brand">In use</Tag>
+        ) : (
+          option !== undefined && (
+            <RowActionButton
+              action="delete"
+              label={`Delete schedule ${option.label}`}
+              onClick={() => setDeleting(option)}
+            />
+          )
+        )}
+      </li>
+    )
+  }
+
   return (
     <PageContainer>
       <PageHeader
@@ -73,59 +112,77 @@ export function AutomationScreen() {
       />
 
       {!automation.ready ? (
-        <div className="grid max-w-[720px] gap-4" aria-busy="true">
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-10" />
-          <Skeleton className="h-6 w-40" />
+        <div className="grid gap-4" aria-busy="true">
+          <Skeleton className="h-40" />
         </div>
       ) : (
-        <div className="max-w-[720px]">
-          <Section
+        // The setting, then what is in effect beside it: a page that reads across, not one narrow card.
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <DetailCard
             title="Scheduled submission"
-            className="pt-0"
-            // What is in effect now, at a glance — the saved setting, not the one being edited.
-            aside={
-              inEffect === undefined ? (
-                <StatusDot tone="inert">Off — submit manually</StatusDot>
+            info="Released charges are submitted on the chosen schedule. Off leaves them to be submitted by hand."
+          >
+            <div role="radiogroup" aria-label="Submit released charges automatically" className="pt-2">
+              <ul>
+                {choice(SUBMIT_MANUALLY, OFF_LABEL)}
+                {settings.options.map((option) => choice(option.id, option.label, option))}
+              </ul>
+              {settings.options.length === 0 && (
+                <p className="text-micro text-n500 pt-1">No schedules yet — add one below.</p>
+              )}
+            </div>
+
+            <CardGroup title="Add a schedule" className="mt-6">
+              <AddScheduleForm automation={automation} />
+            </CardGroup>
+
+            {/* The card's foot: saving what was chosen above. */}
+            <div className="border-rule-structural mt-6 flex flex-wrap items-center justify-end gap-3 border-t pt-4">
+              {changed && <span className="text-micro text-n500 mr-auto">The choice is not saved yet.</span>}
+              <Button variant="primary" onClick={save} disabled={!changed}>
+                Save settings
+              </Button>
+            </div>
+          </DetailCard>
+
+          {/* On a phone the summary comes first: what is in effect, then how to change it. */}
+          <DetailCard title="In effect" className="order-first lg:order-none">
+            <div className="pt-4">
+              {inEffect === undefined ? (
+                <StatusDot tone="inert">{OFF_LABEL}</StatusDot>
               ) : (
                 <StatusDot tone="success">{inEffect.label}</StatusDot>
-              )
-            }
-          >
-            {/* A stack, not a grid: Field spans 12 form-grid columns by default. */}
-            <div className="mt-4 flex flex-col gap-4">
-              <Field label="Submit released charges automatically" description={`Last run ${lastRun}.`}>
-                {/* The list sits beside the dropdown it fills. */}
-                <div className="flex flex-wrap gap-2">
-                  <div className="min-w-0 flex-1 basis-60">
-                    <Select
-                      value={value}
-                      onChange={(next) => {
-                        if (next !== null) setChosen(next)
-                      }}
-                      options={[
-                        { value: SUBMIT_MANUALLY, label: 'Off — submit manually' },
-                        ...settings.options.map((option) => ({ value: option.id, label: option.label })),
-                      ]}
-                    />
-                  </div>
-                  <Button icon={<Clock size={16} aria-hidden="true" />} onClick={() => setManaging(true)}>
-                    Manage the list
-                  </Button>
-                </div>
-              </Field>
-              <div>
-                {/* Beside what it saves, and only when something changed. */}
-                <Button variant="primary" onClick={save} disabled={!changed}>
-                  Save settings
-                </Button>
-              </div>
+              )}
+              <KeyValue
+                layout="rows"
+                className="mt-3"
+                items={[
+                  {
+                    label: 'Released charges',
+                    value: inEffect === undefined ? 'Submitted by hand' : 'Submitted on schedule',
+                  },
+                  { label: 'Last run', value: lastRun },
+                ]}
+              />
             </div>
-          </Section>
+          </DetailCard>
         </div>
       )}
 
-      {managing && <ScheduleOptionsDialog automation={automation} onClose={() => setManaging(false)} />}
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Delete this schedule?"
+        description={deleting === null ? '' : `“${deleting.label}” will no longer be offered.`}
+        confirmLabel="Delete schedule"
+        tone="destructive"
+        onConfirm={() => {
+          if (deleting !== null) automation.removeOption(deleting.id)
+          setDeleting(null)
+        }}
+      />
     </PageContainer>
   )
 }

@@ -104,7 +104,10 @@ export function Field({
   // the label text alone with aria-labelledby.
   const heading =
     label === undefined ? null : asFieldset ? (
-      <legend className={labelClass}>
+      // A legend is not a flex item of its fieldset, so the column's gap does
+      // not reach it: the same 8px is set here, or the control sits higher
+      // than the ones beside it.
+      <legend className={cn(labelClass, 'mb-2')}>
         <span id={labelId}>{label}</span>
         {star}
         {tip}
@@ -168,6 +171,15 @@ export function Field({
  * Props a control spreads to join its Field. Outside a Field it returns a
  * generated id, so a bare control is still valid HTML.
  */
+/**
+ * A second control inside a field — a time's AM / PM beside its typed time:
+ * it names itself (`aria-label`) instead of taking the field's id and label,
+ * which belong to the field's one main control.
+ */
+export function FieldPart({ children }: { children: ReactNode }) {
+  return <FieldContext.Provider value={null}>{children}</FieldContext.Provider>
+}
+
 export function useFieldControl(): {
   id: string
   /** For controls a `<label for>` cannot name: a div with role="combobox". */

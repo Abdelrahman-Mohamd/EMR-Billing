@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import * as Popover from '@radix-ui/react-popover'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -79,6 +79,25 @@ export function Combobox({
   }, [options, query])
 
   const chosen = options.filter((option) => selected.includes(option.value))
+
+  // The active option stays in sight: centred when the list opens (a long list
+  // opens on its selection, as a native select does), kept just in view as the
+  // arrow keys move. Scrolling is an imperative DOM step, which is what an
+  // effect is for.
+  const activeId = visible[activeIndex] === undefined ? null : `${listId}-${visible[activeIndex].value}`
+  const justOpened = useRef(false)
+  useEffect(() => {
+    if (!open) return
+    justOpened.current = true
+  }, [open])
+  useEffect(() => {
+    if (!open || activeId === null) return
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(activeId)?.scrollIntoView({ block: justOpened.current ? 'center' : 'nearest' })
+      justOpened.current = false
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [open, activeId])
 
   /** Open on the current selection, the way a native select does. */
   const indexOfSelection = () => {

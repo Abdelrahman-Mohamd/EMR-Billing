@@ -11,16 +11,38 @@ import type { Practice } from '@/features/admin-practices'
 import type { Provider } from '@/features/admin-providers'
 import type { ReferringPhysician } from '@/features/admin-referring-physicians'
 import type { Patient } from '@/features/patients'
-import { resetBillingExceptions } from '../data/exceptions-store'
-import type { BillingException } from '../model/billing-exception'
+import {
+  deleteBillingException,
+  getExceptionGroups,
+  listBillingExceptions,
+  reprocessBillingException,
+  scanPractice,
+  type ExceptionFilter,
+} from '../api/billing-exceptions-api'
+import { reasonLabel, typeLabel, type BillingException } from '../model/billing-exception'
 
-// Exceptions are frontend only: their in-tab list starts from known records.
-// The patients, procedure codes and fee schedules they fix are the
-// development samples those features load in tests; the lists that come from
-// an api are faked by path, never imported.
-// The other features' in-memory lists start empty; seed the records these
-// tests read, through each store's own test reset (faked by path — never
-// imported, as lint requires).
+// The billing exceptions are the server's: faked at their api, answering as it
+// does — filtered by practice, type and reason, counted by type and reason, a
+// re-check clearing the exception unless a test says the problem is still
+// there. The records they are fixed on are other features' integration points:
+// faked by path, never imported (lint forbids it).
+vi.mock('../api/billing-exceptions-api', () => ({
+  listBillingExceptions: vi.fn(),
+  getExceptionGroups: vi.fn(),
+  scanPractice: vi.fn(),
+  reprocessBillingException: vi.fn(),
+  deleteBillingException: vi.fn(),
+}))
+const listMock = vi.mocked(listBillingExceptions)
+const groupsMock = vi.mocked(getExceptionGroups)
+const scanMock = vi.mocked(scanPractice)
+const reprocessMock = vi.mocked(reprocessBillingException)
+const deleteMock = vi.mocked(deleteBillingException)
+let exceptions: BillingException[]
+// A visit is read on its own for its treating provider and lines.
+const getVisitMock = vi.hoisted(() => vi.fn())
+vi.mock('@/features/visits/api/visits-api', () => ({ getVisit: getVisitMock, listVisits: vi.fn() }))
+
 const seed = vi.hoisted(() => {
   // A patient as the server sends them, parsed: phones as digits, the SSN masked.
   const patient = (id: string, firstName: string, lastName: string, extra: Record<string, unknown> = {}) => ({
@@ -59,7 +81,7 @@ const seed = vi.hoisted(() => {
     startOfCare: '2026-09-14',
     dischargeDate: '',
     isActive: true,
-    icd10Codes: [],
+    diagnoses: [],
     ...extra,
   })
   // A case's primary insurance as the server sends it, parsed.
@@ -96,7 +118,7 @@ const seed = vi.hoisted(() => {
   })
   return { patient, patientCase, coverage, code }
 })
-const { SEED_PATIENTS, SEED_CASES, SEED_COVERAGES, SEED_RECORDS, SEED_CODES } = vi.hoisted(() => ({
+const { SEED_PATIENTS, SEED_CASES, SEED_COVERAGES, SEED_CODES } = vi.hoisted(() => ({
   SEED_PATIENTS: [
     seed.patient('p10', 'Victor', 'Moreau', { phoneCell: '0000000000' }),
     seed.patient('p11', 'Grace', 'Holloway', {
@@ -128,7 +150,6 @@ const { SEED_PATIENTS, SEED_CASES, SEED_COVERAGES, SEED_RECORDS, SEED_CODES } = 
     seed.coverage('p12', 3),
     seed.coverage('p14', 3),
   ],
-  SEED_RECORDS: {},
   SEED_CODES: [
     seed.code('97033', 'Iontophoresis', {
       defaultFee: 0,
@@ -159,11 +180,6 @@ vi.mock('@/features/patients/api/patient-cases-api', () => ({
   listPatientCases: () => Promise.resolve(structuredClone(SEED_CASES)),
   updatePatientCaseFields: updateCaseFieldsMock,
 }))
-vi.mock('@/features/patients/data/patient-records-store', async (importOriginal) => {
-  const actual = await importOriginal<{ resetPatientRecords: (records: object) => void }>()
-  actual.resetPatientRecords(SEED_RECORDS)
-  return actual
-})
 const setDefaultFeeMock = vi.hoisted(() => vi.fn())
 const createFeeRowMock = vi.hoisted(() => vi.fn())
 vi.mock('@/features/admin-fee-schedules/api/fee-schedules-api', () => ({
@@ -265,78 +281,107 @@ const referrers: ReferringPhysician[] = [
   },
 ]
 
-/** One exception, open, on a session of the given sample patient. */
+/** An exception as the server lists it, parsed. */
 function exception(
-  id: string,
-  values: Partial<BillingException> & Pick<BillingException, 'level' | 'trigger' | 'fix'>,
+  id: number,
+  values: Pick<BillingException, 'type' | 'reason' | 'detail'> & Partial<BillingException>,
+  patient: [id: string, first: string, last: string] = ['p10', 'Victor', 'Moreau'],
 ): BillingException {
   return {
     id,
     practiceId: 1,
-    detail: `${values.trigger} details.`,
-    record: { kind: 'visit', patientId: 'p10', dos: '2026-09-14', recordId: `EMR-${id}` },
-    status: 'Open',
-    detectedAt: '2026-09-14T17:30',
-    owner: null,
-    due: '2099-09-17',
-    resolvedAt: null,
-    resolvedBy: null,
+    level: typeLabel(values.type),
+    trigger: reasonLabel(values.reason),
+    patientId: patient[0],
+    patientFirstName: patient[1],
+    patientLastName: patient[2],
+    caseId: null,
+    visitId: null,
+    visitDate: '',
+    chargeLineId: null,
+    detectedAt: `2026-10-20T1${id % 10}:00:00.000000Z`,
     ...values,
   }
 }
 
-const PHONE = exception('ex-phone', {
-  level: 'Patient',
-  trigger: 'Invalid patient phone number (dummy data)',
-  detail: 'Phone 000-000-0000 is placeholder data.',
-  fix: { type: 'patient-phone', patientId: 'p10' },
+const PHONE = exception(1, {
+  type: 'patient',
+  reason: 'placeholder_phone',
+  detail: 'The cell phone 000-000-0000 looks like placeholder data.',
 })
-const ADDRESS = exception('ex-zip', {
-  level: 'Patient',
-  trigger: 'ZIP code mismatch with state',
-  detail: 'ZIP 07030 belongs to NJ, but the state is NY.',
-  record: { kind: 'visit', patientId: 'p11', dos: '2026-09-14', recordId: 'EMR-N-5590204' },
-  fix: { type: 'patient-address', patientId: 'p11' },
+const ADDRESS = exception(
+  2,
+  { type: 'patient', reason: 'zip_state_mismatch', detail: 'ZIP code 07030 does not belong to NY.' },
+  ['p11', 'Grace', 'Holloway'],
+)
+const LENGTH = exception(
+  3,
+  { type: 'patient', reason: 'field_too_long', detail: 'The patient’s name is 41 characters (limit 30).' },
+  ['p25', 'Maximilian Alexander', 'Castellanos-Whitmore'],
+)
+const REFERRER = exception(
+  4,
+  {
+    type: 'case',
+    reason: 'invalid_referring_npi',
+    detail: 'The referring physician’s NPI 9999999999 is a placeholder or fails the NPI check digit.',
+    caseId: 'p12-case',
+  },
+  ['p12', 'Dmitri', 'Volkov'],
+)
+const NO_PRIMARY = exception(5, {
+  type: 'case',
+  reason: 'no_primary_insurance',
+  detail: 'The case has no primary insurance.',
+  caseId: 'p10-case',
 })
-const LENGTH = exception('ex-len', {
-  level: 'Patient',
-  trigger: 'Character limit exceeded',
-  detail: 'Patient name is 41 characters (limit 30).',
-  record: { kind: 'visit', patientId: 'p25', dos: '2026-09-14', recordId: 'EMR-N-5590208' },
-  fix: { type: 'patient-length', patientId: 'p25' },
-})
-const REFERRER = exception('ex-ref', {
-  level: 'Case',
-  trigger: 'Invalid / dummy referring NPI',
-  detail: 'Leonard Voss, MD carries NPI 9999999999.',
-  record: { kind: 'visit', patientId: 'p12', dos: '2026-09-14', recordId: 'EMR-N-5590205' },
-  fix: { type: 'referrer', referrerId: 5, caseId: 'p12-case' },
-})
-const NPI = exception('ex-npi', {
-  level: 'Session',
-  trigger: 'Missing mandatory rendering NPI',
-  detail: 'Caleb Wright, PT has no NPI on file.',
-  record: { kind: 'visit', patientId: 'p21', dos: '2026-09-14', recordId: 'EMR-N-5590207' },
-  fix: { type: 'provider-npi', providerId: 6 },
-})
-const FEE = exception('ex-fee', {
-  level: 'Charge',
-  trigger: 'New CPT code charged at $0.00',
-  detail: '97033 Iontophoresis is missing from the Aetna and default fee schedules.',
-  record: { kind: 'visit', patientId: 'p14', dos: '2026-09-14', recordId: 'EMR-N-5590206' },
-  fix: { type: 'fee', procedureCode: '97033', insuranceId: 3 },
-  owner: 'Tomás Herrera',
-  due: '2026-09-17',
-})
-const PAYMENT = exception('ex-pay', {
-  level: 'Payment',
-  trigger: 'Unmapped payer remittance data',
-  detail: 'Claim control number HPT-26-099102 was not found — $26.82 unapplied.',
-  record: { kind: 'era', control: '60054-835-260909', payerName: 'Aetna' },
-  fix: { type: 'era-claim' },
-  owner: 'Keisha Morgan',
-  detectedAt: '2026-09-09T07:10',
-})
+const NPI = exception(
+  6,
+  {
+    type: 'charge',
+    reason: 'invalid_rendering_npi',
+    detail: 'The treating provider’s NPI is missing.',
+    caseId: 'p14-case',
+    visitId: 41,
+    visitDate: '2026-09-14',
+  },
+  ['p14', 'Thomas', 'Reilly'],
+)
+const FEE = exception(
+  7,
+  {
+    type: 'charge',
+    reason: 'zero_amount',
+    detail: 'Line 97033 is charged at $0.00.',
+    caseId: 'p14-case',
+    visitId: 41,
+    visitDate: '2026-09-14',
+    chargeLineId: 70,
+  },
+  ['p14', 'Thomas', 'Reilly'],
+)
+const NO_DX = exception(
+  8,
+  {
+    type: 'charge',
+    reason: 'no_diagnosis',
+    detail: 'The visit has no diagnosis codes.',
+    caseId: 'p14-case',
+    visitId: 41,
+    visitDate: '2026-09-14',
+  },
+  ['p14', 'Thomas', 'Reilly'],
+)
+const ALL = [PHONE, ADDRESS, LENGTH, REFERRER, NO_PRIMARY, NPI, FEE, NO_DX]
+
+/** As the server filters the list. */
+const matching = (filter: ExceptionFilter) =>
+  exceptions.filter(
+    (item) =>
+      (filter.practiceId === undefined || item.practiceId === filter.practiceId) &&
+      (filter.type === undefined || item.type === filter.type) &&
+      (filter.reason === undefined || item.reason === filter.reason),
+  )
 
 beforeEach(() => {
   practicesMock
@@ -349,11 +394,47 @@ beforeEach(() => {
   createFeeRowMock.mockReset().mockResolvedValue('Fee schedule created successfully')
   referrersMock.mockReset().mockResolvedValue(referrers)
   updateReferrerMock.mockReset().mockResolvedValue('Referring physician updated successfully')
-  resetBillingExceptions([LENGTH, NPI, FEE, REFERRER, ADDRESS, PHONE, PAYMENT])
   patientsState.patients = structuredClone(SEED_PATIENTS)
   updatePatientFieldsMock.mockReset().mockResolvedValue('Patient updated successfully')
   updateCaseFieldsMock.mockReset().mockResolvedValue('Patient case updated successfully')
   setSubscriberMock.mockReset().mockResolvedValue('Case insurance updated successfully')
+  getVisitMock.mockReset().mockResolvedValue({
+    id: 41,
+    caseId: 'p14-case',
+    treatingProviderId: 6,
+    chargeLines: [{ id: 70, procedureCodeId: 97033 }],
+  })
+
+  exceptions = structuredClone(ALL)
+  listMock.mockReset().mockImplementation((filter = {}) => Promise.resolve(structuredClone(matching(filter))))
+  groupsMock.mockReset().mockImplementation((filter = {}) => {
+    const rows = matching(filter)
+    const types = [...new Set(rows.map((item) => item.type))].map((type) => {
+      const ofType = rows.filter((item) => item.type === type)
+      return {
+        type,
+        total: ofType.length,
+        reasons: [...new Set(ofType.map((item) => item.reason))].map((reason) => ({
+          reason,
+          total: ofType.filter((item) => item.reason === reason).length,
+        })),
+      }
+    })
+    return Promise.resolve({ total: rows.length, types })
+  })
+  // By default the fix worked: the re-check clears the exception.
+  reprocessMock.mockReset().mockImplementation((id) => {
+    exceptions = exceptions.filter((item) => item.id !== id)
+    return Promise.resolve({ message: 'Fixed: the exception is cleared', stillThere: false })
+  })
+  deleteMock.mockReset().mockImplementation((id) => {
+    exceptions = exceptions.filter((item) => item.id !== id)
+    return Promise.resolve('Billing exception removed')
+  })
+  scanMock.mockReset().mockResolvedValue({
+    message: 'Practice re-checked for billing exceptions',
+    counts: { patients: 3, cases: 3, visits: 1, exceptions: 8 },
+  })
 })
 afterEach(() => {
   useToastStore.getState().clear()
@@ -371,6 +452,10 @@ function renderAt(path: string) {
 }
 const toasts = () => useToastStore.getState().toasts
 const table = () => screen.findByRole('table', { name: 'Billing exceptions' }, { timeout: 5000 })
+const dataRows = async () =>
+  within(await table())
+    .getAllByRole('row')
+    .slice(1)
 const rowOf = async (text: string) =>
   (await within(await table()).findByText(text, undefined, { timeout: 5000 })).closest('tr') as HTMLElement
 const resolve = async (trigger: string) => {
@@ -380,105 +465,179 @@ const resolve = async (trigger: string) => {
   )
   return screen.findByRole('dialog')
 }
+const cleared = (label: string) =>
+  expect(toasts()).toEqual([
+    expect.objectContaining({
+      tone: 'success',
+      title: label,
+      description: 'Fixed: the exception is cleared',
+    }),
+  ])
 
-describe('Exceptions — the lists', () => {
-  it('shows the open billing exceptions as the prototype does', async () => {
+describe('Exceptions — the queue', () => {
+  it('lists the server’s exceptions: by type, then reason, with its counts', async () => {
     renderAt('/exceptions')
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Exceptions' }, { timeout: 5000 }),
     ).toBeInTheDocument()
-    const tabs = screen.getByRole('navigation', { name: 'Exception lists' })
-    expect(within(tabs).getByRole('link', { name: 'Billing exceptions 7' })).toHaveAttribute(
-      'aria-current',
-      'page',
+    // The type as tabs — each a URL — with the server's counts.
+    const types = await screen.findByRole('navigation', { name: 'Exception types' })
+    await waitFor(() =>
+      expect(
+        within(types)
+          .getAllByRole('link')
+          .map((tab) => tab.textContent),
+      ).toEqual(['All 8', 'Patient 3', 'Case 2', 'Charge 3']),
     )
-    expect(within(tabs).getByRole('link', { name: 'Incomplete profiles 0' })).toBeInTheDocument()
-    expect(within(tabs).getByRole('link', { name: 'Resolved 0' })).toBeInTheDocument()
-    const pills = screen.getByRole('group', { name: 'Filter by level' })
+    expect(within(types).getByRole('link', { name: 'All 8' })).toHaveAttribute('aria-current', 'page')
+    // Reasons belong to a type: none until one is chosen.
+    expect(screen.queryByRole('radiogroup', { name: 'Reason' })).not.toBeInTheDocument()
+    expect(await dataRows()).toHaveLength(8)
+    // The reason, the server's message, and the record it sits on.
+    const fee = await rowOf('Charged at $0.00')
+    expect(fee).toHaveTextContent('Line 97033 is charged at $0.00.')
+    expect(fee).toHaveTextContent('Reilly, Thomas')
+    expect(fee).toHaveTextContent('Visit · DOS 09/14/2026')
+    expect(await rowOf('Invalid referring physician NPI')).toHaveTextContent('Case Chronic low back')
+    expect(await rowOf('Placeholder phone number')).toHaveTextContent('Patient record')
+    // A reason with no fix form opens the record where it is fixed.
     expect(
-      within(pills)
-        .getAllByRole('button')
-        .map((pill) => pill.textContent),
-    ).toEqual(['Patient 3', 'Case 1', 'Session 1', 'Charge 1', 'Payment 1'])
-
-    // Newest first; the record is the patient's session, or the remittance.
-    const rows = within(await table())
-      .getAllByRole('row')
-      .slice(1)
-    expect(rows).toHaveLength(7)
-    const fee = await rowOf('New CPT code charged at $0.00')
-    expect(fee).toHaveTextContent('97033 Iontophoresis is missing from the Aetna and default fee schedules.')
-    expect(await within(fee).findByText('Reilly, Thomas', undefined, { timeout: 5000 })).toBeInTheDocument()
-    expect(fee).toHaveTextContent('DOS 09/14/2026 · record EMR-N-5590206')
-    expect(fee).toHaveTextContent('Tomás Herrera')
-    // Past its due date: marked, and said so.
-    expect(within(fee).getByText('(overdue)', { exact: false })).toBeInTheDocument()
-    expect(await rowOf('Missing mandatory rendering NPI')).toHaveTextContent('Unassigned')
-
-    // Payment-level exceptions are fixed against claims and remittances: no Resolve here.
-    const payment = await rowOf('Unmapped payer remittance data')
-    expect(payment).toHaveTextContent('ERA 60054-835-260909')
-    expect(payment).toHaveTextContent('Aetna')
-    expect(within(payment).queryByRole('button', { name: /^Resolve/ })).not.toBeInTheDocument()
+      within(await rowOf('No primary insurance')).getByRole('link', { name: /^Open the case/ }),
+    ).toHaveAttribute('href', '/patients/p10?case=p10-case')
+    expect(
+      within(await rowOf('No diagnosis codes')).getByRole('link', { name: /^Open the visit/ }),
+    ).toHaveAttribute('href', '/visits/41')
+    // Nothing the server does not have.
+    expect(screen.queryByRole('navigation', { name: 'Exception lists' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/owner|due|resolved/i)).not.toBeInTheDocument()
   }, 15_000)
 
-  it('filters by level, and a link can open it on one level', async () => {
-    renderAt('/exceptions')
-    const pills = await screen.findByRole('group', { name: 'Filter by level' }, { timeout: 5000 })
-    await userEvent.click(within(pills).getByRole('button', { name: 'Patient 3' }))
+  it('asks the server for one type, then one reason — kept in the URL', async () => {
+    const router = renderAt('/exceptions')
+    const types = await screen.findByRole('navigation', { name: 'Exception types' }, { timeout: 5000 })
+    await userEvent.click(await within(types).findByRole('link', { name: 'Patient 3' }))
+    await waitFor(() => expect(router.state.location.search).toEqual({ type: 'patient' }))
+    await waitFor(() => expect(listMock).toHaveBeenLastCalledWith({ type: 'patient' }, expect.anything()))
+    await waitFor(async () => expect(await dataRows()).toHaveLength(3))
+    const reasons = await screen.findByRole('radiogroup', { name: 'Reason' })
     expect(
-      within(await table())
-        .getAllByRole('row')
-        .slice(1),
-    ).toHaveLength(3)
-    await userEvent.click(screen.getByRole('button', { name: 'Show all levels' }))
-    expect(
-      within(await table())
-        .getAllByRole('row')
-        .slice(1),
-    ).toHaveLength(7)
-  })
+      within(reasons)
+        .getAllByRole('radio')
+        .map((chip) => chip.textContent),
+    ).toEqual([
+      'All reasons 3',
+      'Placeholder phone number 1',
+      'ZIP code does not match the state 1',
+      'Too long for the claim form 1',
+    ])
+    expect(within(reasons).getByRole('radio', { name: 'All reasons 3' })).toBeChecked()
+    await userEvent.click(within(reasons).getByRole('radio', { name: /^ZIP code/ }))
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ type: 'patient', reason: 'zip_state_mismatch' }),
+    )
+    await waitFor(async () => expect(await dataRows()).toHaveLength(1))
+    // The type's tab stays current under a reason.
+    expect(within(types).getByRole('link', { name: 'Patient 3' })).toHaveAttribute('aria-current', 'page')
+    await userEvent.click(within(reasons).getByRole('radio', { name: 'All reasons 3' }))
+    await waitFor(() => expect(router.state.location.search).toEqual({ type: 'patient' }))
+    await userEvent.click(within(types).getByRole('link', { name: 'All 8' }))
+    await waitFor(() => expect(router.state.location.search).toEqual({}))
+    await waitFor(async () => expect(await dataRows()).toHaveLength(8))
+  }, 15_000)
 
-  it('opens on one level from a link (?level=Payment)', async () => {
-    renderAt('/exceptions?level=Payment')
-    const rows = within(await table())
-      .getAllByRole('row')
-      .slice(1)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toHaveTextContent('Unmapped payer remittance data')
-    expect(screen.getByRole('button', { name: 'Payment 1' })).toHaveAttribute('aria-pressed', 'true')
-  })
-
-  it('narrows to a practice (?practice=)', async () => {
-    resetBillingExceptions([PHONE, { ...ADDRESS, practiceId: 2 }])
+  it('asks the server for one practice’s (?practice=)', async () => {
+    exceptions = [PHONE, { ...ADDRESS, practiceId: 2 }]
     renderAt('/exceptions?practice=2')
-    const rows = within(await table())
-      .getAllByRole('row')
-      .slice(1)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toHaveTextContent('ZIP code mismatch with state')
+    await waitFor(async () => expect(await dataRows()).toHaveLength(1))
+    expect((await dataRows())[0]).toHaveTextContent('ZIP code does not match the state')
+    expect(listMock).toHaveBeenCalledWith({ practiceId: 2 }, expect.anything())
+    expect(groupsMock).toHaveBeenCalledWith({ practiceId: 2 }, expect.anything())
   })
 
   it('says so when there is nothing to show', async () => {
-    resetBillingExceptions([])
-    const router = renderAt('/exceptions')
-    expect(await screen.findByText('No open billing exceptions', undefined, { timeout: 5000 })).toBeVisible()
-    await userEvent.click(screen.getByRole('link', { name: 'Resolved 0' }))
-    expect(await screen.findByText('Nothing resolved yet')).toBeVisible()
-    expect(router.state.location.pathname).toBe('/exceptions/resolved')
-    await userEvent.click(screen.getByRole('link', { name: 'Incomplete profiles 0' }))
-    expect(await screen.findByText('No incomplete profiles')).toBeVisible()
+    exceptions = []
+    renderAt('/exceptions')
+    expect(await screen.findByText('No billing exceptions', undefined, { timeout: 5000 })).toBeVisible()
   })
+
+  it('re-checks a row: the server’s answer, cleared or still there', async () => {
+    reprocessMock.mockResolvedValueOnce({
+      message: 'The problem is still there; fix the data and reprocess again',
+      stillThere: true,
+    })
+    renderAt('/exceptions')
+    const row = await rowOf('Invalid treating provider NPI')
+    await userEvent.click(
+      within(row).getByRole('button', { name: /^Re-check Invalid treating provider NPI/ }),
+    )
+    await waitFor(() =>
+      expect(toasts()).toEqual([
+        expect.objectContaining({
+          tone: 'warning',
+          title: 'The problem is still there; fix the data and reprocess again',
+          description: 'The treating provider’s NPI is missing.',
+        }),
+      ]),
+    )
+    expect(reprocessMock).toHaveBeenCalledWith(6)
+    useToastStore.getState().clear()
+    await userEvent.click(
+      within(row).getByRole('button', { name: /^Re-check Invalid treating provider NPI/ }),
+    )
+    await waitFor(() =>
+      expect(toasts()).toEqual([
+        expect.objectContaining({ tone: 'success', title: 'Fixed: the exception is cleared' }),
+      ]),
+    )
+    await waitFor(async () => expect(await dataRows()).toHaveLength(7))
+  }, 15_000)
+
+  it('deletes an exception after asking, in the server’s words', async () => {
+    renderAt('/exceptions')
+    const row = await rowOf('No diagnosis codes')
+    await userEvent.click(within(row).getByRole('button', { name: /^Delete No diagnosis codes/ }))
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete this exception?' })
+    expect(
+      within(confirm).getByText(
+        'It is taken off the list. It comes back when its record is saved, or its visit released, while the problem is still there.',
+      ),
+    ).toBeVisible()
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Delete exception' }))
+    await waitFor(() =>
+      expect(toasts()).toEqual([
+        expect.objectContaining({ tone: 'success', title: 'Billing exception removed' }),
+      ]),
+    )
+    expect(deleteMock).toHaveBeenCalledWith(8)
+    await waitFor(async () => expect(await dataRows()).toHaveLength(7))
+  }, 15_000)
+
+  it('scans a practice: what the server checked and found', async () => {
+    renderAt('/exceptions?practice=2')
+    await screen.findByRole('heading', { level: 1, name: 'Exceptions' }, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: 'Scan practice' }))
+    const dialog = screen.getByRole('dialog', { name: 'Scan for billing exceptions' })
+    // The practice in view is the one offered.
+    expect(within(dialog).getByRole('combobox', { name: /practice/i })).toHaveTextContent('North Shore Rehab')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Scan practice' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(scanMock).toHaveBeenCalledWith(2)
+    expect(toasts()).toEqual([
+      expect.objectContaining({
+        tone: 'success',
+        title: 'Practice re-checked for billing exceptions',
+        description: '3 patients, 3 cases and 1 visit checked: 8 exceptions.',
+      }),
+    ])
+  }, 15_000)
 })
 
 describe('Exceptions — resolving', () => {
-  it('fixes a placeholder phone: refuses another placeholder, then saves and resolves', async () => {
+  it('fixes a placeholder phone: refuses another placeholder, then saves and has it re-checked', async () => {
     renderAt('/exceptions')
-    const dialog = await resolve('Invalid patient phone number (dummy data)')
+    const dialog = await resolve('Placeholder phone number')
     expect(within(dialog).getByRole('heading', { name: 'Fix phone — Victor Moreau' })).toBeInTheDocument()
-    expect(
-      within(dialog).getByText('Patient · Invalid patient phone number (dummy data).'),
-    ).toBeInTheDocument()
+    expect(within(dialog).getByText('Patient · Placeholder phone number.')).toBeInTheDocument()
     // The placeholder is not offered back.
     const cell = within(dialog).getByRole('textbox', { name: /cell phone/i })
     expect(cell).toHaveValue('')
@@ -492,48 +651,55 @@ describe('Exceptions — resolving', () => {
     await userEvent.type(cell, '718-555-0177')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(toasts()).toEqual([
-      expect.objectContaining({ tone: 'success', title: 'Patient updated — exception resolved' }),
-    ])
-    expect(screen.getByRole('link', { name: 'Billing exceptions 6' })).toBeInTheDocument()
-    expect(screen.queryByText('Invalid patient phone number (dummy data)')).not.toBeInTheDocument()
-
     // The patient record itself was corrected on the server — the phones alone.
     expect(updatePatientFieldsMock).toHaveBeenCalledWith('p10', {
       phone_cell: '7185550177',
       phone_home: null,
     })
-
-    // And the exception is in Resolved.
-    await userEvent.click(screen.getByRole('link', { name: 'Resolved 1' }))
-    const resolved = await screen.findByRole('table', { name: 'Resolved exceptions' })
-    expect(within(resolved).getByText('Invalid patient phone number (dummy data)')).toBeInTheDocument()
+    // Then the server re-checked it, and said so.
+    await waitFor(() => cleared('Patient updated'))
+    expect(reprocessMock).toHaveBeenCalledWith(1)
+    await waitFor(() => expect(screen.queryByText('Placeholder phone number')).not.toBeInTheDocument())
   }, 20_000)
 
-  it('says when the same visit still has exceptions after a fix', async () => {
-    resetBillingExceptions([
-      PHONE,
-      { ...ADDRESS, record: PHONE.record, fix: { type: 'patient-address', patientId: 'p10' } },
-    ])
+  it('says when the problem is still there after a fix — and when the save had already cleared it', async () => {
+    reprocessMock
+      .mockResolvedValueOnce({
+        message: 'The problem is still there; fix the data and reprocess again',
+        stillThere: true,
+      })
+      .mockRejectedValueOnce(new ApiError({ kind: 'not_found', message: 'Not found', status: 404 }))
     renderAt('/exceptions')
-    const dialog = await resolve('Invalid patient phone number (dummy data)')
-    const cell = within(dialog).getByRole('textbox', { name: /cell phone/i })
-    await userEvent.clear(cell)
-    await userEvent.type(cell, '718-555-0177')
+    let dialog = await resolve('Placeholder phone number')
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /cell phone/i }), '718-555-0177')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(toasts()).toEqual([
-      expect.objectContaining({
-        tone: 'warning',
-        title: 'Patient updated — but the visit still has 1 exception',
-        description: 'ZIP code mismatch with state',
-      }),
-    ])
-  }, 15_000)
+    await waitFor(() =>
+      expect(toasts()).toEqual([
+        expect.objectContaining({
+          tone: 'warning',
+          title: 'Patient updated',
+          description: 'The problem is still there; fix the data and reprocess again',
+        }),
+      ]),
+    )
+    useToastStore.getState().clear()
+    dialog = await resolve('Placeholder phone number')
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /cell phone/i }), '718-555-0177')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
+    await waitFor(() =>
+      expect(toasts()).toEqual([
+        expect.objectContaining({
+          tone: 'success',
+          title: 'Patient updated',
+          description: 'The exception is cleared.',
+        }),
+      ]),
+    )
+  }, 20_000)
 
   it('fixes an address: the ZIP code must belong to the state', async () => {
     renderAt('/exceptions')
-    const dialog = await resolve('ZIP code mismatch with state')
+    const dialog = await resolve('ZIP code does not match the state')
     expect(
       within(dialog).getByText('ZIP codes are cross-referenced against the state. 07030 belongs to NJ.'),
     ).toBeInTheDocument()
@@ -550,12 +716,12 @@ describe('Exceptions — resolving', () => {
       state: 'NY',
       zip_code: '11201',
     })
-    expect(toasts()).toEqual([expect.objectContaining({ title: 'Patient updated — exception resolved' })])
+    await waitFor(() => cleared('Patient updated'))
   }, 15_000)
 
   it('fixes a name that is too long, with the shortened version offered', async () => {
     renderAt('/exceptions')
-    const dialog = await resolve('Character limit exceeded')
+    const dialog = await resolve('Too long for the claim form')
     await userEvent.click(
       within(dialog).getByRole('button', {
         name: 'Fill in a truncated version (name 30, address 35 characters)',
@@ -574,7 +740,7 @@ describe('Exceptions — resolving', () => {
 
   it('corrects a dummy referring NPI on the directory profile', async () => {
     renderAt('/exceptions')
-    const dialog = await resolve('Invalid / dummy referring NPI')
+    const dialog = await resolve('Invalid referring physician NPI')
     expect(within(dialog).getByRole('radio', { name: /Correct Leonard Voss, MD’s NPI/ })).toBeChecked()
     const npi = within(dialog).getByRole('textbox', { name: /correct npi/i })
     await userEvent.type(npi, '1234567890')
@@ -586,14 +752,13 @@ describe('Exceptions — resolving', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     // The NPI alone: the rest of the profile (its phone, its status) stays as it is.
     expect(updateReferrerMock).toHaveBeenCalledWith(5, '1609873452')
-    expect(toasts()).toEqual([
-      expect.objectContaining({ title: 'Referring physician fixed — exception resolved' }),
-    ])
+    // A physician's save checks nothing by itself: the re-check does.
+    await waitFor(() => cleared('Referring physician fixed'))
   }, 15_000)
 
   it('or gives the case another referring physician', async () => {
     renderAt('/exceptions')
-    const dialog = await resolve('Invalid / dummy referring NPI')
+    const dialog = await resolve('Invalid referring physician NPI')
     await userEvent.click(
       within(dialog).getByRole('radio', { name: 'Use a different referring physician on this case' }),
     )
@@ -608,32 +773,35 @@ describe('Exceptions — resolving', () => {
     expect(updateCaseFieldsMock).toHaveBeenCalledWith('p12-case', { referring_physician_id: 1 })
   }, 15_000)
 
-  it('adds the rendering NPI on the provider — and keeps the dialog open if the save fails', async () => {
+  it('adds the treating provider’s NPI — and keeps the dialog open if the save fails', async () => {
     updateProviderMock.mockRejectedValueOnce(new ApiError({ kind: 'network', message: 'offline' }))
     renderAt('/exceptions')
-    const dialog = await resolve('Missing mandatory rendering NPI')
+    const dialog = await resolve('Invalid treating provider NPI')
+    // The visit's treating provider, read with the visit.
     expect(
-      within(dialog).getByRole('heading', { name: 'Add rendering NPI — Caleb Wright, PT' }),
+      await within(dialog).findByRole('heading', { name: 'Add rendering NPI — Caleb Wright, PT' }),
     ).toBeInTheDocument()
+    expect(getVisitMock).toHaveBeenCalledWith(41, expect.anything())
     await userEvent.type(within(dialog).getByRole('textbox', { name: /individual npi/i }), '1528461903')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     expect(
       await within(dialog).findByText('Could not reach the server. Check your connection and try again.'),
     ).toBeVisible()
-    // Nothing was resolved. (The page behind an open dialog is hidden from the accessibility tree.)
-    expect(screen.getByRole('link', { name: 'Billing exceptions 7', hidden: true })).toBeInTheDocument()
+    expect(reprocessMock).not.toHaveBeenCalled()
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     // The NPI alone: the rest of the provider stays as it is.
     expect(updateProviderMock).toHaveBeenLastCalledWith(6, '1528461903')
-    expect(toasts()).toEqual([expect.objectContaining({ title: 'Provider NPI saved — exception resolved' })])
+    await waitFor(() => cleared('Provider NPI saved'))
   }, 15_000)
 
   it('prices a code charged at $0.00: a default fee, the payer’s rate, or both', async () => {
     renderAt('/exceptions')
-    const dialog = await resolve('New CPT code charged at $0.00')
-    expect(within(dialog).getByRole('heading', { name: 'Price 97033 — Iontophoresis' })).toBeInTheDocument()
+    const dialog = await resolve('Charged at $0.00')
+    expect(
+      await within(dialog).findByRole('heading', { name: 'Price 97033 — Iontophoresis' }),
+    ).toBeInTheDocument()
     // Why the default fee matters is behind its info icon, not under the field.
     expect(
       within(dialog).getByRole('button', { name: 'About Default fee per unit' }),
@@ -645,11 +813,11 @@ describe('Exceptions — resolving', () => {
     await userEvent.type(within(dialog).getByRole('textbox', { name: /billed per unit/i }), '22')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(toasts()).toEqual([expect.objectContaining({ title: '97033 priced — exception resolved' })])
+    await waitFor(() => cleared('97033 priced'))
 
     // The default fee alone, on the server's code.
     expect(setDefaultFeeMock).toHaveBeenCalledWith(97033, 18.5)
-    // The payer's row, for this year, on the server.
+    // The payer's row — the case's primary insurance — for this year, on the server.
     const year = new Date().getFullYear()
     expect(createFeeRowMock).toHaveBeenCalledWith(3, {
       procedureCodeId: '97033',
@@ -660,41 +828,38 @@ describe('Exceptions — resolving', () => {
   }, 20_000)
 
   it('completes a missing case field, and a subscriber’s details', async () => {
-    resetBillingExceptions([
-      exception('ex-case', {
-        level: 'Case',
-        trigger: 'Missing mandatory EMR case fields',
-        detail: 'The injury / onset date is missing.',
-        fix: { type: 'case', caseId: 'p10-case', field: 'injuryDate' },
+    exceptions = [
+      exception(11, {
+        type: 'case',
+        reason: 'missing_injury_date',
+        detail: 'The injury date is missing.',
+        caseId: 'p10-case',
       }),
-      exception('ex-sub', {
-        level: 'Case',
-        trigger: 'Missing subscriber details',
-        detail: 'Primary insurance subscriber details are incomplete.',
-        record: { kind: 'visit', patientId: 'p10', dos: '2026-09-15', recordId: 'EMR-other' },
-        fix: { type: 'coverage', coverageId: 'p10-cov-1' },
+      exception(12, {
+        type: 'case',
+        reason: 'incomplete_subscriber',
+        detail: 'The subscriber has no date of birth.',
+        caseId: 'p10-case',
       }),
-    ])
+    ]
     renderAt('/exceptions')
-    let dialog = await resolve('Missing mandatory EMR case fields')
+    let dialog = await resolve('No injury date')
     expect(
       within(dialog).getByRole('heading', { name: 'Complete case fields — Plantar fasciitis' }),
     ).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     expect(await within(dialog).findByText('Enter the injury or onset date.')).toBeVisible()
-    // The prototype's employment status is not in the case contract.
-    expect(within(dialog).queryByRole('textbox', { name: /employment status/i })).not.toBeInTheDocument()
     await userEvent.type(within(dialog).getByRole('textbox', { name: /injury \/ onset date/i }), '09/01/2026')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(toasts()).toEqual([expect.objectContaining({ title: 'Case updated — exception resolved' })])
+    await waitFor(() => cleared('Case updated'))
     // What is filled in — the date, and the physician the case already had — and nothing else.
     expect(updateCaseFieldsMock).toHaveBeenCalledWith('p10-case', {
       injury_date: '2026-09-01',
       referring_physician_id: 1,
     })
 
-    dialog = await resolve('Missing subscriber details')
+    dialog = await resolve('Incomplete subscriber')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save and re-check' }))
     expect(await within(dialog).findByText('Enter the subscriber’s first name.')).toBeVisible()
     expect(within(dialog).getByText('Enter the subscriber’s last name.')).toBeVisible()

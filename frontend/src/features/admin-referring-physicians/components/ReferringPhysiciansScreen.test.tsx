@@ -183,22 +183,23 @@ describe('Setup → Referring physicians', () => {
     const rows = within(await table())
       .getAllByRole('row')
       .slice(1)
+    // In the server's order: nothing is sorted in the browser.
     expect(rows.map((row) => within(row).getAllByRole('cell')[0]?.textContent)).toEqual([
+      expect.stringContaining('Thomas Beckett, MD'),
       expect.stringContaining('Rebecca Stone, MD'),
       expect.stringContaining('Samuel Ortiz, MD'),
-      expect.stringContaining('Thomas Beckett, MD'),
     ])
-    const stone = rows[0] as HTMLElement
+    const stone = rows[1] as HTMLElement
     expect(stone).toHaveTextContent('RS06')
     expect(stone).toHaveTextContent('DQ · Supervising')
     expect(await within(stone).findByText('Harborline Physical Therapy')).toBeInTheDocument()
     // A dummy NPI is marked, as the prototype marks it.
     // (Twice in the DOM: in the NPI column, and under the name for phones, where
     // that column is hidden. CSS shows one at a time; jsdom renders both.)
-    expect(within(rows[1] as HTMLElement).getAllByText('Invalid NPI').length).toBeGreaterThan(0)
+    expect(within(rows[2] as HTMLElement).getAllByText('Invalid NPI').length).toBeGreaterThan(0)
     expect(screen.getByText('3 physicians')).toBeInTheDocument()
     // Phone and fax, as the prototype shows them; the Cases count is not in the contract.
-    const beckett = rows[2] as HTMLElement
+    const beckett = rows[0] as HTMLElement
     expect(beckett).toHaveTextContent('800-555-0199')
     expect(beckett).toHaveTextContent('Fax 800-555-0100')
     expect(
@@ -206,7 +207,7 @@ describe('Setup → Referring physicians', () => {
         .getAllByRole('columnheader')
         .map((header) => header.textContent),
     ).not.toContain('Cases')
-    expect(within(rows[1] as HTMLElement).getByRole('switch', { name: /: active$/ })).not.toBeChecked()
+    expect(within(rows[2] as HTMLElement).getByRole('switch', { name: /: active$/ })).not.toBeChecked()
   })
 
   it('filters by practice, keeps the filter in the address, and resets it', async () => {

@@ -80,8 +80,8 @@ describe('procedure codes against the backend', () => {
       .mockResolvedValueOnce(json(200, page([wire(16, '97110')], 2, 2)))
     const all = await listProcedureCodes()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/procedure-codes?page=1`,
-      `${BASE}/procedure-codes?page=2`,
+      `${BASE}/procedure-codes?page=1&per_page=100`,
+      `${BASE}/procedure-codes?page=2&per_page=100`,
     ])
     expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
     expect(all.map((code) => [code.id, code.code, code.defaultFee])).toEqual([

@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   REFERRING_PHYSICIAN_FORM_FIELD_FOR,
   referringPhysicianDetailResponseSchema,
@@ -17,7 +18,7 @@ import {
  * Referring physicians' only door to a server. **Live** (contracts confirmed
  * 2026-10-08), carrying the session's token: `GET /referring-physicians?page=N`,
  * `GET /referring-physicians/{id}`, `POST`, `PUT /referring-physicians/{id}`
- * and `DELETE`. Only `page` is sent to the list. Writes resolve with the
+ * and `DELETE`. The list is asked for `page` and `per_page=100` (lib/api/pagination.ts). Writes resolve with the
  * server's message, which the screens show. Shapes in
  * schemas/referring-physician.ts.
  */
@@ -40,7 +41,7 @@ const live: ReferringPhysiciansApi = {
     request({
       method: 'GET',
       path: '/referring-physicians',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: referringPhysicianPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

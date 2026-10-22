@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   PROVIDER_FORM_FIELD_FOR,
   providerDetailResponseSchema,
@@ -16,8 +17,8 @@ import {
 /**
  * Providers' only door to a server. **Live** (contracts confirmed 2026-10-08),
  * carrying the session's token: `GET /providers?page=N`, `GET /providers/{id}`,
- * `POST /providers`, `PUT /providers/{id}` and `DELETE`. Only `page` is sent
- * to the list. Writes resolve with the server's message, which the screens
+ * `POST /providers`, `PUT /providers/{id}` and `DELETE`. The list is asked
+ * for `page` and `per_page=100` (lib/api/pagination.ts). Writes resolve with the server's message, which the screens
  * show. Shapes in schemas/provider.ts.
  */
 export interface ProvidersApi {
@@ -36,7 +37,7 @@ const live: ProvidersApi = {
     request({
       method: 'GET',
       path: '/providers',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: providerPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

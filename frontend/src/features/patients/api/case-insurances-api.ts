@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import type { Coverage } from '../model/coverage'
 import {
   caseInsuranceFormFieldFor,
@@ -13,8 +14,8 @@ import {
 /**
  * Case insurances' only door to a server. **Live** (contract given
  * 2026-10-08), carrying the session's token: `GET /case-insurances?page=N`,
- * `POST /case-insurances`, `PUT /case-insurances/{id}` and `DELETE`. Only
- * `page` is sent to the list. Writes resolve with the server's message.
+ * `POST /case-insurances`, `PUT /case-insurances/{id}` and `DELETE`. The
+ * list is asked for `page` and `per_page=100` (lib/api/pagination.ts). Writes resolve with the server's message.
  * Shapes in schemas/case-insurance.ts.
  */
 export interface CaseInsurancesApi {
@@ -35,7 +36,7 @@ const live: CaseInsurancesApi = {
     request({
       method: 'GET',
       path: '/case-insurances',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: caseInsurancePageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

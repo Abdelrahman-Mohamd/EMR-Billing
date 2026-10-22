@@ -1,118 +1,115 @@
 /**
- * A billing exception as the prototype shows it: a data problem caught on an
- * incoming record before a claim is built (PRD V2 §4.4), at one of five
- * levels, with the record it was found on and where it is fixed.
- *
- * **Frontend-only:** no backend exists for exceptions, so this is the screen's
- * own shape, built from the prototype's fields — not a contract, and its names
- * say nothing about what a server will send. Detection is the server's job;
- * nothing in the frontend raises an exception.
+ * A billing exception as the screens see it: a data problem the server found
+ * on a patient, a case or a visit before a claim is built (PRD V2 §4.4) — the
+ * server's (schemas/billing-exception.ts).
  */
-export const EXCEPTION_LEVELS = ['Patient', 'Case', 'Session', 'Charge', 'Payment'] as const
-export type ExceptionLevel = (typeof EXCEPTION_LEVELS)[number]
-
-export type ExceptionStatus = 'Open' | 'Resolved'
-
-/** What the exception was found on: an EMR session (a visit) or a remittance (ERA). */
-export type ExceptionRecord =
-  | {
-      kind: 'visit'
-      /** The patient's id in the patients list. */
-      patientId: string
-      /** Date of service, ISO. */
-      dos: string
-      /** The EMR record number of the session. */
-      recordId: string
-    }
-  | {
-      kind: 'era'
-      /** The remittance's control number. */
-      control: string
-      payerName: string
-    }
-
-/**
- * Where the exception is fixed — the source record the prototype's Resolve
- * form edits. Payment-level fixes need claims and remittances, which do not
- * exist here yet, so they have no form.
- */
-export type ExceptionFix =
-  | { type: 'patient-phone'; patientId: string }
-  | { type: 'patient-address'; patientId: string }
-  | { type: 'patient-length'; patientId: string }
-  | {
-      type: 'case'
-      caseId: string
-      /** The case field that is missing. */
-      field: 'injuryDate' | 'referrer'
-    }
-  | { type: 'coverage'; coverageId: string }
-  | { type: 'referrer'; referrerId: number; caseId: string }
-  | { type: 'provider-npi'; providerId: number }
-  | {
-      type: 'fee'
-      /** The CPT / HCPCS code charged at $0.00. */
-      procedureCode: string
-      /** The case's primary insurance, when it has one. */
-      insuranceId: number | null
-    }
-  | { type: 'era-claim' }
-  | { type: 'carc' }
-
 export interface BillingException {
-  id: string
+  id: number
   practiceId: number
-  level: ExceptionLevel
-  /** What was caught, e.g. "ZIP code mismatch with state". */
+  /** `patient`, `case` or `charge` (a visit, or one of its lines). */
+  type: string
+  /** The type as the list names it: "Patient". */
+  level: string
+  /** The server's reason code, e.g. `zip_state_mismatch`. */
+  reason: string
+  /** The reason as the list names it: "ZIP code does not match the state". */
   trigger: string
-  /** The particulars, e.g. "ZIP 07030 belongs to NJ, but the state is NY." */
+  /** The server's message: "ZIP code 23423 does not belong to NY." */
   detail: string
-  record: ExceptionRecord
-  fix: ExceptionFix
-  status: ExceptionStatus
-  /** ISO date and time. */
+  /** The record it sits on: the patient (always), and the case, visit and line when it is theirs. */
+  patientId: string | null
+  patientFirstName: string
+  patientLastName: string
+  caseId: string | null
+  visitId: number | null
+  /** The visit's date of service, ISO; '' when not a visit's. */
+  visitDate: string
+  chargeLineId: number | null
+  /** When it was first found: a timestamp. */
   detectedAt: string
-  /** Who is working on it, by name; null when unassigned. */
-  owner: string | null
-  /** ISO date; null when none is set. */
-  due: string | null
-  /** ISO date and time; null while open. */
-  resolvedAt: string | null
-  /** Who resolved it, by name; null while open. */
-  resolvedBy: string | null
 }
 
-/** The prototype resolves every level but Payment from Exceptions. */
-export const canResolve = (exception: BillingException): boolean =>
-  exception.status === 'Open' && exception.fix.type !== 'era-claim' && exception.fix.type !== 'carc'
+/** The server's types, in the order the queue shows them. */
+export const EXCEPTION_TYPES = ['patient', 'case', 'charge'] as const
+
+const TYPE_LABELS: Readonly<Record<string, string>> = {
+  patient: 'Patient',
+  case: 'Case',
+  charge: 'Charge',
+}
+
+/** Any other type is shown as sent, capitalised, rather than disappearing. */
+const asWords = (value: string) => {
+  const words = value.replaceAll('_', ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+export const typeLabel = (type: string): string => TYPE_LABELS[type] ?? asWords(type)
+
+/** The server's reasons (the backend's workflow, 2026-10-19), as the list names them. */
+const REASON_LABELS: Readonly<Record<string, string>> = {
+  placeholder_phone: 'Placeholder phone number',
+  zip_state_mismatch: 'ZIP code does not match the state',
+  field_too_long: 'Too long for the claim form',
+  no_primary_insurance: 'No primary insurance',
+  missing_referring_physician: 'No referring physician',
+  invalid_referring_npi: 'Invalid referring physician NPI',
+  missing_injury_date: 'No injury date',
+  missing_employer: 'Workers’ Comp without an employer',
+  incomplete_subscriber: 'Incomplete subscriber',
+  missing_rendering_npi: 'No treating provider NPI',
+  invalid_rendering_npi: 'Invalid treating provider NPI',
+  no_diagnosis: 'No diagnosis codes',
+  zero_amount: 'Charged at $0.00',
+  no_fee_mapping: 'No fee for the code',
+}
+
+export const reasonLabel = (reason: string): string => REASON_LABELS[reason] ?? asWords(reason)
 
 /**
- * Two exceptions point at the same fix when they edit the same record in the
- * same way — fixing it settles both (the same patient's phone on two sessions).
+ * Where a reason is fixed: one of the prototype's Resolve forms, on the record
+ * the problem is in — or, with no form for it, the page that holds that
+ * record (a case's insurance and employer, and a visit's diagnoses, are edited
+ * there).
  */
-export function fixKey(fix: ExceptionFix): string {
-  switch (fix.type) {
-    case 'patient-phone':
-    case 'patient-address':
-    case 'patient-length':
-      return `${fix.type}:${fix.patientId}`
-    case 'case':
-      return `case:${fix.caseId}:${fix.field}`
-    case 'coverage':
-      return `coverage:${fix.coverageId}`
-    case 'referrer':
-      return `referrer:${fix.referrerId}`
-    case 'provider-npi':
-      return `provider-npi:${fix.providerId}`
-    case 'fee':
-      return `fee:${fix.procedureCode}`
-    case 'era-claim':
-    case 'carc':
-      return fix.type
-  }
+export type Resolution =
+  | {
+      kind: 'form'
+      form:
+        | 'patient-phone'
+        | 'patient-address'
+        | 'patient-length'
+        | 'case-injury-date'
+        | 'case-referrer'
+        | 'referrer-npi'
+        | 'subscriber'
+        | 'provider-npi'
+        | 'fee'
+    }
+  | { kind: 'open'; place: 'case' | 'visit' | 'patient' }
+
+const FORMS: Readonly<Record<string, Extract<Resolution, { kind: 'form' }>['form']>> = {
+  placeholder_phone: 'patient-phone',
+  zip_state_mismatch: 'patient-address',
+  field_too_long: 'patient-length',
+  missing_injury_date: 'case-injury-date',
+  missing_referring_physician: 'case-referrer',
+  invalid_referring_npi: 'referrer-npi',
+  incomplete_subscriber: 'subscriber',
+  missing_rendering_npi: 'provider-npi',
+  invalid_rendering_npi: 'provider-npi',
+  zero_amount: 'fee',
+  no_fee_mapping: 'fee',
 }
 
-/** The record the exception sits on, for "the visit still has…": the session, or the remittance. */
-export function recordKey(record: ExceptionRecord): string {
-  return record.kind === 'visit' ? `visit:${record.recordId}` : `era:${record.control}`
+export function resolutionOf(exception: Pick<BillingException, 'reason' | 'caseId' | 'visitId'>): Resolution {
+  const form = FORMS[exception.reason]
+  if (form !== undefined) return { kind: 'form', form }
+  if (exception.visitId !== null) return { kind: 'open', place: 'visit' }
+  if (exception.caseId !== null) return { kind: 'open', place: 'case' }
+  return { kind: 'open', place: 'patient' }
 }
+
+/** "Ahmed, Adam" — as the patients list names a patient. */
+export const recordName = (exception: BillingException): string =>
+  [exception.patientLastName, exception.patientFirstName].filter(Boolean).join(', ') || 'Patient'

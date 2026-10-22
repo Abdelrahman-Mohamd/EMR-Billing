@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Plug } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { Section } from '@/components/ui/Card'
+import { DetailCard } from '@/components/ui/DetailCard'
 import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { EmptyState } from '@/components/ui/States'
 import type { Practice } from '@/features/admin-practices'
@@ -134,10 +134,10 @@ export function LocationsSection({
   ]
 
   return (
-    <Section title="Locations" className="pb-0">
-      <p className="text-micro text-n500 mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1">{status}</p>
+    // A card, as the record pages have them (DetailCard); how many are linked beside the title.
+    <DetailCard title="Locations" meta={status}>
       <DataTable
-        className="mt-1"
+        className="mt-2"
         caption={`Locations of ${practiceName}`}
         columns={columns}
         rows={rows}
@@ -154,6 +154,6 @@ export function LocationsSection({
       <p className="text-micro text-n500 mt-3">
         A System Admin or Organization Admin approves integration requests.
       </p>
-    </Section>
+    </DetailCard>
   )
 }

@@ -62,8 +62,8 @@ describe('fee schedules against the backend', () => {
       .mockResolvedValueOnce(json(200, page([wire(16)], 2, 2)))
     const all = await listFeeRows()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/fee-schedules?page=1`,
-      `${BASE}/fee-schedules?page=2`,
+      `${BASE}/fee-schedules?page=1&per_page=100`,
+      `${BASE}/fee-schedules?page=2&per_page=100`,
     ])
     expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
     expect(all.map((row) => [row.id, row.procedureCode, row.billed, row.to])).toEqual([

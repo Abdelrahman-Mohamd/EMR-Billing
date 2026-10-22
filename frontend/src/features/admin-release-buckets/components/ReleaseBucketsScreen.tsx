@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Inbox, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { RowActionButton, StatusChangeDialog, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
@@ -41,7 +41,6 @@ export function ReleaseBucketsScreen({ practiceFilter }: { practiceFilter: numbe
   const [deleting, setDeleting] = useState<ReleaseBucket | null>(null)
   const setActive = useSetReleaseBucketActive()
   const remove = useDeleteReleaseBucket()
-  const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
 
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
   const filter = practiceFilter === undefined ? null : String(practiceFilter)
@@ -52,19 +51,15 @@ export function ReleaseBucketsScreen({ practiceFilter }: { practiceFilter: numbe
       replace: true,
     })
 
-  const rows = (buckets.data ?? [])
-    .filter((bucket) => practiceFilter === undefined || bucket.practiceId === practiceFilter)
-    .sort((a, b) => {
-      const order = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-      return sort.direction === 'asc' ? order : -order
-    })
+  const rows = (buckets.data ?? []).filter(
+    (bucket) => practiceFilter === undefined || bucket.practiceId === practiceFilter,
+  )
 
   const columns: ReadonlyArray<Column<ReleaseBucket>> = [
     {
       key: 'name',
       header: 'Bucket',
       primary: true,
-      sortable: true,
       cell: (bucket) => (
         <span className="block max-w-prose break-words">
           {bucket.name}
@@ -134,8 +129,6 @@ export function ReleaseBucketsScreen({ practiceFilter }: { practiceFilter: numbe
         loading={buckets.isPending}
         error={buckets.isError}
         onRetry={() => void buckets.refetch()}
-        sort={sort}
-        onSortChange={setSort}
         empty={
           filter === null ? (
             <EmptyState

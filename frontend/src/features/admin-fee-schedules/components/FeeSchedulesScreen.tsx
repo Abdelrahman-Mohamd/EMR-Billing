@@ -6,8 +6,9 @@ import { formatIsoDate } from '@/lib/utils/dates'
 import { formatMoney } from '@/lib/utils/money'
 import { toast } from '@/stores/toast-store'
 import { Button, buttonClass } from '@/components/ui/Button'
-import { Card, CardBody, CardHeader } from '@/components/ui/Card'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { Card } from '@/components/ui/Card'
+import { DetailCard } from '@/components/ui/DetailCard'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Field } from '@/components/ui/Field'
 import { Pagination } from '@/components/ui/Pagination'
@@ -55,11 +56,10 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
   /** `undefined`: no dialog. `null`: adding. A row: editing it. */
   const [editing, setEditing] = useState<FeeRow | null | undefined>(undefined)
   const [deleting, setDeleting] = useState<FeeRow | null>(null)
-  const [sort, setSort] = useState<Sort>({ key: 'code', direction: 'asc' })
   const [page, setPage] = useState(1)
 
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
-  const payers = [...(insurances.data ?? [])].sort((a, b) => a.practiceId - b.practiceId || a.code - b.code)
+  const payers = insurances.data ?? []
   const insurance = payers.find((payer) => payer.id === insuranceFilter) ?? payers[0]
   const codes = procedureCodes.data ?? []
   const loading = insurances.isPending || procedureCodes.isPending || fees.isPending
@@ -74,15 +74,9 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
     })
   }
 
-  const rows: FeeRow[] = (insurance === undefined ? [] : (fees.data ?? []))
-    .filter((row) => row.insuranceId === insurance?.id)
-    .sort((a, b) => {
-      const order =
-        sort.key === 'billed'
-          ? a.billed - b.billed
-          : a.procedureCode.localeCompare(b.procedureCode) || a.from.localeCompare(b.from)
-      return sort.direction === 'asc' ? order : -order
-    })
+  const rows: FeeRow[] = (insurance === undefined ? [] : (fees.data ?? [])).filter(
+    (row) => row.insuranceId === insurance?.id,
+  )
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const pageRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
@@ -96,7 +90,6 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
       key: 'code',
       header: 'Code',
       primary: true,
-      sortable: true,
       cell: (row) => (
         // Room for a description to wrap between words beside the other columns.
         <span className="block xl:min-w-32">
@@ -110,7 +103,6 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
     {
       key: 'billed',
       header: 'Billed / unit',
-      sortable: true,
       cell: (row) => (
         <span className="text-ink font-medium whitespace-nowrap tabular-nums">{formatMoney(row.billed)}</span>
       ),
@@ -177,9 +169,8 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
               description="A fee-schedule row is the billed price of one procedure code for one insurance. Without a row, a charge uses the code’s default fee."
             />
           </Card>
-          <Card>
-            <CardHeader title="A fee schedule needs" />
-            <CardBody>
+          <DetailCard title="A fee schedule needs">
+            <div className="pt-4">
               <ul className="grid gap-3">
                 {[
                   {
@@ -216,8 +207,8 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
                   </li>
                 ))}
               </ul>
-            </CardBody>
-          </Card>
+            </div>
+          </DetailCard>
         </div>
       )
     }
@@ -244,11 +235,6 @@ export function FeeSchedulesScreen({ insuranceFilter }: { insuranceFilter: numbe
             rows={pageRows}
             getRowId={(row) => String(row.id)}
             loading={loading}
-            sort={sort}
-            onSortChange={(next) => {
-              setSort(next)
-              setPage(1)
-            }}
             empty={
               <EmptyState
                 icon={<DollarSign size={20} />}

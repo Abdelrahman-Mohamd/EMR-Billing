@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createPatient,
   deletePatient,
@@ -16,14 +16,19 @@ import type { PatientFormValues } from '../schemas/patient-form'
 /** Every key for this domain, built in one place (docs/FRONTEND_ARCHITECTURE.md §5). */
 export const patientKeys = {
   all: ['patients'] as const,
-  list: () => [...patientKeys.all, 'list'] as const,
+  list: (search = '') => [...patientKeys.all, 'list', search] as const,
   detail: (id: string) => [...patientKeys.all, 'detail', id] as const,
 }
 
-export function usePatients() {
+/**
+ * Every patient — or, with a search, the server's matches (the roster's). The
+ * previous answer stays on screen while a new search loads.
+ */
+export function usePatients(search = '') {
   return useQuery({
-    queryKey: patientKeys.list(),
-    queryFn: ({ signal }) => listPatients(signal),
+    queryKey: patientKeys.list(search),
+    queryFn: ({ signal }) => listPatients(search, signal),
+    ...(search === '' ? {} : { placeholderData: keepPreviousData }),
   })
 }
 

@@ -92,6 +92,14 @@ describe('audit log against the backend', () => {
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer test-token-123')
   })
 
+  it('asks for one module by its log name', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, page([LOGIN])))
+    await listAuditEntries({ page: 1, module: 'case_diagnoses' })
+    expect(fetchMock.mock.calls[0]?.[0] as string).toBe(
+      `${BASE}/activity-logs?page=1&log_name=case_diagnoses`,
+    )
+  })
+
   it('reads the entries and the server paging', async () => {
     fetchMock.mockResolvedValueOnce(json(200, page([LOGIN, LOGIN_FAILED])))
     const result = await listAuditEntries({ page: 2 })

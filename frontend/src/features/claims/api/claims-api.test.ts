@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isApiError } from '@/lib/api/api-error'
 import { clearSession, setSession } from '@/lib/auth/session'
-import { createClaim, deleteClaim, listClaims, updateClaim } from './claims-api'
+import { createClaim, deleteClaim, listClaims, scrubClaim, updateClaim } from './claims-api'
 
 // The app configured for the staging backend; only the network is faked.
 const BASE = 'https://api.example.test/api/v1'
@@ -14,7 +14,7 @@ vi.mock('@/lib/config/env', () => ({
   },
 }))
 
-/** A claim in the shape seen on staging (2026-10-09), as the list sends it. */
+/** A claim in the shape seen on staging (2026-10-09; its references as of 2026-10-22), as the list sends it. */
 const wire = (id: number, extra: Record<string, unknown> = {}) => ({
   id,
   visit_id: 27,
@@ -27,6 +27,10 @@ const wire = (id: number, extra: Record<string, unknown> = {}) => ({
   total_amount: '90.00',
   sent_date: null,
   clearinghouse_ref: null,
+  patient_control_number: 'C6',
+  clearinghouse_batch_id: null,
+  clearinghouse_status: null,
+  payer_claim_number: null,
   insurance: {
     id: 1,
     display_name: '1039 – Corvel Enterprise',
@@ -64,6 +68,21 @@ afterEach(() => {
 })
 
 describe('claims against the backend', () => {
+  it('asks for one visit’s claims by its id', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(200, {
+        success: true,
+        data: {
+          data: [wire(1)],
+          links: {},
+          meta: { current_page: 1, last_page: 1, per_page: 100, total: 1 },
+        },
+      }),
+    )
+    await listClaims({ visitId: 27 })
+    expect(fetchMock.mock.calls[0]?.[0] as string).toBe(`${BASE}/claims?page=1&per_page=100&visit_id=27`)
+  })
+
   it('reads every page of GET /claims', async () => {
     const page = (data: unknown[], current: number, last: number) => ({
       success: true,
@@ -89,8 +108,8 @@ describe('claims against the backend', () => {
     )
     const all = await listClaims()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/claims?page=1`,
-      `${BASE}/claims?page=2`,
+      `${BASE}/claims?page=1&per_page=100`,
+      `${BASE}/claims?page=2&per_page=100`,
     ])
     expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
     expect(all[0]).toEqual({
@@ -104,6 +123,10 @@ describe('claims against the backend', () => {
       totalAmount: '90.00',
       sentDate: '',
       clearinghouseRef: '',
+      controlNumber: 'C6',
+      payerClaimNumber: '',
+      clearinghouseBatchId: '',
+      clearinghouseStatus: '',
       insuranceName: '1039 – Corvel Enterprise',
       rankLabel: 'Primary',
       memberId: 'WC-4417260',
@@ -124,13 +147,17 @@ describe('claims against the backend', () => {
       )
       .mockResolvedValueOnce(done('Claim updated successfully'))
       .mockResolvedValueOnce(done('Claim deleted successfully'))
-    await expect(createClaim({ visit_id: 27, case_insurance_id: 21 })).resolves.toBe(
+    await expect(createClaim({ visit_id: 27, case_insurance_id: 21, format: 'CMS1500' })).resolves.toBe(
       'Claim created and scrubbed',
     )
     await expect(updateClaim(1, { status: 'scrubbed' })).resolves.toBe('Claim updated successfully')
     await expect(deleteClaim(1)).resolves.toBe('Claim deleted successfully')
     expect([call(0).init.method, call(0).url]).toEqual(['POST', `${BASE}/claims`])
-    expect(JSON.parse(call(0).init.body as string)).toEqual({ visit_id: 27, case_insurance_id: 21 })
+    expect(JSON.parse(call(0).init.body as string)).toEqual({
+      visit_id: 27,
+      case_insurance_id: 21,
+      format: 'CMS1500',
+    })
     expect([call(1).init.method, call(1).url]).toEqual(['PUT', `${BASE}/claims/1`])
     expect(JSON.parse(call(1).init.body as string)).toEqual({ status: 'scrubbed' })
     expect([call(2).init.method, call(2).url]).toEqual(['DELETE', `${BASE}/claims/1`])
@@ -151,5 +178,24 @@ describe('claims against the backend', () => {
     expect(isApiError(error) && error.fieldErrors.map((fieldError) => fieldError.path)).toEqual([
       'clearinghouseRef',
     ])
+  })
+
+  it('scrubs a claim again with POST /claims/{id}/scrub — the server’s message and the claim as it now stands', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(200, {
+        success: true,
+        message: 'Claim scrubbed',
+        data: wire(9, {
+          status: 'failed',
+          scrub_errors: [
+            'The practice billing address needs a 9-digit ZIP+4 for an electronic claim (2010AA-N403).',
+          ],
+        }),
+      }),
+    )
+    const result = await scrubClaim(9)
+    expect([call(0).init.method, call(0).url]).toEqual(['POST', `${BASE}/claims/9/scrub`])
+    expect(result.message).toBe('Claim scrubbed')
+    expect(result.claim).toEqual(expect.objectContaining({ status: 'failed', controlNumber: 'C6' }))
   })
 })

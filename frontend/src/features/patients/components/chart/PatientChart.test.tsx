@@ -32,17 +32,15 @@ import {
   createPatientCase,
   deletePatientCase,
   listPatientCases,
-  setCaseDiagnoses,
   updatePatientCase,
 } from '../../api/patient-cases-api'
-import { resetPatientRecords } from '../../data/patient-records-store'
+import { createCaseDiagnosis, deleteCaseDiagnosis, updateCaseDiagnosis } from '../../api/case-diagnoses-api'
 import type { Authorization } from '../../model/authorization'
 import type { PatientCase } from '../../model/case'
 import type { Coverage } from '../../model/coverage'
 import type { Patient } from '../../model/patient'
 import type { PatientFormValues } from '../../schemas/patient-form'
 import {
-  ICD10,
   asServerCase,
   authorization,
   coverage,
@@ -55,7 +53,7 @@ import {
 } from '../test-fixtures'
 
 // The patients api is faked at its integration point, answering as the
-// server does; the ICD-10 codes kept in this tab start from known records.
+// server does.
 // The other features' lists are faked by path, never imported.
 vi.mock('../../api/patients-api', () => ({
   listPatients: vi.fn(),
@@ -72,8 +70,13 @@ vi.mock('../../api/patient-cases-api', () => ({
   createPatientCase: vi.fn(),
   updatePatientCase: vi.fn(),
   updatePatientCaseFields: vi.fn(),
-  setCaseDiagnoses: vi.fn(),
   deletePatientCase: vi.fn(),
+}))
+// And the cases' diagnoses.
+vi.mock('../../api/case-diagnoses-api', () => ({
+  createCaseDiagnosis: vi.fn(),
+  updateCaseDiagnosis: vi.fn(),
+  deleteCaseDiagnosis: vi.fn(),
 }))
 // And the cases' insurances.
 vi.mock('../../api/case-insurances-api', () => ({
@@ -105,7 +108,9 @@ let coverages: Coverage[]
 const listCasesMock = vi.mocked(listPatientCases)
 const createCaseMock = vi.mocked(createPatientCase)
 const updateCaseMock = vi.mocked(updatePatientCase)
-const setDiagnosesMock = vi.mocked(setCaseDiagnoses)
+const createDiagnosisMock = vi.mocked(createCaseDiagnosis)
+const updateDiagnosisMock = vi.mocked(updateCaseDiagnosis)
+const deleteDiagnosisMock = vi.mocked(deleteCaseDiagnosis)
 const deleteCaseMock = vi.mocked(deletePatientCase)
 const INJURY_LABELS: Record<string, string> = {
   auto: 'Auto Accident',
@@ -238,8 +243,8 @@ beforeEach(() => {
       patientId: 'p1',
       name: 'R shoulder 2026',
       diagnoses: [
-        { code: 'M75.101', description: '' },
-        { code: 'M25.511', description: '' },
+        { id: '1', code: 'M75.101', description: 'Rotator cuff tear, right shoulder' },
+        { id: '2', code: 'M25.511', description: '' },
       ],
     }),
     patientCase({ id: 'c2', patientId: 'p1', name: 'Neck pain', referrerId: null, isActive: false }),
@@ -279,11 +284,38 @@ beforeEach(() => {
     )
     return Promise.resolve('Patient case updated successfully')
   })
-  setDiagnosesMock.mockReset().mockImplementation((id, codes) => {
+  // The server lists a case's diagnoses in the order they were added.
+  let nextDiagnosisId = 10
+  createDiagnosisMock.mockReset().mockImplementation((payload) => {
+    const added = {
+      id: String(nextDiagnosisId++),
+      code: payload.icd10_code,
+      description: payload.description ?? '',
+    }
+    // This file's case ids are text ('c1'), which a number cannot carry: the chart's own.
+    const caseId = Number.isNaN(payload.case_id) ? 'c1' : String(payload.case_id)
     cases = cases.map((item) =>
-      item.id === id ? { ...item, diagnoses: codes.map((code) => ({ code, description: '' })) } : item,
+      item.id === caseId ? { ...item, diagnoses: [...item.diagnoses, added] } : item,
     )
-    return Promise.resolve('Patient case updated successfully')
+    return Promise.resolve('Case diagnosis created successfully')
+  })
+  updateDiagnosisMock.mockReset().mockImplementation((id, payload) => {
+    cases = cases.map((item) => ({
+      ...item,
+      diagnoses: item.diagnoses.map((diagnosis) =>
+        diagnosis.id === id
+          ? { ...diagnosis, code: payload.icd10_code, description: payload.description ?? '' }
+          : diagnosis,
+      ),
+    }))
+    return Promise.resolve('Case diagnosis updated successfully')
+  })
+  deleteDiagnosisMock.mockReset().mockImplementation((id) => {
+    cases = cases.map((item) => ({
+      ...item,
+      diagnoses: item.diagnoses.filter((diagnosis) => diagnosis.id !== id),
+    }))
+    return Promise.resolve('Case diagnosis deleted successfully')
   })
   deleteCaseMock.mockReset().mockImplementation((id) => {
     cases = cases.filter((item) => item.id !== id)
@@ -408,7 +440,6 @@ beforeEach(() => {
     auths = auths.filter((item) => item.id !== id)
     return Promise.resolve('Authorization deleted successfully')
   })
-  resetPatientRecords({ icd10: ICD10 })
 })
 afterEach(() => {
   useToastStore.getState().clear()
@@ -865,39 +896,98 @@ describe('the patient chart — Case overview', () => {
     expect(toasts()).toEqual([expect.objectContaining({ title: 'Patient case created successfully' })])
   })
 
-  it('adds, reorders and removes diagnoses — the position is the pointer', async () => {
+  it('adds, edits and deletes diagnoses on the server — in the order added, the position is the pointer', async () => {
     renderAt('/patients/p1')
     const section = await region('Diagnoses')
-    await userEvent.click(within(section).getByRole('button', { name: 'Add diagnosis' }))
-    const dialog = screen.getByRole('dialog', { name: 'Add diagnosis' })
-    expect(within(dialog).getByText('Pointer 3 of 12.')).toBeVisible()
-    await userEvent.click(within(dialog).getByRole('combobox', { name: /icd-10 code/i }))
-    // Codes already on the case are not offered again.
-    expect(screen.queryByRole('option', { name: /M25\.511/ })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('option', { name: /M54\.2/ }))
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Add diagnosis' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(toasts()).toEqual([expect.objectContaining({ title: 'M54.2 added as pointer 3' })])
-
     const order = () =>
       within(within(section).getByRole('list', { name: 'Diagnoses' }))
         .getAllByRole('listitem')
         .map((item) => item.textContent?.match(/[A-Z]\d{2}\.\w+/)?.[0])
-    await waitFor(() => expect(order()).toEqual(['M75.101', 'M25.511', 'M54.2']))
-    expect(setDiagnosesMock).toHaveBeenLastCalledWith('c1', ['M75.101', 'M25.511', 'M54.2'])
-    await userEvent.click(within(section).getByRole('button', { name: 'Move M54.2 up' }))
-    await waitFor(() => expect(order()).toEqual(['M75.101', 'M54.2', 'M25.511']))
-    expect(within(section).getByRole('button', { name: 'Move M75.101 up' })).toBeDisabled()
+    expect(within(section).getByText('Rotator cuff tear, right shoulder')).toBeVisible()
 
-    await userEvent.click(within(section).getByRole('button', { name: 'Delete M75.101' }))
-    const confirm = screen.getByRole('alertdialog', { name: 'Delete M75.101?' })
+    await userEvent.click(within(section).getByRole('button', { name: 'Add diagnosis' }))
+    const dialog = screen.getByRole('dialog', { name: 'Add diagnosis' })
+    expect(within(dialog).getByText('Pointer 3 of 12.')).toBeVisible()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add diagnosis' }))
+    expect(await within(dialog).findByText('Enter an ICD-10 code.')).toBeVisible()
+    // Typed in capitals, as the server keeps it.
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /icd-10 code/i }), 'm54.2')
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /description/i }), 'Cervicalgia')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add diagnosis' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(createDiagnosisMock).toHaveBeenLastCalledWith({
+      // The case's id as a number — 'c1' here, so NaN.
+      case_id: Number.NaN,
+      icd10_code: 'M54.2',
+      description: 'Cervicalgia',
+    })
+    expect(toasts()).toEqual([expect.objectContaining({ title: 'Case diagnosis created successfully' })])
+    await waitFor(() => expect(order()).toEqual(['M75.101', 'M25.511', 'M54.2']))
+    // No moving: the server keeps no position.
+    expect(within(section).queryByRole('button', { name: /^Move/ })).not.toBeInTheDocument()
+
+    await userEvent.click(within(section).getByRole('button', { name: 'Edit diagnosis M25.511' }))
+    const editing = screen.getByRole('dialog', { name: 'Edit diagnosis' })
+    expect(within(editing).getByText('Pointer 2 of 12.')).toBeVisible()
+    expect(within(editing).getByRole('textbox', { name: /icd-10 code/i })).toHaveValue('M25.511')
+    await userEvent.type(
+      within(editing).getByRole('textbox', { name: /description/i }),
+      'Right shoulder pain',
+    )
+    await userEvent.click(within(editing).getByRole('button', { name: 'Save diagnosis' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(updateDiagnosisMock).toHaveBeenLastCalledWith('2', {
+      icd10_code: 'M25.511',
+      description: 'Right shoulder pain',
+    })
+    expect(await within(section).findByText('Right shoulder pain')).toBeVisible()
+
+    await userEvent.click(within(section).getByRole('button', { name: 'Delete diagnosis M75.101' }))
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete diagnosis M75.101?' })
     expect(
       within(confirm).getByText(
-        'It is taken off this case; pointers after it move up by one. Visits already received keep their snapshot.',
+        'It is taken off this case; pointers after it move up by one. Visits already recorded keep their own codes.',
       ),
     ).toBeVisible()
     await userEvent.click(within(confirm).getByRole('button', { name: 'Delete diagnosis' }))
-    await waitFor(() => expect(order()).toEqual(['M54.2', 'M25.511']))
+    expect(deleteDiagnosisMock).toHaveBeenLastCalledWith('1')
+    await waitFor(() => expect(order()).toEqual(['M25.511', 'M54.2']))
+  })
+
+  it('shows the server’s refusals of a diagnosis: on the code, or above the form', async () => {
+    createDiagnosisMock
+      .mockRejectedValueOnce(
+        new ApiError({
+          kind: 'validation',
+          message: 'This diagnosis is already on the case.',
+          serverMessage: 'This diagnosis is already on the case.',
+          status: 422,
+          fieldErrors: [{ path: 'code', message: 'This diagnosis is already on the case.' }],
+        }),
+      )
+      .mockRejectedValueOnce(
+        new ApiError({
+          kind: 'validation',
+          message: 'A case can have at most 12 diagnosis codes.',
+          serverMessage: 'A case can have at most 12 diagnosis codes.',
+          status: 422,
+          fieldErrors: [],
+        }),
+      )
+    renderAt('/patients/p1')
+    const section = await region('Diagnoses')
+    await userEvent.click(within(section).getByRole('button', { name: 'Add diagnosis' }))
+    const dialog = screen.getByRole('dialog', { name: 'Add diagnosis' })
+    await userEvent.type(within(dialog).getByRole('textbox', { name: /icd-10 code/i }), 'M25.511')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add diagnosis' }))
+    expect(await within(dialog).findByText('This diagnosis is already on the case.')).toBeVisible()
+    expect(within(dialog).getByRole('textbox', { name: /icd-10 code/i })).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Add diagnosis' }))
+    expect(await within(dialog).findByText('A case can have at most 12 diagnosis codes.')).toBeVisible()
+    expect(screen.getByRole('dialog', { name: 'Add diagnosis' })).toBeInTheDocument()
   })
 
   it('lists the case’s authorizations as the server counts them', async () => {

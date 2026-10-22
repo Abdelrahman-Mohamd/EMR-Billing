@@ -7,8 +7,11 @@ import type { SelectOption } from '@/components/ui/Select'
  * insurances are the server's too, each ranked on the case (model/coverage.ts).
  */
 export interface Diagnosis {
+  /** The server's id, as text. */
+  id: string
+  /** ICD-10-CM, as the server capitals it: "M54.2". */
   code: string
-  /** From the ICD-10 list when it has the code; '' otherwise. */
+  /** As entered; '' when none. */
   description: string
 }
 
@@ -30,7 +33,7 @@ export interface PatientCase {
   dischargeDate: string
   /** Open (true) or closed. */
   isActive: boolean
-  /** In claim order: the position is the diagnosis pointer (Box 21 / 24E). */
+  /** In the order added: the position is the pointer a new visit copies (Box 21 / 24E). */
   diagnoses: Diagnosis[]
 }
 

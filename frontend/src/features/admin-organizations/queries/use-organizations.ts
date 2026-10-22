@@ -17,16 +17,19 @@ import type {
 /** Every key for this domain, built in one place (docs/FRONTEND_ARCHITECTURE.md §5). */
 export const organizationKeys = {
   all: ['organizations'] as const,
-  page: (page: number) => [...organizationKeys.all, 'page', page] as const,
+  page: (page: number, search = '') => [...organizationKeys.all, 'page', page, search] as const,
   everything: () => [...organizationKeys.all, 'all'] as const,
   detail: (id: number) => [...organizationKeys.all, 'detail', id] as const,
 }
 
-/** One page of the list, as the server pages it. The previous page stays on screen while the next loads. */
-export function useOrganizationsPage(page: number) {
+/**
+ * One page of the list, as the server pages it — of the matches, with a
+ * search. The previous page stays on screen while the next loads.
+ */
+export function useOrganizationsPage(page: number, search = '') {
   return useQuery({
-    queryKey: organizationKeys.page(page),
-    queryFn: ({ signal }) => listOrganizations(page, signal),
+    queryKey: organizationKeys.page(page, search),
+    queryFn: ({ signal }) => listOrganizations(page, search, signal),
     placeholderData: keepPreviousData,
   })
 }

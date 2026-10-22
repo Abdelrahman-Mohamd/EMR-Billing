@@ -31,13 +31,13 @@ export function CaseVisitsAction({ caseId }: { caseId: string }) {
 }
 
 export function CaseVisitsList({ caseId }: { caseId: string }) {
-  const visits = useVisits()
+  // Only this case's, asked of the server (`case_id`).
+  const visits = useVisits({ caseId })
   const refs = useVisitReferences()
   if (visits.isPending) return null
   if (visits.isError) return <ErrorState onRetry={() => void visits.refetch()} />
+  // In the server's order (newest first): it takes no sort.
   const mine = visits.data
-    .filter((visit) => visit.caseId === caseId)
-    .sort((a, b) => b.dateOfService.localeCompare(a.dateOfService))
   if (mine.length === 0)
     return (
       <p className="text-meta text-n500 pt-3 leading-snug">

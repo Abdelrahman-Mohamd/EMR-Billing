@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { toast } from '@/stores/toast-store'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Spinner } from '@/components/ui/Spinner'
@@ -7,127 +6,130 @@ import { useInsurances } from '@/features/admin-insurances'
 import { useProcedureCodes } from '@/features/admin-procedure-codes'
 import { useProviders } from '@/features/admin-providers'
 import { useReferringPhysicians } from '@/features/admin-referring-physicians'
-import { useCurrentUser } from '@/features/auth'
 import { usePatient, usePatientRecords, type Patient } from '@/features/patients'
-import { useBillingExceptions } from '../../data/exceptions-store'
-import { fixKey, recordKey, type BillingException } from '../../model/billing-exception'
+import { useVisit, type Visit } from '@/features/visits'
+import { resolutionOf, type BillingException } from '../../model/billing-exception'
+import { useRecheck } from '../use-recheck'
 import { FeeFix, ProviderNpiFix } from './BillingFixes'
 import { CaseFix, ReferrerFix, SubscriberFix } from './CaseFixes'
 import { AddressFix, LengthFix, PhoneFix } from './PatientFixes'
 
-const pad = (value: number) => String(value).padStart(2, '0')
-/** Now, as a local ISO date and time — how the list stamps "Resolved". */
-function stampNow(now = new Date()): string {
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
-}
-
 /**
- * Resolve: the prototype's fix form for the exception's kind, on the record
- * the problem is in. Saving edits that record, then the exceptions the fix
- * settles are resolved, and a toast says so — or that the same visit still
- * has others.
+ * Resolve: the prototype's fix form for the exception's reason, on the record
+ * the problem is in. Saving edits that record; then the server re-checks it
+ * (a reprocess — a save of a provider, referring physician or fee checks
+ * nothing on its own) and the toast says what it found: cleared, or still
+ * there. Reasons with no form are not offered here: the list opens their
+ * record instead (model/billing-exception.ts `resolutionOf`).
  */
 export function ResolveDialog({ exception, onClose }: { exception: BillingException; onClose: () => void }) {
-  const list = useBillingExceptions()
-  const user = useCurrentUser()
+  const recheck = useRecheck()
   const records = usePatientRecords()
   const providers = useProviders()
   const referrers = useReferringPhysicians()
   const codes = useProcedureCodes()
   const insurances = useInsurances()
 
-  const settle = (label: string, settles: (other: BillingException) => boolean) => {
-    const record = recordKey(exception.record)
-    const still = list.exceptions.filter(
-      (other) => other.status === 'Open' && recordKey(other.record) === record && !settles(other),
-    )
-    list.resolve(settles, user.data?.name ?? null, stampNow())
-    if (still.length > 0)
-      toast.warning(
-        `${label} — but the visit still has ${still.length === 1 ? '1 exception' : `${still.length} exceptions`}`,
-        still.map((other) => other.trigger).join(' · '),
-      )
-    else toast.success(`${label} — exception resolved`)
+  const done = (label: string) => {
     onClose()
+    void recheck(exception, label)
   }
-  // By default a fix settles every open exception that points at the same fix.
-  const done = (label: string) => settle(label, (other) => fixKey(other.fix) === fixKey(exception.fix))
 
-  const fix = exception.fix
-  switch (fix.type) {
+  const resolution = resolutionOf(exception)
+  if (resolution.kind !== 'form') return null
+  const item = records.cases.find((entry) => entry.id === exception.caseId)
+  const caseCoverages = records.coverages.filter((coverage) => coverage.caseId === exception.caseId)
+  const missingCase = <Unavailable loading={!records.ready} onClose={onClose} />
+
+  switch (resolution.form) {
     case 'patient-phone':
     case 'patient-address':
     case 'patient-length': {
       const Fix =
-        fix.type === 'patient-phone' ? PhoneFix : fix.type === 'patient-address' ? AddressFix : LengthFix
+        resolution.form === 'patient-phone'
+          ? PhoneFix
+          : resolution.form === 'patient-address'
+            ? AddressFix
+            : LengthFix
+      if (exception.patientId === null) return <Unavailable loading={false} onClose={onClose} />
       return (
-        <PatientFixLoader patientId={fix.patientId} onClose={onClose}>
+        <PatientFixLoader patientId={exception.patientId} onClose={onClose}>
           {(patient) => <Fix exception={exception} patient={patient} onDone={done} onClose={onClose} />}
         </PatientFixLoader>
       )
     }
-    case 'case': {
-      const item = records.cases.find((entry) => entry.id === fix.caseId)
-      if (item === undefined) return <Unavailable loading={!records.ready} onClose={onClose} />
-      return <CaseFix exception={exception} item={item} missing={fix.field} onDone={done} onClose={onClose} />
-    }
-    case 'coverage': {
-      const coverage = records.coverages.find((entry) => entry.id === fix.coverageId)
-      if (coverage === undefined) return <Unavailable loading={!records.ready} onClose={onClose} />
-      return <SubscriberFix exception={exception} coverage={coverage} onDone={done} onClose={onClose} />
-    }
-    case 'referrer': {
-      const referrer = referrers.data?.find((entry) => entry.id === fix.referrerId)
-      const item = records.cases.find((entry) => entry.id === fix.caseId)
-      if (referrer === undefined || item === undefined)
-        return <Unavailable loading={referrers.isPending || !records.ready} onClose={onClose} />
+    case 'case-injury-date':
+    case 'case-referrer':
+      if (item === undefined) return missingCase
+      return (
+        <CaseFix
+          exception={exception}
+          item={item}
+          missing={resolution.form === 'case-injury-date' ? 'injuryDate' : 'referrer'}
+          onDone={done}
+          onClose={onClose}
+        />
+      )
+    case 'referrer-npi': {
+      if (item === undefined) return missingCase
+      const referrer = referrers.data?.find((entry) => entry.id === item.referrerId)
+      if (referrer === undefined) return <Unavailable loading={referrers.isPending} onClose={onClose} />
       return (
         <ReferrerFix
           exception={exception}
           referrer={referrer}
           item={item}
-          onDone={(label, everyCase) =>
-            settle(
-              label,
-              // A corrected directory profile fixes every case that uses the
-              // physician; another physician fixes only this case.
-              (other) =>
-                other.fix.type === 'referrer' &&
-                (everyCase ? other.fix.referrerId === fix.referrerId : other.fix.caseId === fix.caseId),
-            )
-          }
+          onDone={(label) => done(label)}
           onClose={onClose}
         />
       )
     }
-    case 'provider-npi': {
-      const provider = providers.data?.find((entry) => entry.id === fix.providerId)
-      if (provider === undefined) return <Unavailable loading={providers.isPending} onClose={onClose} />
-      return <ProviderNpiFix exception={exception} provider={provider} onDone={done} onClose={onClose} />
+    case 'subscriber': {
+      // The insurance whose subscriber lacks a date of birth or gender; else the primary.
+      const coverage =
+        caseCoverages.find(
+          (entry) =>
+            entry.subscriber !== null && (entry.subscriber.dob === '' || entry.subscriber.gender === ''),
+        ) ?? caseCoverages[0]
+      if (coverage === undefined) return missingCase
+      return <SubscriberFix exception={exception} coverage={coverage} onDone={done} onClose={onClose} />
     }
-    case 'fee': {
-      const code = codes.data?.find((entry) => entry.code === fix.procedureCode)
-      if (code === undefined) return <Unavailable loading={codes.isPending} onClose={onClose} />
-      const insurance = insurances.data?.find((entry) => entry.id === fix.insuranceId)
-      if (fix.insuranceId !== null && insurances.isPending) return <Unavailable loading onClose={onClose} />
+    case 'provider-npi':
+    case 'fee':
+      if (exception.visitId === null) return <Unavailable loading={false} onClose={onClose} />
       return (
-        <FeeFix
-          exception={exception}
-          code={code}
-          insurance={insurance === undefined ? null : { id: insurance.id, name: insurance.name }}
-          onDone={done}
-          onClose={onClose}
-        />
+        <VisitFixLoader visitId={exception.visitId} onClose={onClose}>
+          {(visit) => {
+            if (resolution.form === 'provider-npi') {
+              const provider = providers.data?.find((entry) => entry.id === visit.treatingProviderId)
+              if (provider === undefined)
+                return <Unavailable loading={providers.isPending} onClose={onClose} />
+              return (
+                <ProviderNpiFix exception={exception} provider={provider} onDone={done} onClose={onClose} />
+              )
+            }
+            const line = visit.chargeLines.find((entry) => entry.id === exception.chargeLineId)
+            const code = codes.data?.find((entry) => entry.id === line?.procedureCodeId)
+            if (code === undefined) return <Unavailable loading={codes.isPending} onClose={onClose} />
+            const primary = caseCoverages.find((entry) => entry.rank === 1)
+            const insurance = insurances.data?.find((entry) => entry.id === primary?.insuranceId)
+            if (primary !== undefined && insurances.isPending)
+              return <Unavailable loading onClose={onClose} />
+            return (
+              <FeeFix
+                exception={exception}
+                code={code}
+                insurance={insurance === undefined ? null : { id: insurance.id, name: insurance.name }}
+                onDone={done}
+                onClose={onClose}
+              />
+            )
+          }}
+        </VisitFixLoader>
       )
-    }
-    case 'era-claim':
-    case 'carc':
-      // Payment-level fixes need claims and remittances; the list offers no Resolve for them.
-      return null
   }
 }
 
-/** While the record the fix edits is loading — or when it is no longer there. */
 /** A patient fix starts from the patient's whole record, as the server has it now. */
 function PatientFixLoader({
   patientId,
@@ -143,6 +145,22 @@ function PatientFixLoader({
   return <>{children(patient.data)}</>
 }
 
+/** A visit's fix — its treating provider, or a line's code — starts from the visit as it is now. */
+function VisitFixLoader({
+  visitId,
+  onClose,
+  children,
+}: {
+  visitId: number
+  onClose: () => void
+  children: (visit: Visit) => ReactNode
+}) {
+  const visit = useVisit(visitId)
+  if (visit.data === undefined) return <Unavailable loading={visit.isPending} onClose={onClose} />
+  return <>{children(visit.data)}</>
+}
+
+/** While the record the fix edits is loading — or when it is no longer there. */
 function Unavailable({ loading, onClose }: { loading: boolean; onClose: () => void }) {
   return (
     <Dialog

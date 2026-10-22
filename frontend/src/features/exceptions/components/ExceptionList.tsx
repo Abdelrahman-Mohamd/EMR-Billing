@@ -1,95 +1,74 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { CircleCheck } from 'lucide-react'
+import { isApiError, userMessage } from '@/lib/api/api-error'
+import { toast } from '@/stores/toast-store'
 import { Tag } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
-import { FilterPills } from '@/components/ui/FilterPills'
+import { Button, buttonClass } from '@/components/ui/Button'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
+import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Pagination } from '@/components/ui/Pagination'
-import { actionsColumn } from '@/components/ui/RowActions'
+import { RowActionButton, actionsColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
-import { listName, usePatientRecords } from '@/features/patients'
+import { caseSearch, usePatientRecords } from '@/features/patients'
 import { cn } from '@/lib/utils/cn'
-import { formatIsoDate, todayIso } from '@/lib/utils/dates'
+import { formatIsoDate } from '@/lib/utils/dates'
 import { formatWhen } from '@/lib/utils/format-when'
-import {
-  EXCEPTION_LEVELS,
-  canResolve,
-  type BillingException,
-  type ExceptionLevel,
-} from '../model/billing-exception'
+import { recordName, resolutionOf, type BillingException } from '../model/billing-exception'
+import { useDeleteException } from '../queries/use-billing-exceptions'
 import { ResolveDialog } from './resolve/ResolveDialog'
+import { useRecheck } from './use-recheck'
 
 /** The prototype pages its lists 12 at a time. */
 export const EXCEPTIONS_PAGE_SIZE = 12
 
 /**
- * One of the Exceptions lists, as the prototype has it: Billing exceptions
- * (open) or Resolved. Level pills with their counts filter it; the table shows
- * Level, Exception trigger (with its particulars), Record, Detected, then for
- * open ones Owner, Due and Resolve, for resolved ones when and by whom.
+ * The billing exceptions the screen asked the server for (its practice, type
+ * and reason), as the prototype lists them: Type, Exception (the reason, with
+ * the server's message), Record (the patient, and the case or the visit it
+ * sits on) and Detected, sortable, 12 a page. Each row offers:
+ * - **Resolve** — the prototype's fix form, when the reason has one; else a
+ *   link that opens the record where it is fixed (a case's insurance and
+ *   employer on the patient chart, a visit's diagnoses on the visit);
+ * - **Re-check** — the server checks the record again now (useful after a
+ *   change no save re-checks: a provider, a fee schedule);
+ * - **Delete** — after asking: it comes back while the problem is still there.
  *
- * Open rows carry the prototype's marker: red for Charge and Payment, amber
- * for the others. Payment-level exceptions are fixed against claims and
- * remittances, which do not exist here yet, so they have no Resolve.
+ * Open rows carry the prototype's marker: red for a charge, amber for the
+ * others.
  */
 export function ExceptionList({
-  status,
   exceptions,
-  ready,
-  initialLevel,
+  loading,
+  failed,
+  onRetry,
+  filtered,
 }: {
-  status: 'Open' | 'Resolved'
-  /** Already narrowed to the practice in view. */
   exceptions: readonly BillingException[]
-  ready: boolean
-  /** A link may open the list on one level (`?level=Payment`). */
-  initialLevel: ExceptionLevel | undefined
+  loading: boolean
+  failed: boolean
+  onRetry: () => void
+  /** A type or reason is chosen: an empty list says nothing matches, not that all is well. */
+  filtered: boolean
 }) {
   const records = usePatientRecords()
-  const [levels, setLevels] = useState<string[]>(initialLevel === undefined ? [] : [initialLevel])
-  const [sort, setSort] = useState<Sort>({ key: 'detected', direction: 'desc' })
+  const recheck = useRecheck()
+  const remove = useDeleteException()
   const [page, setPage] = useState(1)
   const [resolving, setResolving] = useState<BillingException | null>(null)
-  const open = status === 'Open'
-  const today = todayIso()
+  const [deleting, setDeleting] = useState<BillingException | null>(null)
 
-  const recordName = (exception: BillingException): string => {
-    if (exception.record.kind === 'era') return `ERA ${exception.record.control}`
-    const { patientId } = exception.record
-    const patient = records.patients.find((item) => item.id === patientId)
-    return patient === undefined ? 'Patient' : listName(patient)
+  const caseName = (exception: BillingException) =>
+    records.cases.find((item) => item.id === exception.caseId)?.name ?? ''
+  const recordSub = (exception: BillingException): string => {
+    if (exception.visitId !== null)
+      return exception.visitDate === '' ? 'Visit' : `Visit · DOS ${formatIsoDate(exception.visitDate)}`
+    if (exception.caseId !== null) return caseName(exception) === '' ? 'Case' : `Case ${caseName(exception)}`
+    return 'Patient record'
   }
-  const recordSub = (exception: BillingException): string =>
-    exception.record.kind === 'era'
-      ? exception.record.payerName
-      : `DOS ${formatIsoDate(exception.record.dos)} · record ${exception.record.recordId}`
 
-  const list = exceptions.filter((exception) => exception.status === status)
-  const counts = Object.fromEntries(
-    EXCEPTION_LEVELS.map((level) => [level, list.filter((exception) => exception.level === level).length]),
-  )
-  const rows = list
-    .filter((exception) => levels.length === 0 || levels.includes(exception.level))
-    .sort((a, b) => {
-      const key = (exception: BillingException): string | number => {
-        switch (sort.key) {
-          case 'level':
-            return EXCEPTION_LEVELS.indexOf(exception.level)
-          case 'trigger':
-            return exception.trigger.toLowerCase()
-          case 'record':
-            return recordName(exception).toLowerCase()
-          case 'due':
-            // No due date sorts last either way round.
-            return exception.due ?? (sort.direction === 'asc' ? '9999' : '0000')
-          default:
-            return exception.detectedAt
-        }
-      }
-      const [x, y] = [key(a), key(b)]
-      const order = x < y ? -1 : x > y ? 1 : 0
-      return sort.direction === 'asc' ? order : -order
-    })
+  // In the server's order (newest first): it takes no sort.
+  const rows = exceptions
   const pageCount = Math.max(1, Math.ceil(rows.length / EXCEPTIONS_PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const pageRows = rows.slice((currentPage - 1) * EXCEPTIONS_PAGE_SIZE, currentPage * EXCEPTIONS_PAGE_SIZE)
@@ -98,46 +77,73 @@ export function ExceptionList({
       ? `${rows.length} ${rows.length === 1 ? 'exception' : 'exceptions'}`
       : `Showing ${(currentPage - 1) * EXCEPTIONS_PAGE_SIZE + 1}–${Math.min(currentPage * EXCEPTIONS_PAGE_SIZE, rows.length)} of ${rows.length} exceptions`
 
-  const levelTag = (exception: BillingException) => (
-    <Tag tone={exception.level === 'Payment' ? 'attention' : 'brand'}>{exception.level}</Tag>
-  )
+  const named = (exception: BillingException) => `${exception.trigger} — ${recordName(exception)}`
+
+  /** Resolve, or where to go to fix it. */
+  const fixAction = (exception: BillingException) => {
+    const resolution = resolutionOf(exception)
+    if (resolution.kind === 'form')
+      return (
+        <Button size="sm" aria-label={`Resolve ${named(exception)}`} onClick={() => setResolving(exception)}>
+          Resolve
+        </Button>
+      )
+    if (exception.patientId === null) return null
+    if (resolution.place === 'visit' && exception.visitId !== null)
+      return (
+        <Link
+          to="/visits/$visitId"
+          params={{ visitId: String(exception.visitId) }}
+          aria-label={`Open the visit — ${named(exception)}`}
+          className={buttonClass('default', 'sm')}
+        >
+          Open visit
+        </Link>
+      )
+    return (
+      <Link
+        to="/patients/$patientId"
+        params={{ patientId: exception.patientId }}
+        search={exception.caseId === null ? {} : { case: caseSearch(exception.caseId) }}
+        aria-label={`Open the ${exception.caseId === null ? 'patient' : 'case'} — ${named(exception)}`}
+        className={buttonClass('default', 'sm')}
+      >
+        {exception.caseId === null ? 'Open patient' : 'Open case'}
+      </Link>
+    )
+  }
 
   const columns: Array<Column<BillingException>> = [
     {
-      key: 'level',
-      header: 'Level',
-      sortable: true,
+      key: 'type',
+      header: 'Type',
       cell: (exception) => (
         <span className="flex items-center gap-2.5">
-          {open && (
-            <span
-              aria-hidden="true"
-              className={cn(
-                'h-5 w-[3px] flex-none rounded-full',
-                exception.level === 'Charge' || exception.level === 'Payment' ? 'bg-critical' : 'bg-warning',
-              )}
-            />
-          )}
-          {levelTag(exception)}
+          <span
+            aria-hidden="true"
+            className={cn(
+              'h-5 w-[3px] flex-none rounded-full',
+              exception.type === 'charge' ? 'bg-critical' : 'bg-warning',
+            )}
+          />
+          <Tag tone="brand">{exception.level}</Tag>
         </span>
       ),
     },
     {
       key: 'trigger',
-      header: 'Exception trigger',
-      sortable: true,
+      header: 'Exception',
       primary: true,
       cell: (exception) => (
         <span className="block min-w-0">
           <span className="break-words">{exception.trigger}</span>
-          <CellSub>{exception.detail}</CellSub>
+          {exception.detail !== '' && <CellSub>{exception.detail}</CellSub>}
         </span>
       ),
     },
     {
       key: 'record',
       header: 'Record',
-      sortable: true,
       cell: (exception) => (
         <span className="block min-w-0">
           <span className="text-ink block font-medium break-words">{recordName(exception)}</span>
@@ -150,113 +156,50 @@ export function ExceptionList({
     {
       key: 'detected',
       header: 'Detected',
-      sortable: true,
       cell: (exception) => (
         <span className="whitespace-nowrap">{formatWhen(exception.detectedAt).label}</span>
       ),
     },
-    ...(open
-      ? ([
-          {
-            key: 'owner',
-            header: 'Owner',
-            cell: (exception) =>
-              exception.owner === null ? <span className="text-n500">Unassigned</span> : exception.owner,
-          },
-          {
-            key: 'due',
-            header: 'Due',
-            sortable: true,
-            cell: (exception) =>
-              exception.due === null ? (
-                <span className="text-n400">—</span>
-              ) : (
-                <span
-                  className={cn('whitespace-nowrap tabular-nums', exception.due < today && 'text-critical')}
-                >
-                  {formatIsoDate(exception.due)}
-                  {exception.due < today && <span className="sr-only"> (overdue)</span>}
-                </span>
-              ),
-          },
-          actionsColumn<BillingException>((exception) =>
-            canResolve(exception) ? (
-              <Button
-                size="sm"
-                aria-label={`Resolve ${exception.trigger} — ${recordName(exception)}`}
-                onClick={() => setResolving(exception)}
-              >
-                Resolve
-              </Button>
-            ) : null,
-          ),
-        ] satisfies Array<Column<BillingException>>)
-      : ([
-          {
-            key: 'resolved',
-            header: 'Resolved',
-            cell: (exception) => (
-              <span className="block whitespace-nowrap">
-                {exception.resolvedAt === null ? '' : formatWhen(exception.resolvedAt).label}
-                {exception.resolvedBy !== null && <CellSub>{exception.resolvedBy}</CellSub>}
-              </span>
-            ),
-          },
-        ] satisfies Array<Column<BillingException>>)),
+    actionsColumn<BillingException>((exception) => (
+      <>
+        {fixAction(exception)}
+        <RowActionButton
+          action="recheck"
+          label={`Re-check ${named(exception)}`}
+          onClick={() => void recheck(exception)}
+        />
+        <RowActionButton
+          action="delete"
+          label={`Delete ${named(exception)}`}
+          onClick={() => setDeleting(exception)}
+        />
+      </>
+    )),
   ]
-
-  const empty: ReactNode = open ? (
-    <EmptyState
-      icon={<CircleCheck size={20} />}
-      title="No open billing exceptions"
-      description="Payloads with missing fields, dummy data or unpriced codes are intercepted here before claim processing."
-    />
-  ) : (
-    <EmptyState icon={<CircleCheck size={20} />} title="Nothing resolved yet" />
-  )
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <FilterPills
-          label="Filter by level"
-          options={EXCEPTION_LEVELS.map((level) => ({
-            value: level,
-            label: level,
-            count: counts[level] ?? 0,
-          }))}
-          selected={levels}
-          onChange={(next) => {
-            setLevels(next)
-            setPage(1)
-          }}
-        />
-        {levels.length > 0 && (
-          <Button
-            size="sm"
-            variant="quiet"
-            onClick={() => {
-              setLevels([])
-              setPage(1)
-            }}
-          >
-            Show all levels
-          </Button>
-        )}
-      </div>
-
       <DataTable
-        caption={open ? 'Billing exceptions' : 'Resolved exceptions'}
+        caption="Billing exceptions"
         columns={columns}
         rows={pageRows}
-        getRowId={(exception) => exception.id}
-        loading={!ready}
-        sort={sort}
-        onSortChange={(next) => {
-          setSort(next)
-          setPage(1)
-        }}
-        empty={<div className="pt-6">{empty}</div>}
+        getRowId={(exception) => String(exception.id)}
+        loading={loading}
+        error={failed}
+        onRetry={onRetry}
+        empty={
+          <div className="pt-6">
+            {filtered ? (
+              <EmptyState icon={<CircleCheck size={20} />} title="No exceptions of this kind" />
+            ) : (
+              <EmptyState
+                icon={<CircleCheck size={20} />}
+                title="No billing exceptions"
+                description="Records with missing fields, placeholder data or unpriced codes are listed here before their visits can be released."
+              />
+            )}
+          </div>
+        }
         footer={
           rows.length > 0 ? (
             <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} summary={summary} />
@@ -265,6 +208,29 @@ export function ExceptionList({
       />
 
       {resolving !== null && <ResolveDialog exception={resolving} onClose={() => setResolving(null)} />}
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null)
+        }}
+        title="Delete this exception?"
+        description="It is taken off the list. It comes back when its record is saved, or its visit released, while the problem is still there."
+        confirmLabel="Delete exception"
+        tone="destructive"
+        onConfirm={async () => {
+          if (deleting === null) return
+          try {
+            const message = await remove.mutateAsync(deleting.id)
+            toast.success(message ?? 'Exception deleted')
+          } catch (error) {
+            toast.error(
+              'The exception was not deleted',
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
+        }}
+      />
     </>
   )
 }

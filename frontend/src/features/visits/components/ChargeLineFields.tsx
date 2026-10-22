@@ -6,7 +6,7 @@ import { MultiSelect, SearchSelect } from '@/components/ui/SearchSelect'
 import type { ProcedureCode } from '@/features/admin-procedure-codes'
 
 export interface DiagnosisOption {
-  /** The pointer: the diagnosis's position on the case, from 1. */
+  /** The pointer: the diagnosis's position on the visit, from 1. */
   pointer: number
   code: string
   description: string
@@ -23,7 +23,7 @@ export interface DiagnosisOption {
  * added to new charge lines) — and a saved line's own code (`keepCodeId`),
  * active or not. Choosing a code whose modifier override is on
  * fills in its modifiers (the override replaces a line's own, client
- * 2026-09-30). Diagnosis pointers are picked from the case's diagnoses, in the
+ * 2026-09-30). Diagnosis pointers are picked from the visit's diagnoses, in the
  * order they should print; without a case there is nothing to point at.
  */
 export function ChargeLineFields({
@@ -88,7 +88,7 @@ export function ChargeLineFields({
         name={name('diagnosisPointers')}
         label="Diagnosis pointers"
         span={6}
-        info="Up to four of the case’s diagnoses, in the order chosen — the first is the line’s primary. None chosen: the first diagnosis."
+        info="Up to four of the visit’s diagnoses, in the order chosen — the first is the line’s primary. None chosen: the first diagnosis."
       >
         {(field) => (
           <MultiSelect
@@ -100,7 +100,7 @@ export function ChargeLineFields({
             }))}
             placeholder={diagnoses === null ? 'Select a case first' : 'Select diagnoses'}
             searchPlaceholder="Search diagnoses"
-            emptyMessage="The case has no diagnoses."
+            emptyMessage="The visit has no diagnoses."
             disabled={diagnoses === null}
           />
         )}

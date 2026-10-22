@@ -4,7 +4,7 @@ import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Pagination } from '@/components/ui/Pagination'
 import { RowActionButton, actionsColumn, StatusChangeDialog, activeColumn } from '@/components/ui/RowActions'
@@ -46,18 +46,10 @@ export function ProcedureCodesScreen() {
   /** The row whose Active switch was flipped, waiting for confirmation. */
   const [statusOf, setStatusOf] = useState<ProcedureCode | null>(null)
   const [deleting, setDeleting] = useState<ProcedureCode | null>(null)
-  const [sort, setSort] = useState<Sort>({ key: 'code', direction: 'asc' })
   const [page, setPage] = useState(1)
 
-  const compare = (a: ProcedureCode, b: ProcedureCode) => {
-    if (sort.key === 'defaultFee') return a.defaultFee - b.defaultFee
-    const text = (left: string, right: string) =>
-      left.localeCompare(right, undefined, { sensitivity: 'base' })
-    if (sort.key === 'description') return text(a.description, b.description)
-    if (sort.key === 'procedureType') return text(procedureTypeName(a), procedureTypeName(b))
-    return text(a.code, b.code)
-  }
-  const sorted = [...codes].sort((a, b) => (sort.direction === 'asc' ? compare(a, b) : -compare(a, b)))
+  // In the server's order: it takes no sort.
+  const sorted = codes
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const rows = sorted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
@@ -89,13 +81,11 @@ export function ProcedureCodesScreen() {
       key: 'code',
       header: 'Code',
       primary: true,
-      sortable: true,
       cell: (code) => <span className="font-medium whitespace-nowrap">{code.code}</span>,
     },
     {
       key: 'description',
       header: 'Description',
-      sortable: true,
       cell: (code) => <span className="break-words">{code.description}</span>,
     },
     {
@@ -103,7 +93,6 @@ export function ProcedureCodesScreen() {
       // is no room for both beside the override below 1440px.
       key: 'procedureType',
       header: 'Type',
-      sortable: true,
       cell: (code) => (
         <span className="block whitespace-nowrap">
           {procedureTypeName(code)}
@@ -115,7 +104,6 @@ export function ProcedureCodesScreen() {
     {
       key: 'defaultFee',
       header: 'Default fee',
-      sortable: true,
       cell: fee,
     },
     activeColumn<ProcedureCode>({
@@ -162,11 +150,6 @@ export function ProcedureCodesScreen() {
         loading={procedureCodes.isPending}
         error={procedureCodes.isError}
         onRetry={() => void procedureCodes.refetch()}
-        sort={sort}
-        onSortChange={(next) => {
-          setSort(next)
-          setPage(1)
-        }}
         empty={
           <EmptyState
             icon={<Hash size={20} />}

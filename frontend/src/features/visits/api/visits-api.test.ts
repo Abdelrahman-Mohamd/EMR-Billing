@@ -45,6 +45,8 @@ const wire = (id: number, extra: Record<string, unknown> = {}) => ({
       diagnosis_pointers: [1],
       place_of_service: '11',
       notes: null,
+      coding_rule_id: null,
+      original_procedure_code_id: null,
       created_at: '2026-10-09T16:24:22.000000Z',
       updated_at: '2026-10-09T16:24:22.000000Z',
     },
@@ -86,8 +88,8 @@ describe('visits against the backend', () => {
       .mockResolvedValueOnce(json(200, page([wire(2, { status: 'released' })], 2, 2)))
     const all = await listVisits()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/visits?page=1`,
-      `${BASE}/visits?page=2`,
+      `${BASE}/visits?page=1&per_page=100`,
+      `${BASE}/visits?page=2&per_page=100`,
     ])
     expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
     expect(all[0]).toEqual({
@@ -126,10 +128,27 @@ describe('visits against the backend', () => {
           diagnosisPointers: [1],
           placeOfService: '11',
           notes: '',
+          codingRuleId: null,
+          originalProcedureCodeId: null,
         },
       ],
     })
     expect(all[1]?.status).toBe('released')
+  })
+
+  it('asks for one case’s visits by its id', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(200, {
+        success: true,
+        data: {
+          data: [wire(1)],
+          links: {},
+          meta: { current_page: 1, last_page: 1, per_page: 100, total: 1 },
+        },
+      }),
+    )
+    await listVisits({ caseId: '32' })
+    expect(call(0).url).toBe(`${BASE}/visits?page=1&per_page=100&case_id=32`)
   })
 
   it('reads one visit with GET /visits/{id} — its billing provider, authorization and each line’s code', async () => {
@@ -154,6 +173,19 @@ describe('visits against the backend', () => {
     )
   })
 
+  it('reads what scrubbing did to a line: the coding rule that replaced its code, and the code it had', async () => {
+    const [line] = wire(1).charge_lines
+    const detail = wire(1, {
+      status: 'pended',
+      charge_lines: [{ ...line, coding_rule_id: 4, original_procedure_code_id: 14 }],
+    })
+    fetchMock.mockResolvedValueOnce(json(200, { success: true, data: detail }))
+    const visit = await getVisit(1)
+    expect(visit.chargeLines[0]).toEqual(
+      expect.objectContaining({ codingRuleId: 4, originalProcedureCodeId: 14 }),
+    )
+  })
+
   it('records with POST, saves with PUT, deletes, and releases — in the server’s words', async () => {
     fetchMock
       .mockResolvedValueOnce(json(201, { success: true, message: 'Visit created successfully', data: null }))
@@ -173,6 +205,7 @@ describe('visits against the backend', () => {
       billing_provider_id: 1,
       treating_provider_id: 6,
       authorization_id: null,
+      diagnosis_codes: ['M75.101', 'M25.511'],
       charge_lines: [{ procedure_code_id: 1, units: 2 }],
     }
     await expect(createVisit(payload)).resolves.toBe('Visit created successfully')
@@ -187,6 +220,8 @@ describe('visits against the backend', () => {
     // The server refuses the case and the lines on a save.
     expect(save).not.toHaveProperty('case_id')
     expect(save).not.toHaveProperty('charge_lines')
+    // The visit's own diagnoses are its to change.
+    expect(save.diagnosis_codes).toEqual(['M75.101', 'M25.511'])
     expect([call(2).init.method, call(2).url]).toEqual(['DELETE', `${BASE}/visits/1`])
     expect([call(3).init.method, call(3).url]).toEqual(['POST', `${BASE}/visits/1/release`])
     expect(released.message).toBe('Visit pended: Corvel Enterprise requires authorization.')
@@ -203,6 +238,7 @@ describe('visits against the backend', () => {
           date_of_service: ['This case already has a visit on that date.'],
           'charge_lines.0.units': ['The charge_lines.0.units field must not be greater than 99.'],
           'charge_lines.1.modifiers.0': ['Each modifier must be 2 letters or digits, e.g. GP or 59.'],
+          'diagnosis_codes.1': ['Each diagnosis must be a valid ICD-10-CM code, e.g. M54.2.'],
         },
       }),
     )
@@ -213,12 +249,14 @@ describe('visits against the backend', () => {
       billing_provider_id: 1,
       treating_provider_id: 6,
       authorization_id: null,
+      diagnosis_codes: ['M75.101', 'ZZZ'],
       charge_lines: [],
     }).catch((caught: unknown) => caught)
     expect(isApiError(error) && error.fieldErrors.map((fieldError) => fieldError.path)).toEqual([
       'dateOfService',
       'lines.0.units',
       'lines.1.modifiers',
+      'diagnosisCodes',
     ])
   })
 })

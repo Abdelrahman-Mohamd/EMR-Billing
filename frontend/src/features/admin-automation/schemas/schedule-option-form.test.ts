@@ -20,7 +20,7 @@ describe('Add an option', () => {
   })
 
   it('asks for a time of day for the other kinds', () => {
-    expect(messages({ kind: 'daily', hours: '', time: '' })).toEqual(['time: Choose a time of day.'])
+    expect(messages({ kind: 'daily', hours: '', time: '' })).toEqual(['time: Enter a time, e.g. 6:07.'])
     expect(messages({ kind: 'weekdays', hours: 'x', time: '07:30' })).toEqual([])
   })
 
@@ -35,7 +35,7 @@ describe('Add an option', () => {
       scheduleOptionFormSchema.parse({ kind: 'weekdays', hours: '4', time: '07:30' }),
     )
     expect(weekdays).toEqual({ kind: 'weekdays', hours: null, time: '07:30' })
-    expect(scheduleLabel(weekdays)).toBe('Weekdays at 07:30')
-    expect(scheduleLabel({ kind: 'daily', hours: null, time: '18:00' })).toBe('Every day at 18:00')
+    expect(scheduleLabel(weekdays)).toBe('Weekdays at 7:30 AM')
+    expect(scheduleLabel({ kind: 'daily', hours: null, time: '18:00' })).toBe('Every day at 6:00 PM')
   })
 })

@@ -37,8 +37,19 @@ import { z } from 'zod'
  * (out of range: a message with no field). A line without pointers points at
  * the first diagnosis. The authorization must be one of the case's
  * insurances'. The amount is the server's (the fee schedule's price × units);
- * the place of service is the location's. The visit copies the case's
- * diagnoses when it is made (`diagnosis_codes`) — its pointers name those.
+ * the place of service is the location's.
+ *
+ * The visit's own diagnoses (`diagnosis_codes`, taken on `POST` and `PUT`
+ * since 2026-10-20): up to 12 ICD-10-CM codes, none twice ("Each diagnosis
+ * must be a valid ICD-10-CM code, e.g. M54.2." on `diagnosis_codes.N`), in
+ * order — a line's pointers name their positions. Left out of a `POST`, the
+ * visit copies its case's; this app sends them, starting from the case's.
+ *
+ * A line also carries, since 2026-10-20, what scrubbing did to it: when the
+ * visit is released, an active coding rule may replace its code
+ * (`coding_rule_id`, and the code it had, `original_procedure_code_id`; the
+ * amount is re-priced) or drop the line. The rule and the original code come
+ * as ids only.
  *
  * A line may also carry, on create (user, 2026-10-09: the server takes them,
  * so use them): its own `place_of_service` — two digits, `00`–`99`; left out,
@@ -87,6 +98,8 @@ export interface CreateVisitPayload {
   billing_provider_id: number
   treating_provider_id: number
   authorization_id: number | null
+  /** ICD-10-CM codes, in pointer order. */
+  diagnosis_codes: string[]
   charge_lines: VisitLinePayload[]
 }
 
@@ -104,6 +117,8 @@ const chargeLineWire = z.object({
   diagnosis_pointers: z.array(z.number().int()).nullable().optional(),
   place_of_service: text,
   notes: text,
+  coding_rule_id: z.number().int().nullable().optional(),
+  original_procedure_code_id: z.number().int().nullable().optional(),
 })
 
 const toChargeLine = (wire: z.infer<typeof chargeLineWire>) => ({
@@ -120,6 +135,10 @@ const toChargeLine = (wire: z.infer<typeof chargeLineWire>) => ({
   diagnosisPointers: wire.diagnosis_pointers ?? [],
   placeOfService: wire.place_of_service,
   notes: wire.notes,
+  /** The coding rule that replaced the line's code when the visit was released; else null. */
+  codingRuleId: wire.coding_rule_id ?? null,
+  /** The code it had before that rule; else null. */
+  originalProcedureCodeId: wire.original_procedure_code_id ?? null,
 })
 
 export type ChargeLine = ReturnType<typeof toChargeLine>
@@ -164,7 +183,7 @@ export const visitResponseSchema = z
     pendReason: wire.pend_reason,
     /** `manual`, or where it came from. */
     source: wire.source,
-    /** The case's diagnoses as the visit copied them: what its pointers name. */
+    /** The visit's own diagnoses, in order: what its pointers name. */
     diagnosisCodes: wire.diagnosis_codes ?? [],
     locationId: wire.location_id,
     locationName: wire.location?.name ?? '',
@@ -217,7 +236,7 @@ const FIELDS: Readonly<Record<string, string>> = {
 /**
  * Backend field → form field, so a server's field error lands on the right
  * input: `charge_lines.1.units` → `lines.1.units`, a modifier or pointer's
- * error on its line's field.
+ * error on its line's field, a diagnosis code's on the diagnoses.
  */
 export function visitFormFieldFor(path: string): string {
   const line = /^charge_lines\.(\d+)\.([a-z_]+)/.exec(path)
@@ -233,6 +252,8 @@ export function visitFormFieldFor(path: string): string {
       }[line[2] ?? ''] ?? 'procedureCode'
     return `lines.${line[1] ?? '0'}.${field}`
   }
+  // One code's refusal (`diagnosis_codes.2`) lands on the diagnoses.
+  if (/^diagnosis_codes(\.\d+)?$/.test(path)) return 'diagnosisCodes'
   return FIELDS[path] ?? path
 }
 

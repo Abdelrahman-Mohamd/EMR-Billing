@@ -160,6 +160,10 @@ mutations on `POST`/`PUT`/`PATCH`/`DELETE` — never a `GET` that changes data.
 
 - **No PHI in any log**, including `console.warn`/`console.error`, an error tracker, analytics, or a breadcrumb.
   Log ids, kinds and counts — not names, not payloads, not query results.
+- **Search terms that can be PHI** (the patient roster's search: a name) go to the API as `search` — the
+  user's decision, 2026-10-20 — over HTTPS, and nowhere else: never in the app's own URL, history, storage or
+  logs. The API's access logs then hold them: the backend must keep query strings out of its logs, or mask
+  `search`.
 - Users see `userMessage(error)`: **the server's own message when it sent one** (the user's decision,
   2026-10-07 — it says what the problem is: "A practice must have at least one location; this is its last
   one."), and a successful write's toast is the server's `message` too ("Practice created successfully";

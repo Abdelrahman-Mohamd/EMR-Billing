@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   RELEASE_BUCKET_FORM_FIELD_FOR,
   releaseBucketDetailResponseSchema,
@@ -17,8 +18,8 @@ import {
  * Release buckets' only door to a server. **Live** (contracts confirmed
  * 2026-10-07), carrying the session's token: `GET /release-buckets?page=N`,
  * `GET /release-buckets/{id}`, `POST /release-buckets`,
- * `PUT /release-buckets/{id}` and `DELETE /release-buckets/{id}`. Only `page`
- * is sent to the list. Writes resolve with the server's message, which the
+ * `PUT /release-buckets/{id}` and `DELETE /release-buckets/{id}`. The list is asked for `page` and
+ * `per_page=100` (lib/api/pagination.ts). Writes resolve with the server's message, which the
  * screens show. Shapes in schemas/release-bucket.ts.
  */
 export interface ReleaseBucketsApi {
@@ -34,7 +35,7 @@ const live: ReleaseBucketsApi = {
     request({
       method: 'GET',
       path: '/release-buckets',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: releaseBucketPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

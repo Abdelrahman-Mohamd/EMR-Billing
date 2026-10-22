@@ -165,9 +165,14 @@ export const auditPageResponseSchema = z
 export type AuditPage = z.output<typeof auditPageResponseSchema>
 
 /**
- * What the screen asks for: a page. The endpoint's contract has no search or
- * filter, and the page size is the server's (15).
+ * What the screen asks for: a page, and optionally one module (`log_name`).
+ * The page size is the server's (15). The server also filters by user
+ * (`causer_id`), record (`subject_type`, `subject_id`), event and dates
+ * (`date_from`, `date_to`), seen on staging 2026-10-20; the screen has no
+ * control for those (the prototype has none), and it takes no search.
  */
 export interface AuditLogQuery {
   page: number
+  /** A `log_name`, e.g. "visits"; left out, every module. */
+  module?: string
 }

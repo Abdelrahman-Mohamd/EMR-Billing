@@ -25,6 +25,7 @@ const filled: VisitFormValues = {
   billingProviderId: '3',
   treatingProviderId: '3',
   authorizationId: null,
+  diagnosisCodes: ['M75.101', 'M25.511'],
   lines: [
     { procedureCode: '3', units: '2', modifiers: '', diagnosisPointers: [], placeOfService: '', notes: '' },
     {
@@ -47,6 +48,8 @@ describe('the visit payload', () => {
       billing_provider_id: 3,
       treating_provider_id: 3,
       authorization_id: null,
+      // Its own diagnoses, in pointer order (2026-10-20).
+      diagnosis_codes: ['M75.101', 'M25.511'],
       charge_lines: [
         { procedure_code_id: 3, units: 2 },
         // Its own place of service and a note: the server takes both (user, 2026-10-09).
@@ -69,6 +72,7 @@ describe('the visit payload', () => {
       billing_provider_id: 3,
       treating_provider_id: 3,
       authorization_id: 16,
+      diagnosis_codes: ['M75.101', 'M25.511'],
     })
   })
 
@@ -162,9 +166,11 @@ describe('the visit form', () => {
           billingProviderId: '3',
           treatingProviderId: null,
           authorizationId: null,
+          diagnosisCodes: Array.from({ length: 13 }, (_, index) => `M54.${index}`),
         }),
       ),
     ).toEqual([
+      'diagnosisCodes: Choose up to 12 diagnoses.',
       'dateOfService: Enter the date of service.',
       'locationId: Select a location.',
       'treatingProviderId: Select the treating provider.',

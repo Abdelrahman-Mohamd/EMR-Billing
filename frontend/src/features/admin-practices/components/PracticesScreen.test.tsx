@@ -501,7 +501,9 @@ describe('Admin → Practices & locations: locations', () => {
     const parkSlope = within(table).getByText('Park Slope').closest('tr') as HTMLElement
     expect(within(parkSlope).getByRole('switch', { name: 'Park Slope: active' })).not.toBeChecked()
     // The section counts them, saying how many are active.
-    expect(screen.getByRole('heading', { level: 3, name: /^Locations/ })).toHaveTextContent('1 of 2 active')
+    expect(screen.getByRole('heading', { level: 3, name: 'Locations' })).toBeInTheDocument()
+    // The count beside the title, as on the other cards.
+    expect(screen.getByRole('region', { name: 'Locations' })).toHaveTextContent('1 of 2 active')
   })
 
   it('adds a location to the selected practice, starting at place of service 11', async () => {

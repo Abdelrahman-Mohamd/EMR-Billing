@@ -3,10 +3,9 @@ import { useNavigate } from '@tanstack/react-router'
 import { CalendarCheck, Plus } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { Pagination } from '@/components/ui/Pagination'
 import { EmptyState } from '@/components/ui/States'
-import { SearchInput } from '@/components/ui/Input'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { PracticeSelect } from '@/features/admin-practices'
 import { formatIsoDate } from '@/lib/utils/dates'
@@ -23,41 +22,24 @@ const PAGE_SIZE = 12
  * Visits: every visit with its patient and case, date of service, location,
  * treating provider, charge lines, total and status, newest first — as the
  * server lists them. A row opens the visit, where its lines and claims are.
- * Search by patient, case or procedure code; the practice filter is in the URL
- * (`?practice=`), as on the other practice-scoped screens.
+ * The practice filter is in the URL (`?practice=`), as on the other
+ * practice-scoped screens. No search and no sorting: the server takes neither
+ * for visits (staging, 2026-10-20), and the list is never searched or ordered
+ * in the browser (user, 2026-10-20).
  */
 export function VisitsScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
-  const visits = useVisits()
+  // The practice filter is the server's (`practice_id`).
+  const visits = useVisits(practiceFilter === undefined ? {} : { practiceId: practiceFilter })
   const refs = useVisitReferences()
-  const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<Sort>({ key: 'date', direction: 'desc' })
   const [page, setPage] = useState(1)
   const [creating, setCreating] = useState(false)
 
   const setPractice = (value: string | null) =>
     void navigate({ to: '/visits', search: value === null ? {} : { practice: Number(value) } })
-  const query = search.trim().toLowerCase()
-  const filtered = query !== '' || practiceFilter !== undefined
+  const filtered = practiceFilter !== undefined
 
-  const rows = (visits.data ?? [])
-    .filter((visit) => practiceFilter === undefined || refs.practiceOf(visit) === practiceFilter)
-    .filter(
-      (visit) =>
-        query === '' ||
-        [
-          refs.patientListName(visit),
-          refs.patientFullName(visit),
-          visit.caseName,
-          ...visit.chargeLines.map((line) => refs.procedure(line.procedureCodeId).code),
-        ].some((text) => text.toLowerCase().includes(query)),
-    )
-    .sort((a, b) => {
-      const key = (visit: Visit) =>
-        sort.key === 'patient' ? refs.patientListName(visit).toLowerCase() : visit.dateOfService
-      const order = key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : b.id - a.id
-      return sort.direction === 'asc' ? order : -order
-    })
+  const rows = visits.data ?? []
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const pageRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
@@ -70,7 +52,6 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
     {
       key: 'patient',
       header: 'Patient',
-      sortable: true,
       primary: true,
       cell: (visit) => (
         <span className="block min-w-0">
@@ -82,7 +63,6 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
     {
       key: 'date',
       header: 'Date of service',
-      sortable: true,
       cell: (visit) => (
         <span className="whitespace-nowrap tabular-nums">{formatIsoDate(visit.dateOfService)}</span>
       ),
@@ -130,7 +110,6 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
   )
 
   const clearAll = () => {
-    setSearch('')
     setPage(1)
     if (practiceFilter !== undefined) setPractice(null)
   }
@@ -143,21 +122,7 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
         actions={newVisit}
       />
 
-      <FilterBar
-        search={
-          <SearchInput
-            aria-label="Search by patient, case or procedure code"
-            placeholder="Search by patient, case or procedure code…"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value)
-              setPage(1)
-            }}
-            autoComplete="off"
-          />
-        }
-        {...(filtered ? { onReset: clearAll } : {})}
-      >
+      <FilterBar {...(filtered ? { onReset: clearAll } : {})}>
         <PracticeSelect
           aria-label="Filter by practice"
           value={practiceFilter === undefined ? null : String(practiceFilter)}
@@ -176,19 +141,16 @@ export function VisitsScreen({ practiceFilter }: { practiceFilter: number | unde
         loading={visits.isPending || !refs.ready}
         error={visits.isError}
         onRetry={() => void visits.refetch()}
-        sort={sort}
-        onSortChange={(next) => {
-          setSort(next)
-          setPage(1)
-        }}
         rowLink={(visit) => ({ to: '/visits/$visitId', params: { visitId: String(visit.id) } })}
+        // A row opens the visit; "View visit" at its end says so, as on Patients.
+        openHint="View visit"
         empty={
           filtered ? (
             <EmptyState
               icon={<CalendarCheck size={20} />}
               title="No visits match"
-              description="Try a different search, or show every practice."
-              action={<Button onClick={clearAll}>Clear search and filters</Button>}
+              description="Show every practice to see them all."
+              action={<Button onClick={clearAll}>Show every practice</Button>}
             />
           ) : (
             <EmptyState

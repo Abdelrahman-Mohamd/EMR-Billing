@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Plus, UserRound } from 'lucide-react'
 import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { RowActionButton, StatusChangeDialog, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
@@ -45,7 +45,6 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
   const [deleting, setDeleting] = useState<ReferringPhysician | null>(null)
   const setActive = useSetReferringPhysicianActive()
   const remove = useDeleteReferringPhysician()
-  const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
 
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
   const filter = practiceFilter === undefined ? null : String(practiceFilter)
@@ -56,19 +55,15 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
       replace: true,
     })
 
-  const rows = (physicians.data ?? [])
-    .filter((physician) => practiceFilter === undefined || physician.practiceId === practiceFilter)
-    .sort((a, b) => {
-      const order = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-      return sort.direction === 'asc' ? order : -order
-    })
+  const rows = (physicians.data ?? []).filter(
+    (physician) => practiceFilter === undefined || physician.practiceId === practiceFilter,
+  )
 
   const columns: ReadonlyArray<Column<ReferringPhysician>> = [
     {
       key: 'name',
       header: 'Physician',
       primary: true,
-      sortable: true,
       cell: (physician) => <span className="block break-words">{physician.name}</span>,
     },
     {
@@ -178,8 +173,6 @@ export function ReferringPhysiciansScreen({ practiceFilter }: { practiceFilter: 
         loading={physicians.isPending}
         error={physicians.isError}
         onRetry={() => void physicians.refetch()}
-        sort={sort}
-        onSortChange={setSort}
         empty={
           filter === null ? (
             <EmptyState

@@ -30,8 +30,6 @@ import { Route as AppAdminRolesRouteImport } from './routes/_app/admin/roles'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppDevUiRouteImport } from './routes/_app/dev.ui'
 import { Route as AppExceptionsIndexRouteImport } from './routes/_app/exceptions/index'
-import { Route as AppExceptionsIncompleteRouteImport } from './routes/_app/exceptions/incomplete'
-import { Route as AppExceptionsResolvedRouteImport } from './routes/_app/exceptions/resolved'
 import { Route as AppPatientsIndexRouteImport } from './routes/_app/patients/index'
 import { Route as AppPatientsPatientIdRouteImport } from './routes/_app/patients/$patientId'
 import { Route as AppSetupIndexRouteImport } from './routes/_app/setup/index'
@@ -150,16 +148,6 @@ const AppExceptionsIndexRoute = AppExceptionsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppExceptionsRoute,
 } as any)
-const AppExceptionsIncompleteRoute = AppExceptionsIncompleteRouteImport.update({
-  id: '/incomplete',
-  path: '/incomplete',
-  getParentRoute: () => AppExceptionsRoute,
-} as any)
-const AppExceptionsResolvedRoute = AppExceptionsResolvedRouteImport.update({
-  id: '/resolved',
-  path: '/resolved',
-  getParentRoute: () => AppExceptionsRoute,
-} as any)
 const AppPatientsIndexRoute = AppPatientsIndexRouteImport.update({
   id: '/patients/',
   path: '/patients/',
@@ -242,8 +230,6 @@ export interface FileRoutesByFullPath {
   '/admin/roles': typeof AppAdminRolesRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/dev/ui': typeof AppDevUiRoute
-  '/exceptions/incomplete': typeof AppExceptionsIncompleteRoute
-  '/exceptions/resolved': typeof AppExceptionsResolvedRoute
   '/patients/$patientId': typeof AppPatientsPatientIdRoute
   '/setup/fee-schedules': typeof AppSetupFeeSchedulesRoute
   '/setup/insurance-classes': typeof AppSetupInsuranceClassesRoute
@@ -274,8 +260,6 @@ export interface FileRoutesByTo {
   '/admin/roles': typeof AppAdminRolesRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/dev/ui': typeof AppDevUiRoute
-  '/exceptions/incomplete': typeof AppExceptionsIncompleteRoute
-  '/exceptions/resolved': typeof AppExceptionsResolvedRoute
   '/patients/$patientId': typeof AppPatientsPatientIdRoute
   '/setup/fee-schedules': typeof AppSetupFeeSchedulesRoute
   '/setup/insurance-classes': typeof AppSetupInsuranceClassesRoute
@@ -312,8 +296,6 @@ export interface FileRoutesById {
   '/_app/admin/roles': typeof AppAdminRolesRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/dev/ui': typeof AppDevUiRoute
-  '/_app/exceptions/incomplete': typeof AppExceptionsIncompleteRoute
-  '/_app/exceptions/resolved': typeof AppExceptionsResolvedRoute
   '/_app/patients/$patientId': typeof AppPatientsPatientIdRoute
   '/_app/setup/fee-schedules': typeof AppSetupFeeSchedulesRoute
   '/_app/setup/insurance-classes': typeof AppSetupInsuranceClassesRoute
@@ -350,8 +332,6 @@ export interface FileRouteTypes {
     | '/admin/roles'
     | '/admin/users'
     | '/dev/ui'
-    | '/exceptions/incomplete'
-    | '/exceptions/resolved'
     | '/patients/$patientId'
     | '/setup/fee-schedules'
     | '/setup/insurance-classes'
@@ -382,8 +362,6 @@ export interface FileRouteTypes {
     | '/admin/roles'
     | '/admin/users'
     | '/dev/ui'
-    | '/exceptions/incomplete'
-    | '/exceptions/resolved'
     | '/patients/$patientId'
     | '/setup/fee-schedules'
     | '/setup/insurance-classes'
@@ -419,8 +397,6 @@ export interface FileRouteTypes {
     | '/_app/admin/roles'
     | '/_app/admin/users'
     | '/_app/dev/ui'
-    | '/_app/exceptions/incomplete'
-    | '/_app/exceptions/resolved'
     | '/_app/patients/$patientId'
     | '/_app/setup/fee-schedules'
     | '/_app/setup/insurance-classes'
@@ -592,20 +568,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppExceptionsIndexRouteImport
       parentRoute: typeof AppExceptionsRoute
     }
-    '/_app/exceptions/incomplete': {
-      id: '/_app/exceptions/incomplete'
-      path: '/incomplete'
-      fullPath: '/exceptions/incomplete'
-      preLoaderRoute: typeof AppExceptionsIncompleteRouteImport
-      parentRoute: typeof AppExceptionsRoute
-    }
-    '/_app/exceptions/resolved': {
-      id: '/_app/exceptions/resolved'
-      path: '/resolved'
-      fullPath: '/exceptions/resolved'
-      preLoaderRoute: typeof AppExceptionsResolvedRouteImport
-      parentRoute: typeof AppExceptionsRoute
-    }
     '/_app/patients/': {
       id: '/_app/patients/'
       path: '/patients'
@@ -724,14 +686,10 @@ const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
 )
 
 interface AppExceptionsRouteChildren {
-  AppExceptionsIncompleteRoute: typeof AppExceptionsIncompleteRoute
-  AppExceptionsResolvedRoute: typeof AppExceptionsResolvedRoute
   AppExceptionsIndexRoute: typeof AppExceptionsIndexRoute
 }
 
 const AppExceptionsRouteChildren: AppExceptionsRouteChildren = {
-  AppExceptionsIncompleteRoute: AppExceptionsIncompleteRoute,
-  AppExceptionsResolvedRoute: AppExceptionsResolvedRoute,
   AppExceptionsIndexRoute: AppExceptionsIndexRoute,
 }
 

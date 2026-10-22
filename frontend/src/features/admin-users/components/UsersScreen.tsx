@@ -6,7 +6,9 @@ import { ConfirmDialog } from '@/components/ui/Dialog'
 import { Pagination } from '@/components/ui/Pagination'
 import { RowActionButton, actionsColumn, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
-import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
+import { SearchInput } from '@/components/ui/Input'
+import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
+import { useDebouncedValue } from '@/lib/hooks/use-debounced-value'
 import { useCurrentUser } from '@/features/auth'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
@@ -26,9 +28,10 @@ type Open =
  * after a confirmation, as the prototype's row action does; Delete asks first
  * too. No password is in the list data at all.
  *
- * The list is the server's: 15 a page, in the server's order, with a pager —
- * no sort or search parameter is part of the contract, so the name column
- * does not sort (sorting one page would misstate the whole list).
+ * The list is the server's: 15 a page, in the server's order, with a pager;
+ * the search is the server's too (`search`, the name or email in part; asked
+ * once typing pauses, from page 1). The server takes no sort, so the name
+ * column does not sort (sorting one page would misstate the whole list).
  *
  * The signed-in user's own row offers no Delete (`GET /auth/me` says who that
  * is). The server decides what anyone may do regardless.
@@ -38,7 +41,9 @@ type Open =
  */
 export function UsersScreen() {
   const [page, setPage] = useState(1)
-  const users = useUsersPage(page)
+  const [search, setSearch] = useState('')
+  const query = useDebouncedValue(search.trim())
+  const users = useUsersPage(page, query)
   const me = useCurrentUser()
   const remove = useDeleteUser()
   const [open, setOpen] = useState<Open | null>(null)
@@ -125,6 +130,22 @@ export function UsersScreen() {
         actions={newUser('New user')}
       />
 
+      <FilterBar
+        search={
+          <SearchInput
+            aria-label="Search users by name or email"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setPage(1)
+            }}
+            autoComplete="off"
+          />
+        }
+        {...(search === '' ? {} : { onReset: () => setSearch('') })}
+      />
+
       <DataTable
         caption="Users"
         columns={columns}
@@ -134,12 +155,21 @@ export function UsersScreen() {
         error={users.isError}
         onRetry={() => void users.refetch()}
         empty={
-          <EmptyState
-            icon={<Users size={20} />}
-            title="No users yet"
-            description="Create the first person who can sign in to billing."
-            action={newUser('New user')}
-          />
+          query !== '' ? (
+            <EmptyState
+              icon={<Users size={20} />}
+              title="No users match"
+              description="Try another name or email."
+              action={<Button onClick={() => setSearch('')}>Clear search</Button>}
+            />
+          ) : (
+            <EmptyState
+              icon={<Users size={20} />}
+              title="No users yet"
+              description="Create the first person who can sign in to billing."
+              action={newUser('New user')}
+            />
+          )
         }
         footer={
           total > 0 ? (

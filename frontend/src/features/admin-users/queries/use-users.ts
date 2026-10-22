@@ -5,15 +5,15 @@ import type { NewUserFormValues, User, UserFormValues, UserPage } from '../schem
 /** Every key for this domain, built in one place (docs/FRONTEND_ARCHITECTURE.md §5). */
 export const userKeys = {
   all: ['users'] as const,
-  page: (page: number) => [...userKeys.all, 'page', page] as const,
+  page: (page: number, search = '') => [...userKeys.all, 'page', page, search] as const,
   detail: (id: number) => [...userKeys.all, 'detail', id] as const,
 }
 
 /** One page of users, as the server pages them. The previous page stays on screen while the next loads. */
-export function useUsersPage(page: number) {
+export function useUsersPage(page: number, search = '') {
   return useQuery({
-    queryKey: userKeys.page(page),
-    queryFn: ({ signal }) => listUsers(page, signal),
+    queryKey: userKeys.page(page, search),
+    queryFn: ({ signal }) => listUsers(page, search, signal),
     placeholderData: keepPreviousData,
   })
 }

@@ -1,18 +1,24 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { z } from 'zod'
-import { EXCEPTION_LEVELS } from '@/features/exceptions'
 
 /**
  * `?practice=<id>`: the practice in view, as on the other practice-scoped
- * screens. `?level=<level>`: open a list on one level (the prototype's deep
- * link). Opaque values, no PHI.
+ * screens. `?type=` and `?reason=`: the queue's type (`patient`, `case`,
+ * `charge`) and reason (`zip_state_mismatch`) — the server's codes. Opaque
+ * values, no PHI.
  */
+const code = z
+  .string()
+  .regex(/^[a-z_]{1,64}$/)
+  .optional()
+  .catch(undefined)
 const searchSchema = z.object({
   practice: z.coerce.number().int().positive().optional().catch(undefined),
-  level: z.enum(EXCEPTION_LEVELS).optional().catch(undefined),
+  type: code,
+  reason: code,
 })
 
-/** Exceptions: Billing exceptions, Incomplete profiles and Resolved, each its own URL. */
+/** Exceptions: the server's billing exceptions, by type and reason. */
 export const Route = createFileRoute('/_app/exceptions')({
   validateSearch: searchSchema,
   component: Outlet,

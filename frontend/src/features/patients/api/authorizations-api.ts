@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   authorizationFormFieldFor,
   authorizationPageResponseSchema,
@@ -12,8 +13,8 @@ import {
 /**
  * Authorizations' only door to a server. **Live** (contract given
  * 2026-10-09), carrying the session's token: `GET /authorizations?page=N`,
- * `POST /authorizations`, `PUT /authorizations/{id}` and `DELETE`. Only `page`
- * is sent to the list. Writes resolve with the server's message. Shapes in
+ * `POST /authorizations`, `PUT /authorizations/{id}` and `DELETE`. The list is asked for `page` and
+ * `per_page=100` (lib/api/pagination.ts). Writes resolve with the server's message. Shapes in
  * schemas/authorization.ts.
  */
 export interface AuthorizationsApi {
@@ -34,7 +35,7 @@ const live: AuthorizationsApi = {
     request({
       method: 'GET',
       path: '/authorizations',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: authorizationPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

@@ -5,18 +5,41 @@ import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/rea
 import { routeTree } from '@/routeTree.gen'
 import { useToastStore } from '@/stores/toast-store'
 import { createTestQueryClient, renderWithProviders } from '@/test/render'
-import type { Insurance, InsuranceClass } from '@/features/admin-insurances'
+import { ApiError } from '@/lib/api/api-error'
+import type { Insurance } from '@/features/admin-insurances'
 import type { Practice } from '@/features/admin-practices'
 import type { ProcedureCode } from '@/features/admin-procedure-codes'
-import { resetCodingRules } from '../data/coding-rule-store'
+import {
+  createCodingRule,
+  deleteCodingRule,
+  listCodingRules,
+  previewCodingRule,
+  setCodingRuleActive,
+  updateCodingRule,
+} from '../api/coding-rules-api'
 import type { CodingRule } from '../model/coding-rule'
 
-// Coding rules are frontend only: their in-tab store starts from a known list.
-// The practices, insurances, classes and procedure codes are other features'
+// The coding rules are the server's: faked at their api, answering as it does.
+// The practices, insurances and procedure codes are other features'
 // integration points: faked by path, never imported (lint forbids it).
+vi.mock('../api/coding-rules-api', () => ({
+  listCodingRules: vi.fn(),
+  createCodingRule: vi.fn(),
+  updateCodingRule: vi.fn(),
+  setCodingRuleActive: vi.fn(),
+  deleteCodingRule: vi.fn(),
+  previewCodingRule: vi.fn(),
+}))
+const previewMock = vi.mocked(previewCodingRule)
+const listMock = vi.mocked(listCodingRules)
+const createMock = vi.mocked(createCodingRule)
+const updateMock = vi.mocked(updateCodingRule)
+const setActiveMock = vi.mocked(setCodingRuleActive)
+const deleteMock = vi.mocked(deleteCodingRule)
+let rules: CodingRule[]
+
 const practicesMock = vi.hoisted(() => vi.fn<() => Promise<Practice[]>>())
 const insurancesMock = vi.hoisted(() => vi.fn<() => Promise<Insurance[]>>())
-const classesMock = vi.hoisted(() => vi.fn<() => Promise<InsuranceClass[]>>())
 const codesMock = vi.hoisted(() => vi.fn<() => ProcedureCode[]>())
 vi.mock('@/features/admin-practices/api/practices-api', () => ({
   listPractices: practicesMock,
@@ -29,11 +52,6 @@ vi.mock('@/features/admin-insurances/api/insurances-api', () => ({
   listInsurances: insurancesMock,
   createInsurance: vi.fn(),
   updateInsurance: vi.fn(),
-}))
-vi.mock('@/features/admin-insurances/api/insurance-classes-api', () => ({
-  listInsuranceClasses: classesMock,
-  createInsuranceClass: vi.fn(),
-  updateInsuranceClass: vi.fn(),
 }))
 vi.mock('@/features/admin-procedure-codes/api/procedure-codes-api', () => ({
   listProcedureCodes: () => Promise.resolve(codesMock()),
@@ -53,68 +71,130 @@ const practice = (id: number, name: string): Practice => ({
   locations: [],
 })
 // Only what coding rules read; the rest of an insurance does not matter here.
-const insurance = (id: number, practiceId: number, insuranceClassId: number, name: string) =>
-  ({ id, practiceId, insuranceClassId, code: id, name, isActive: true }) as Insurance
-const insuranceClass = (id: number, practiceId: number, name: string, isActive = true) =>
-  ({ id, practiceId, code: `C${id}`, name, isActive }) as InsuranceClass
-const code = (value: string, description: string) => ({ code: value, description }) as ProcedureCode
+const insurance = (id: number, practiceId: number, name: string) =>
+  ({ id, practiceId, insuranceClassId: 1, code: id, name, isActive: true }) as Insurance
+const INSURANCES = [
+  insurance(1, 1, 'Medicare Part B'),
+  insurance(4, 1, 'UnitedHealthcare'),
+  insurance(9, 2, 'Northgate Medicare'),
+]
+const code = (id: number, value: string, description: string) =>
+  ({ id, code: value, description, isActive: true }) as ProcedureCode
+const CODES = [
+  code(10, '97010', 'Hot or cold packs'),
+  code(14, '97014', 'Electrical stimulation, unattended'),
+  code(35, '97035', 'Ultrasound therapy'),
+  code(283, 'G0283', 'Electrical stimulation, unattended (Medicare)'),
+]
+const codeOf = (id: number | null) => CODES.find((item) => item.id === id)?.code ?? ''
 
-const rule = (overrides: Partial<CodingRule> & Pick<CodingRule, 'id'>): CodingRule => ({
-  type: 'Drop',
-  fromCode: '97010',
-  toCode: '',
-  scope: { kind: 'default' },
-  note: '',
-  isActive: true,
-  ...overrides,
-})
+const rule = (
+  overrides: Partial<CodingRule> & Pick<CodingRule, 'id' | 'practiceId' | 'fromCodeId'>,
+): CodingRule => {
+  const scope = overrides.scope ?? { kind: 'default' }
+  return {
+    type: 'Drop',
+    fromCode: codeOf(overrides.fromCodeId),
+    toCodeId: null,
+    toCode: codeOf(overrides.toCodeId ?? null),
+    scope,
+    insuranceName:
+      scope.kind === 'insurance'
+        ? (INSURANCES.find((item) => item.id === scope.insuranceId)?.name ?? '')
+        : '',
+    note: '',
+    isActive: true,
+    ...overrides,
+  }
+}
 
 beforeEach(() => {
   practicesMock
     .mockReset()
     .mockResolvedValue([practice(1, 'Harborline Physical Therapy'), practice(2, 'Northgate')])
-  insurancesMock
-    .mockReset()
-    .mockResolvedValue([
-      insurance(1, 1, 1, 'Medicare Part B'),
-      insurance(4, 1, 3, 'UnitedHealthcare'),
-      insurance(9, 2, 7, 'Northgate Medicare'),
-    ])
-  classesMock
-    .mockReset()
-    .mockResolvedValue([
-      insuranceClass(1, 1, 'Medicare'),
-      insuranceClass(3, 1, 'Commercial'),
-      insuranceClass(5, 1, 'Retired class', false),
-      insuranceClass(7, 2, 'Northgate Medicare'),
-    ])
-  codesMock
-    .mockReset()
-    .mockReturnValue([
-      code('97010', 'Hot or cold packs'),
-      code('97014', 'Electrical stimulation, unattended'),
-      code('97035', 'Ultrasound therapy'),
-      code('G0283', 'Electrical stimulation, unattended (Medicare)'),
-    ])
-  resetCodingRules([
+  insurancesMock.mockReset().mockResolvedValue(INSURANCES)
+  codesMock.mockReset().mockReturnValue(CODES)
+  rules = [
     rule({
-      id: 'r1',
+      id: 1,
+      practiceId: 1,
       type: 'Replace',
-      fromCode: '97014',
-      toCode: 'G0283',
+      fromCodeId: 14,
+      toCodeId: 283,
       scope: { kind: 'insurance', insuranceId: 1 },
       note: 'Medicare requires G0283 for unattended e-stim.',
     }),
-    rule({ id: 'r2', note: 'Hot/cold packs are bundled for most payers.' }),
+    rule({ id: 2, practiceId: 1, fromCodeId: 10, note: 'Hot/cold packs are bundled for most payers.' }),
     rule({
-      id: 'r3',
+      id: 3,
+      practiceId: 2,
       type: 'Replace',
-      fromCode: '97014',
-      toCode: 'G0283',
+      fromCodeId: 14,
+      toCodeId: 283,
       scope: { kind: 'insurance', insuranceId: 9 },
     }),
-    rule({ id: 'r4', fromCode: '97035', scope: { kind: 'insurance', insuranceId: 4 }, isActive: false }),
-  ])
+    rule({
+      id: 4,
+      practiceId: 1,
+      fromCodeId: 35,
+      scope: { kind: 'insurance', insuranceId: 4 },
+      isActive: false,
+    }),
+  ]
+  listMock
+    .mockReset()
+    .mockImplementation((practiceId) =>
+      Promise.resolve(structuredClone(rules.filter((item) => item.practiceId === practiceId))),
+    )
+  // A rule as the server saves it: its codes and insurance named.
+  const saved = (id: number, practiceId: number, payload: Parameters<typeof updateCodingRule>[1]) =>
+    rule({
+      id,
+      practiceId,
+      type: payload.action === 'replace' ? 'Replace' : 'Drop',
+      fromCodeId: payload.procedure_code_id,
+      toCodeId: payload.replacement_code_id,
+      scope:
+        payload.insurance_id === null
+          ? { kind: 'default' }
+          : { kind: 'insurance', insuranceId: payload.insurance_id },
+      note: payload.notes ?? '',
+    })
+  createMock.mockReset().mockImplementation(({ practice_id: practiceId, ...payload }) => {
+    rules = [...rules, saved(10 + rules.length, practiceId, payload)]
+    return Promise.resolve('Coding rule created successfully')
+  })
+  updateMock.mockReset().mockImplementation((id, payload) => {
+    rules = rules.map((item) =>
+      item.id === id ? { ...saved(id, item.practiceId, payload), isActive: item.isActive } : item,
+    )
+    return Promise.resolve('Coding rule updated successfully')
+  })
+  setActiveMock.mockReset().mockImplementation((id, isActive) => {
+    rules = rules.map((item) => (item.id === id ? { ...item, isActive } : item))
+    return Promise.resolve('Coding rule updated successfully')
+  })
+  previewMock.mockReset().mockImplementation(({ insuranceId, procedureCodeId }) => {
+    const acting = rules.find(
+      (item) =>
+        item.isActive &&
+        item.fromCodeId === procedureCodeId &&
+        item.scope.kind === 'insurance' &&
+        item.scope.insuranceId === insuranceId,
+    )
+    return Promise.resolve(
+      acting === undefined
+        ? { message: 'No rule applies: the code is billed as entered', rule: null }
+        : {
+            message: `${acting.type} ${acting.fromCode}${acting.type === 'Replace' ? ` with ${acting.toCode}` : ''} for ${acting.insuranceName}`,
+            rule: structuredClone(acting),
+          },
+    )
+  })
+  deleteMock.mockReset().mockImplementation((id) => {
+    rules = rules.filter((item) => item.id !== id)
+    return Promise.resolve('Coding rule deleted successfully')
+  })
 })
 afterEach(() => {
   useToastStore.getState().clear()
@@ -161,11 +241,12 @@ describe('Admin → Coding rules', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Replace and Drop rules run during scrubbing; payer-specific rules override default rules.',
+        'Replace or drop a CPT / HCPCS code for an insurance: the rule changes a visit’s charge lines when it is released.',
       ),
     ).toBeVisible()
     const rules = await table()
     // Northgate's rule belongs to another practice.
+    expect(listMock).toHaveBeenCalledWith(1, expect.anything())
     expect(dataRows(rules)).toHaveLength(3)
     const medicare = rowOf(rules, 'Medicare requires')
     expect(medicare).toHaveTextContent('97014 → G0283')
@@ -174,10 +255,9 @@ describe('Admin → Coding rules', () => {
     expect(bundled).toHaveTextContent('97010 → dropped')
     expect(bundled).toHaveTextContent('Default (all payers)')
     expect(within(rowOf(rules, '97035')).getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+    // When rules run is the header's to say; the list's footer counts them.
     expect(
-      screen.getByText(
-        'Rules run on fresh submissions, resubmissions and corrected claims, and change the billing record itself.',
-      ),
+      screen.getByText('3 rules · active rules change a visit’s charge lines when it is released'),
     ).toBeVisible()
     expect(screen.queryByText(/backend|not saved|temporary|demo|coming soon|mock/i)).not.toBeInTheDocument()
   })
@@ -189,7 +269,9 @@ describe('Admin → Coding rules', () => {
     await userEvent.click(await screen.findByRole('option', { name: 'Northgate' }))
     const rules = await table('Northgate')
     expect(router.state.location.search).toEqual({ practice: 2 })
-    expect(dataRows(rules)).toHaveLength(2)
+    // Asked of the server by practice: a default rule is its practice's own.
+    expect(listMock).toHaveBeenLastCalledWith(2, expect.anything())
+    expect(dataRows(rules)).toHaveLength(1)
     expect(rowOf(rules, 'G0283')).toHaveTextContent('Northgate Medicare only')
   })
 
@@ -235,11 +317,12 @@ describe('Admin → Coding rules', () => {
       ),
     )
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'))
-    // Each change says so.
-    expect(useToastStore.getState().toasts.map((toast) => [toast.tone, toast.title])).toEqual([
-      ['success', 'Rule Drop 97010 deactivated'],
-      ['success', 'Rule Drop 97010 activated'],
+    expect(setActiveMock.mock.calls).toEqual([
+      [2, false],
+      [2, true],
     ])
+    // Each change says so, in the server's words.
+    expect(useToastStore.getState().toasts.map((toast) => toast.tone)).toEqual(['success', 'success'])
   })
 
   it('creates a Replace rule for an insurance, with the prototype’s checks', async () => {
@@ -254,14 +337,15 @@ describe('Admin → Coding rules', () => {
       'DropRemove the code from the claim.',
     ])
     await userEvent.keyboard('{Escape}')
-    // Which rule wins is explained behind the field's info icon, not under it.
     expect(within(dialog).getByRole('button', { name: 'About Applies to' })).toHaveAccessibleDescription(
-      'A payer rule wins over its class rule, and a class rule wins over the default.',
+      'Each rule belongs to one insurance of the practice.',
     )
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save rule' }))
     expect(await within(dialog).findByText('Select a code.')).toBeVisible()
     expect(within(dialog).getByText('Select the code to replace it with.')).toBeVisible()
+    // Every rule is an insurance's (since 2026-10-22): none is picked for you.
+    expect(within(dialog).getByText('Select the insurance it applies to.')).toBeVisible()
 
     await pick(dialog, /^code/i, /^97014/)
     await pick(dialog, /replace with/i, /^97014/)
@@ -269,20 +353,25 @@ describe('Admin → Coding rules', () => {
     expect(await within(dialog).findByText('Please choose a different code.')).toBeVisible()
 
     await pick(dialog, /replace with/i, /^G0283/)
-    // Applies to: the default, the practice's active classes, then its insurances.
+    // Applies to: the practice's insurances, and nothing else — no default, no class.
     await userEvent.click(within(dialog).getByRole('combobox', { name: /applies to/i }))
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Default — all payers',
-      'Class — Medicare',
-      'Class — Commercial',
-      'Medicare Part B only (overrides default)',
-      'UnitedHealthcare only (overrides default)',
+      'Medicare Part B',
+      'UnitedHealthcare',
     ])
-    await userEvent.click(screen.getByRole('option', { name: 'UnitedHealthcare only (overrides default)' }))
+    await userEvent.click(screen.getByRole('option', { name: 'UnitedHealthcare' }))
     await userEvent.type(within(dialog).getByRole('textbox', { name: /why/i }), 'UHC contract')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save rule' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(createMock).toHaveBeenCalledWith({
+      practice_id: 1,
+      action: 'replace',
+      procedure_code_id: 14,
+      replacement_code_id: 283,
+      insurance_id: 4,
+      notes: 'UHC contract',
+    })
     const added = rowOf(await table(), 'UHC contract')
     expect(added).toHaveTextContent('97014 → G0283')
     expect(added).toHaveTextContent('UnitedHealthcare only')
@@ -290,13 +379,13 @@ describe('Admin → Coding rules', () => {
     expect(useToastStore.getState().toasts).toEqual([
       expect.objectContaining({
         tone: 'success',
-        title: 'Rule saved',
-        description: 'It runs on the next scrub.',
+        title: 'Coding rule created successfully',
+        description: 'It runs when a visit is released.',
       }),
     ])
   })
 
-  it('creates a Drop rule for a class: no replacement needed', async () => {
+  it('creates a Drop rule: no replacement needed', async () => {
     renderAt()
     const dialog = await openNew()
     await pick(dialog, /rule type/i, /^Drop/)
@@ -305,17 +394,46 @@ describe('Admin → Coding rules', () => {
       'true',
     )
     await pick(dialog, /^code/i, /^97035/)
-    await pick(dialog, /applies to/i, 'Class — Commercial')
+    await pick(dialog, /applies to/i, 'Medicare Part B')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save rule' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    const rules = await table()
-    const added = dataRows(rules).at(-1) as HTMLElement
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'drop',
+        procedure_code_id: 35,
+        replacement_code_id: null,
+        insurance_id: 1,
+      }),
+    )
+    const list = await table()
+    await waitFor(() => expect(dataRows(list)).toHaveLength(4))
+    const added = dataRows(list).at(-1) as HTMLElement
     expect(added).toHaveTextContent('97035 → dropped')
-    expect(added).toHaveTextContent('Commercial class')
+    expect(added).toHaveTextContent('Medicare Part B only')
   })
 
-  it('edits a rule', async () => {
+  it('shows the server’s refusal on the field it names', async () => {
+    createMock.mockRejectedValueOnce(
+      new ApiError({
+        kind: 'validation',
+        message: 'This payer already has a rule for this code.',
+        serverMessage: 'This payer already has a rule for this code.',
+        status: 422,
+        fieldErrors: [{ path: 'fromCode', message: 'This payer already has a rule for this code.' }],
+      }),
+    )
+    renderAt()
+    const dialog = await openNew()
+    await pick(dialog, /rule type/i, /^Drop/)
+    await pick(dialog, /^code/i, /^97014/)
+    await pick(dialog, /applies to/i, 'Medicare Part B')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save rule' }))
+    expect(await within(dialog).findByText('This payer already has a rule for this code.')).toBeVisible()
+    expect(screen.getByRole('dialog', { name: 'New coding rule' })).toBeInTheDocument()
+  })
+
+  it('edits a rule — one from before, with no insurance, is given one', async () => {
     renderAt()
     const rules = await table()
     await userEvent.click(
@@ -326,11 +444,20 @@ describe('Admin → Coding rules', () => {
     expect(within(dialog).getByRole('textbox', { name: /why/i })).toHaveValue(
       'Hot/cold packs are bundled for most payers.',
     )
-    await pick(dialog, /applies to/i, 'Class — Medicare')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save rule' }))
+    expect(await within(dialog).findByText('Select the insurance it applies to.')).toBeVisible()
+    await pick(dialog, /applies to/i, 'Medicare Part B')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save rule' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(rowOf(rules, 'Hot/cold')).toHaveTextContent('Medicare class')
+    expect(updateMock).toHaveBeenCalledWith(2, {
+      action: 'drop',
+      procedure_code_id: 10,
+      replacement_code_id: null,
+      insurance_id: 1,
+      notes: 'Hot/cold packs are bundled for most payers.',
+    })
+    await waitFor(() => expect(rowOf(rules, 'Hot/cold')).toHaveTextContent('Medicare Part B only'))
   })
 
   it('deletes a rule after asking', async () => {
@@ -344,9 +471,13 @@ describe('Admin → Coding rules', () => {
     await userEvent.click(within(confirm).getByRole('button', { name: 'Delete rule' }))
     await waitFor(() => expect(within(rules).queryByText(/Hot\/cold/)).not.toBeInTheDocument())
     expect(dataRows(rules)).toHaveLength(2)
+    expect(deleteMock).toHaveBeenCalledWith(2)
+    expect(useToastStore.getState().toasts).toEqual([
+      expect.objectContaining({ tone: 'success', title: 'Coding rule deleted successfully' }),
+    ])
   })
 
-  it('tests the rules: codes picked from the list, what each becomes and why, and the claim after', async () => {
+  it('tests the rules on the server: each code’s answer in its words, and the claim after', async () => {
     renderAt()
     await table()
     const tester = await openTester()
@@ -368,61 +499,77 @@ describe('Admin → Coding rules', () => {
 
     const items = () =>
       within(within(tester).getByRole('list', { name: 'What the rules do' })).getAllByRole('listitem')
-    expect(items()).toHaveLength(3)
-    // In the list's order, as the chips show them. The UnitedHealthcare rule for
-    // 97035 is paused, and does not apply to Medicare anyway.
-    expect(items()[0]).toHaveTextContent('97010 → becomes droppedDropped · Default (all payers)')
-    expect(items()[1]).toHaveTextContent(
-      '97014 → becomes G0283Replaced · Medicare Part B onlyMedicare requires G0283 for unattended e-stim.',
+    // In the list's order, as the chips show them; every answer is the server's.
+    await waitFor(() =>
+      expect(items()[0]).toHaveTextContent('No rule applies: the code is billed as entered'),
     )
-    expect(items()[2]).toHaveTextContent('97035No rule applies')
-    expect(tester).toHaveTextContent('Claim after the rulesG0283 · 970352 of 3 codes changed.')
+    expect(items().map((item) => item.textContent)).toEqual([
+      '97010No rule applies: the code is billed as entered',
+      '97014 →  becomes G0283Replace 97014 with G0283 for Medicare Part BMedicare requires G0283 for unattended e-stim.',
+      '97035No rule applies: the code is billed as entered',
+    ])
+    expect(previewMock).toHaveBeenCalledWith(
+      { practiceId: 1, insuranceId: 1, procedureCodeId: 14 },
+      expect.anything(),
+    )
+    expect(tester).toHaveTextContent('Claim after the rules97010 · G0283 · 970351 of 3 codes changed.')
 
+    // Another payer: asked again. Its 97035 rule is paused, so nothing acts.
     await userEvent.click(within(tester).getByRole('combobox', { name: 'Payer' }))
     await userEvent.click(await screen.findByRole('option', { name: 'UnitedHealthcare' }))
-    expect(items()[0]).toHaveTextContent('97010 → becomes droppedDropped · Default (all payers)')
-    expect(items()[1]).toHaveTextContent('97014No rule applies')
-    expect(items()[2]).toHaveTextContent('97035No rule applies')
-    expect(tester).toHaveTextContent('Claim after the rules97014 · 970351 of 3 codes changed.')
+    await waitFor(() =>
+      expect(previewMock).toHaveBeenCalledWith(
+        { practiceId: 1, insuranceId: 4, procedureCodeId: 35 },
+        expect.anything(),
+      ),
+    )
+    await waitFor(() =>
+      expect(tester).toHaveTextContent('Claim after the rules97010 · 97014 · 97035No code changed.'),
+    )
 
     await userEvent.click(within(tester).getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
-  it('says when a payer rule wins over the default rule for the same code', async () => {
-    resetCodingRules([
-      rule({ id: 'd', fromCode: '97014' }),
-      rule({
-        id: 'p',
-        type: 'Replace',
-        fromCode: '97014',
-        toCode: 'G0283',
-        scope: { kind: 'insurance', insuranceId: 1 },
-      }),
-    ])
-    renderAt()
-    await table()
-    const tester = await openTester()
-    await userEvent.click(within(tester).getByRole('combobox', { name: 'Codes on the claim' }))
-    await userEvent.click(await screen.findByRole('option', { name: /^97014/ }))
-    await userEvent.keyboard('{Escape}')
-    expect(within(tester).getByRole('listitem')).toHaveTextContent(
-      'Replaced · Medicare Part B only · overrides the default rule',
-    )
-  })
-
   it('says what is needed first when there are no procedure codes', async () => {
     codesMock.mockReturnValue([])
-    resetCodingRules([])
+    rules = []
     renderAt()
     expect(await screen.findByText('No coding rules yet', undefined, { timeout: 5000 })).toBeVisible()
-    expect(screen.getByText(/Rules act on procedure codes, so add those first\./)).toBeVisible()
+    expect(screen.getByText('Rules act on procedure codes, and there are none yet.')).toBeVisible()
+    // The one next step, in the empty state itself.
+    expect(screen.getByRole('link', { name: 'Add a procedure code' })).toHaveAttribute(
+      'href',
+      '/setup/procedure-codes',
+    )
     await userEvent.click(screen.getByRole('button', { name: 'New rule' }))
     const dialog = screen.getByRole('dialog', { name: 'Cannot add a coding rule yet' })
     expect(within(dialog).getByRole('link', { name: 'Add a procedure code' })).toHaveAttribute(
       'href',
       '/setup/procedure-codes',
     )
+  })
+
+  it('says what a rule is when a practice has none, with New rule right there', async () => {
+    rules = []
+    renderAt()
+    expect(
+      await screen.findByText('No coding rules for Harborline Physical Therapy', undefined, {
+        timeout: 5000,
+      }),
+    ).toBeVisible()
+    expect(
+      screen.getByText(
+        'Rules are optional. A Replace rule swaps one code for another; a Drop rule removes it.',
+      ),
+    ).toBeVisible()
+    // Nothing to test yet; no stray note under the empty list.
+    expect(screen.getByRole('button', { name: 'Test the rules' })).toBeDisabled()
+    expect(screen.queryByText(/rules? ·/)).not.toBeInTheDocument()
+    const actions = screen.getAllByRole('button', { name: 'New rule' })
+    expect(actions).toHaveLength(2)
+    await userEvent.click(actions[1] as HTMLElement)
+    expect(screen.getByRole('dialog', { name: 'New coding rule' })).toBeInTheDocument()
   })
 
   it('says when there is no practice yet', async () => {

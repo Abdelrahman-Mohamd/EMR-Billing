@@ -123,14 +123,14 @@ describe('Setup → Insurance classes', () => {
     expect(screen.queryByRole('navigation', { name: 'Admin' })).not.toBeInTheDocument()
   })
 
-  it('lists classes by code with their rule defaults, insurance counts and status', async () => {
+  it('lists classes in the server’s order with their rule defaults, insurance counts and status', async () => {
     renderAt()
     const rows = within(await table()).getAllByRole('row')
-    const commercial = within(rows[1] as HTMLElement)
+    const commercial = within(rows[2] as HTMLElement)
     expect(commercial.getByText('Commercial')).toBeInTheDocument()
     expect(commercial.getByText('No assignment')).toBeInTheDocument()
     // Two insurances, as the class counts them.
-    const cells = within(rows[1] as HTMLElement).getAllByRole('cell')
+    const cells = within(rows[2] as HTMLElement).getAllByRole('cell')
     expect(cells.map((cell) => cell.textContent)).toContain('2')
     // Only what the backend sends: no "With overrides" count.
     expect(
@@ -138,16 +138,16 @@ describe('Setup → Insurance classes', () => {
         .getAllByRole('columnheader')
         .map((header) => header.textContent),
     ).not.toContain('With overrides')
-    const comp = within(rows[3] as HTMLElement)
+    const comp = within(rows[1] as HTMLElement)
     expect(comp.getByText('Auth required')).toBeInTheDocument()
     expect(comp.getByText('Injury date required')).toBeInTheDocument()
-    expect(within(rows[2] as HTMLElement).getByRole('switch', { name: /: active$/ })).not.toBeChecked()
+    expect(within(rows[3] as HTMLElement).getByRole('switch', { name: /: active$/ })).not.toBeChecked()
   })
 
   it('changes a class’s status from its row with the Active switch, after asking, changing only is_active', async () => {
     renderAt()
     const rows = within(await table()).getAllByRole('row')
-    await userEvent.click(within(rows[2] as HTMLElement).getByRole('switch', { name: /: active$/ }))
+    await userEvent.click(within(rows[3] as HTMLElement).getByRole('switch', { name: /: active$/ }))
     expect(setActiveMock).not.toHaveBeenCalled()
     // Asks first.
     await userEvent.click(
@@ -161,7 +161,7 @@ describe('Setup → Insurance classes', () => {
     await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith(3, true))
     expect(updateMock).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
-    expect(within(rows[2] as HTMLElement).getByRole('switch', { name: /: active$/ })).toBeChecked()
+    expect(within(rows[3] as HTMLElement).getByRole('switch', { name: /: active$/ })).toBeChecked()
     expect(useToastStore.getState().toasts).toEqual([
       expect.objectContaining({ tone: 'success', title: 'Insurance class updated successfully' }),
     ])

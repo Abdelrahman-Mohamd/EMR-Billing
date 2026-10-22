@@ -72,7 +72,22 @@ afterEach(() => {
 })
 
 describe('patients against the backend', () => {
-  it('reads every page of GET /patients — with nothing but the page in the URL', async () => {
+  it('asks the server to search the roster', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(200, {
+        success: true,
+        data: {
+          data: [summary(1)],
+          links: {},
+          meta: { current_page: 1, last_page: 1, per_page: 100, total: 1 },
+        },
+      }),
+    )
+    await listPatients('okonk')
+    expect(call(0).url).toBe(`${BASE}/patients?page=1&per_page=100&search=okonk`)
+  })
+
+  it('reads every page of GET /patients — with nothing but the page and its size in the URL', async () => {
     const page = (data: unknown[], current: number, last: number) => ({
       success: true,
       data: { data, links: {}, meta: { current_page: current, last_page: last, per_page: 15, total: 2 } },
@@ -82,8 +97,8 @@ describe('patients against the backend', () => {
       .mockResolvedValueOnce(json(200, page([summary(16)], 2, 2)))
     const all = await listPatients()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/patients?page=1`,
-      `${BASE}/patients?page=2`,
+      `${BASE}/patients?page=1&per_page=100`,
+      `${BASE}/patients?page=2&per_page=100`,
     ])
     expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
     expect(all.map((patient) => [patient.id, patient.billingId, patient.maskedSsn])).toEqual([

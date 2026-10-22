@@ -12,12 +12,21 @@ import { Notice } from '@/components/ui/Notice'
 import { Select } from '@/components/ui/Select'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { useUpdateClaim } from '../queries/use-claims'
-import { CLAIM_FORMATS, claimStatus, type Claim, type UpdateClaimPayload } from '../schemas/claim'
+import {
+  CLAIM_FORMATS,
+  CLEARINGHOUSE_REF_MAX,
+  claimStatus,
+  type Claim,
+  type UpdateClaimPayload,
+} from '../schemas/claim'
 
 const schema = z.object({
   status: z.string(),
   format: z.string(),
-  clearinghouseRef: z.string().trim(),
+  clearinghouseRef: z
+    .string()
+    .trim()
+    .max(CLEARINGHOUSE_REF_MAX, `Use at most ${CLEARINGHOUSE_REF_MAX} characters.`),
 })
 type Values = z.infer<typeof schema>
 
@@ -137,6 +146,7 @@ export function EditClaimDialog({ claim, onClose }: { claim: Claim; onClose: () 
                 value={typeof field.value === 'string' ? field.value : ''}
                 placeholder="Enter the clearinghouse’s reference"
                 autoComplete="off"
+                maxLength={CLEARINGHOUSE_REF_MAX}
                 readOnly={update.isPending}
               />
             )}

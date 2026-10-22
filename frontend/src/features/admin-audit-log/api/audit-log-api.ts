@@ -12,9 +12,9 @@ import {
  * an entry.
  *
  * **Live** (contracts confirmed 2026-10-07), carrying the session's token:
- * - `GET /activity-logs?page=N` answers one page of 15 entries, newest first,
- *   with Laravel's `meta` for the pager. Only `page` is sent: no search or
- *   filter parameter is part of the contract, so none is used.
+ * - `GET /activity-logs?page=N[&log_name=visits]` answers one page of 15
+ *   entries, newest first, with Laravel's `meta` for the pager — of one module
+ *   when `log_name` is sent (schemas/audit-entry.ts `AuditLogQuery`).
  * - `GET /activity-logs/{id}` answers one entry; an unknown id is a `404`.
  *
  * See schemas/audit-entry.ts for both shapes. With no backend configured (the
@@ -30,7 +30,7 @@ const live: AuditLogApi = {
     request({
       method: 'GET',
       path: '/activity-logs',
-      searchParams: { page: query.page },
+      searchParams: { page: query.page, log_name: query.module },
       schema: auditPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

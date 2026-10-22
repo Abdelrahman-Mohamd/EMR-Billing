@@ -5,7 +5,6 @@ import {
   createPatientCase,
   deletePatientCase,
   listPatientCases,
-  setCaseDiagnoses,
   updatePatientCase,
   updatePatientCaseFields,
 } from './patient-cases-api'
@@ -21,13 +20,30 @@ vi.mock('@/lib/config/env', () => ({
   },
 }))
 
-/** A case in the shape seen on staging (2026-10-08). */
+/** A case in the shape seen on staging (2026-10-08; its diagnoses as of 2026-10-20). */
 const wire = (id: number) => ({
   id,
   patient_id: 3,
   name: 'Low back 2026',
   referring_physician_id: 2,
-  icd10_codes: ['M54.50', 'M25.511'],
+  diagnoses: [
+    {
+      id: 7,
+      case_id: id,
+      icd10_code: 'M54.50',
+      description: 'Low back pain',
+      created_at: '2026-10-20T14:53:23.000000Z',
+      updated_at: '2026-10-20T14:53:23.000000Z',
+    },
+    {
+      id: 8,
+      case_id: id,
+      icd10_code: 'M25.511',
+      description: null,
+      created_at: '2026-10-20T14:53:23.000000Z',
+      updated_at: '2026-10-20T14:53:23.000000Z',
+    },
+  ],
   injury_type: 'auto',
   injury_type_label: 'Auto Accident',
   injury_date: '2026-06-01',
@@ -84,8 +100,8 @@ describe('patient cases against the backend', () => {
       .mockResolvedValueOnce(json(200, page([wire(16)], 2, 2)))
     const all = await listPatientCases()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/patient-cases?page=1`,
-      `${BASE}/patient-cases?page=2`,
+      `${BASE}/patient-cases?page=1&per_page=100`,
+      `${BASE}/patient-cases?page=2&per_page=100`,
     ])
     expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
     expect(all[0]).toEqual({
@@ -93,7 +109,10 @@ describe('patient cases against the backend', () => {
       patientId: '3',
       name: 'Low back 2026',
       referrerId: 2,
-      icd10Codes: ['M54.50', 'M25.511'],
+      diagnoses: [
+        { id: '7', code: 'M54.50', description: 'Low back pain' },
+        { id: '8', code: 'M25.511', description: '' },
+      ],
       injuryType: 'auto',
       injuryTypeLabel: 'Auto Accident',
       injuryDate: '2026-06-01',
@@ -120,17 +139,14 @@ describe('patient cases against the backend', () => {
     expect(JSON.parse(call(1).init.body as string)).not.toHaveProperty('patient_id')
   })
 
-  it('saves the diagnoses as the whole list in order, a fix’s fields alone, and deletes with DELETE', async () => {
+  it('saves a fix’s fields alone, and deletes with DELETE', async () => {
     fetchMock
       .mockResolvedValueOnce(done('Patient case updated successfully'))
-      .mockResolvedValueOnce(done('Patient case updated successfully'))
       .mockResolvedValueOnce(done('Patient case deleted successfully'))
-    await setCaseDiagnoses('2', ['M25.511', 'M54.50'])
     await updatePatientCaseFields('2', { injury_date: '2026-09-01' })
     await expect(deletePatientCase('3')).resolves.toBe('Patient case deleted successfully')
-    expect(JSON.parse(call(0).init.body as string)).toEqual({ icd10_codes: ['M25.511', 'M54.50'] })
-    expect(JSON.parse(call(1).init.body as string)).toEqual({ injury_date: '2026-09-01' })
-    expect([call(2).init.method, call(2).url]).toEqual(['DELETE', `${BASE}/patient-cases/3`])
+    expect(JSON.parse(call(0).init.body as string)).toEqual({ injury_date: '2026-09-01' })
+    expect([call(1).init.method, call(1).url]).toEqual(['DELETE', `${BASE}/patient-cases/3`])
   })
 
   it('puts the server field errors on the form fields', async () => {

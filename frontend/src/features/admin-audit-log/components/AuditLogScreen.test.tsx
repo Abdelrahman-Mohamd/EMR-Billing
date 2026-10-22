@@ -135,6 +135,21 @@ describe('Admin → Audit log', () => {
     expect(await screen.findByText('Showing 31–35 of 35 entries')).toBeInTheDocument()
   })
 
+  it('filters by one module on the server, from page 1, and clears back to every module', async () => {
+    renderAt()
+    await screen.findByText('Showing 1–15 of 35 entries', {}, { timeout: 5000 })
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(await screen.findByText('Showing 16–30 of 35 entries')).toBeInTheDocument()
+    total = 0
+    await userEvent.click(screen.getByRole('combobox', { name: 'Filter by module' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Case diagnoses' }))
+    await waitFor(() => expect(lastQuery()).toEqual({ page: 1, module: 'case_diagnoses' }))
+    expect(await screen.findByText('No case diagnoses entries')).toBeInTheDocument()
+    total = 35
+    await userEvent.click(screen.getByRole('button', { name: /reset/i }))
+    await waitFor(() => expect(lastQuery()).toEqual({ page: 1 }))
+  })
+
   it('explains an empty log', async () => {
     total = 0
     renderAt()

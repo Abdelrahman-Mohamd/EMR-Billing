@@ -172,8 +172,8 @@ describe('reading practices from the backend', () => {
       .mockResolvedValueOnce(json(200, page([summary(16)], 2, 2)))
     const all = await listPractices()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/practices?page=1`,
-      `${BASE}/practices?page=2`,
+      `${BASE}/practices?page=1&per_page=100`,
+      `${BASE}/practices?page=2&per_page=100`,
     ])
     expect(all[0]).toEqual({
       id: 1,
@@ -343,8 +343,8 @@ describe('locations against the backend', () => {
       .mockResolvedValueOnce(json(200, page([item(3)], 2, 2)))
     const all = await listLocations()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/locations?page=1`,
-      `${BASE}/locations?page=2`,
+      `${BASE}/locations?page=1&per_page=100`,
+      `${BASE}/locations?page=2&per_page=100`,
     ])
     expect(all).toEqual([
       { id: 1, practiceId: 1, code: 'L1', name: 'Location 1', isActive: true },

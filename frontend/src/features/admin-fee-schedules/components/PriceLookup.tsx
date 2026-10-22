@@ -1,7 +1,7 @@
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { formatMoney } from '@/lib/utils/money'
 import { todayIso } from '@/lib/utils/dates'
-import { Card, CardBody, CardHeader } from '@/components/ui/Card'
+import { DetailCard } from '@/components/ui/DetailCard'
 import { Field, FormGrid } from '@/components/ui/Field'
 import { Input } from '@/components/ui/Input'
 import { SearchSelect } from '@/components/ui/SearchSelect'
@@ -31,7 +31,6 @@ export function PriceLookup({
   rows: readonly PricedRow[]
   initialInsuranceId: number | null
 }) {
-  const titleId = useId()
   const [insuranceId, setInsuranceId] = useState<string | null>(
     initialInsuranceId === null ? null : String(initialInsuranceId),
   )
@@ -56,13 +55,11 @@ export function PriceLookup({
       : null
 
   return (
-    <Card labelledBy={titleId}>
-      <CardHeader
-        id={titleId}
-        title="Price lookup"
-        info="How a charge line is priced: the payer’s billed price when a row is effective, otherwise the code’s default fee. What a payer allows is known from its remittance."
-      />
-      <CardBody>
+    <DetailCard
+      title="Price lookup"
+      info="How a charge line is priced: the payer’s billed price when a row is effective, otherwise the code’s default fee. What a payer allows is known from its remittance."
+    >
+      <div className="pt-4">
         <FormGrid>
           <Field label="Insurance">
             <SearchSelect
@@ -121,7 +118,7 @@ export function PriceLookup({
             </dd>
           </div>
         </dl>
-      </CardBody>
-    </Card>
+      </div>
+    </DetailCard>
   )
 }

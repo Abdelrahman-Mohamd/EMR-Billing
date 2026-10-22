@@ -3,10 +3,11 @@ import { History } from 'lucide-react'
 import { Tag } from '@/components/ui/Badge'
 import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { Pagination } from '@/components/ui/Pagination'
+import { Select } from '@/components/ui/Select'
 import { EmptyState } from '@/components/ui/States'
-import { PageContainer, PageHeader } from '@/components/shared/PageLayout'
+import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
 import { formatWhen } from '@/lib/utils/format-when'
-import { moduleLabel } from '../model/modules'
+import { MODULES, moduleLabel } from '../model/modules'
 import { useAuditLog } from '../queries/use-audit-log'
 import type { AuditEntry } from '../schemas/audit-entry'
 import { AuditEntryDrawer } from './AuditEntryDrawer'
@@ -16,17 +17,24 @@ import { AuditEntryDrawer } from './AuditEntryDrawer'
  * and Module, newest first, a page at a time as the server pages it (15), with
  * "Showing 1–15 of N entries" and a pager. A row opens the entry in full in a
  * side panel (`GET /activity-logs/{id}`), so the page and place in the list
- * stay where they were.
+ * stay where they were. The prototype's module filter is the server's: one
+ * module at a time (`log_name` takes one), in the filter bar; changing it goes
+ * back to page 1.
  *
- * Not built, because the endpoints have no contract for them: the prototype's
- * search and module filter (filtering only the loaded page would say "nothing
- * matches" while other pages match), and its "Open" link to the affected
- * record. Nothing on an entry can be changed.
+ * Not built, because the server has nothing for them: the prototype's search
+ * (filtering only the loaded page would say "nothing matches" while other
+ * pages match), and its "Open" link to the affected record. Nothing on an
+ * entry can be changed.
  */
 export function AuditLogScreen() {
   const [page, setPage] = useState(1)
+  const [module, setModule] = useState<string | null>(null)
   const [opened, setOpened] = useState<AuditEntry | null>(null)
-  const log = useAuditLog({ page })
+  const log = useAuditLog({ page, ...(module === null ? {} : { module }) })
+  const chooseModule = (next: string | null) => {
+    setModule(next)
+    setPage(1)
+  }
   const total = log.data?.total ?? 0
 
   const columns: ReadonlyArray<Column<AuditEntry>> = [
@@ -80,6 +88,18 @@ export function AuditLogScreen() {
         description="Review every action taken in the system: who did what, and when."
       />
 
+      <FilterBar {...(module === null ? {} : { onReset: () => chooseModule(null) })}>
+        <Select
+          aria-label="Filter by module"
+          value={module}
+          onChange={chooseModule}
+          options={MODULES.map((value) => ({ value, label: moduleLabel(value) }))}
+          placeholder="All modules"
+          clearable
+          className="w-full sm:w-64"
+        />
+      </FilterBar>
+
       <DataTable
         caption="Audit log"
         columns={columns}
@@ -89,15 +109,25 @@ export function AuditLogScreen() {
           label: (entry) => `${entry.action}, ${formatWhen(entry.at).label}: view details`,
           onAction: setOpened,
         }}
+        // A row opens the entry in a side panel; "View details" at its end says so, as on Patients.
+        openHint="View details"
         loading={log.isPending}
         error={log.isError}
         onRetry={() => void log.refetch()}
         empty={
-          <EmptyState
-            icon={<History size={20} />}
-            title="No audit entries yet"
-            description="Actions taken in the system are recorded here as they happen."
-          />
+          module === null ? (
+            <EmptyState
+              icon={<History size={20} />}
+              title="No audit entries yet"
+              description="Actions taken in the system are recorded here as they happen."
+            />
+          ) : (
+            <EmptyState
+              icon={<History size={20} />}
+              title={`No ${moduleLabel(module).toLowerCase()} entries`}
+              description="Nothing has been recorded for this module yet."
+            />
+          )
         }
         footer={
           total > 0 ? (

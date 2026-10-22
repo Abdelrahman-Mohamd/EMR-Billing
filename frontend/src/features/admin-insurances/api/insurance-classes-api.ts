@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   INSURANCE_CLASS_FORM_FIELD_FOR,
   insuranceClassDetailResponseSchema,
@@ -17,8 +18,8 @@ import {
  * Insurance classes' only door to a server. **Live** (contracts confirmed
  * 2026-10-07), carrying the session's token: `GET /insurance-classes?page=N`,
  * `GET /insurance-classes/{id}`, `POST /insurance-classes`,
- * `PUT /insurance-classes/{id}` and `DELETE /insurance-classes/{id}`. Only
- * `page` is sent to the list. Writes resolve with the server's message, which
+ * `PUT /insurance-classes/{id}` and `DELETE /insurance-classes/{id}`. The
+ * list is asked for `page` and `per_page=100` (lib/api/pagination.ts). Writes resolve with the server's message, which
  * the screens show. Shapes in schemas/insurance-class.ts.
  */
 export interface InsuranceClassesApi {
@@ -37,7 +38,7 @@ const live: InsuranceClassesApi = {
     request({
       method: 'GET',
       path: '/insurance-classes',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: insuranceClassPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

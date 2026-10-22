@@ -18,13 +18,16 @@ import {
  * Admin → Users' only door to a server. **Live** (contracts confirmed
  * 2026-10-07), carrying the session's token: `GET /users?page=N`,
  * `GET /users/{id}`, `POST /users`, `PUT /users/{id}` and `DELETE /users/{id}`.
- * Only `page` is sent to the list. Writes resolve with the server's message,
+ * The list sends `page` (the server's 15) and the screen's search as `search`
+ * (the name or email, in part — staging, 2026-10-20; user: use the server's
+ * search). The server also takes `is_active`, which the screen does not
+ * filter by. Writes resolve with the server's message,
  * which the screens show. Shapes in schemas/user.ts.
  *
  * A password is passed straight through: never logged, stored or cached.
  */
 export interface UsersApi {
-  list: (page: number, signal?: AbortSignal) => Promise<UserPage>
+  list: (page: number, search: string, signal?: AbortSignal) => Promise<UserPage>
   get: (id: number, signal?: AbortSignal) => Promise<User>
   create: (payload: CreateUserPayload) => Promise<ServerMessage>
   update: (id: number, payload: UpdateUserPayload | { is_active: boolean }) => Promise<ServerMessage>
@@ -32,11 +35,11 @@ export interface UsersApi {
 }
 
 const live: UsersApi = {
-  list: (page, signal) =>
+  list: (page, search, signal) =>
     request({
       method: 'GET',
       path: '/users',
-      searchParams: { page },
+      searchParams: { page, search: search === '' ? undefined : search },
       schema: userPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),
@@ -69,8 +72,9 @@ async function send(call: (api: UsersApi) => Promise<ServerMessage>): Promise<Se
   }
 }
 
-export async function listUsers(page: number, signal?: AbortSignal): Promise<UserPage> {
-  return (await backend()).list(page, signal)
+/** One page of the list — of the users matching `search`, when there is one. */
+export async function listUsers(page: number, search = '', signal?: AbortSignal): Promise<UserPage> {
+  return (await backend()).list(page, search, signal)
 }
 
 export async function getUser(id: number, signal?: AbortSignal): Promise<User> {

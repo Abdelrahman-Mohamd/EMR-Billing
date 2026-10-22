@@ -54,7 +54,7 @@ export const chargeLineFormSchema = z.object({
       (value) => splitModifiers(value).every((modifier) => /^[A-Z0-9]{2}$/.test(modifier)),
       'Each modifier is two letters or digits, e.g. GP or 59.',
     ),
-  /** Diagnosis positions on the case ("1", "2"), in the order chosen. */
+  /** Positions in the visit's diagnoses ("1", "2"), in the order chosen. */
   diagnosisPointers: z
     .array(z.string())
     .refine((value) => value.length <= POINTER_SLOTS, 'Choose up to four diagnoses.'),
@@ -76,6 +76,8 @@ export const newChargeLineValues = (): ChargeLineFormValues => ({
   notes: '',
 })
 
+export const DIAGNOSES_MAX = 12
+
 /** The visit's own fields: what a save (`PUT`) may change. */
 const visitFields = z.object({
   dateOfService: z.string(),
@@ -83,6 +85,10 @@ const visitFields = z.object({
   billingProviderId: z.string().nullable(),
   treatingProviderId: z.string().nullable(),
   authorizationId: z.string().nullable(),
+  /** ICD-10-CM codes, in the order chosen: the position is the pointer. */
+  diagnosisCodes: z
+    .array(z.string())
+    .refine((value) => value.length <= DIAGNOSES_MAX, `Choose up to ${DIAGNOSES_MAX} diagnoses.`),
 })
 
 function checkVisitFields(
@@ -118,13 +124,19 @@ export const editVisitFormSchema = (today: string) =>
   )
 export type EditVisitFormValues = z.infer<ReturnType<typeof editVisitFormSchema>>
 
-export const newVisitValues = (caseId: string | null, today: string): VisitFormValues => ({
+/** A new visit: its diagnoses start as its case's (`caseCodes`), in the case's order. */
+export const newVisitValues = (
+  caseId: string | null,
+  today: string,
+  caseCodes: readonly string[] = [],
+): VisitFormValues => ({
   caseId,
   dateOfService: today,
   locationId: null,
   billingProviderId: null,
   treatingProviderId: null,
   authorizationId: null,
+  diagnosisCodes: [...caseCodes],
   lines: [newChargeLineValues()],
 })
 
@@ -134,6 +146,7 @@ export const toEditVisitValues = (visit: Visit): EditVisitFormValues => ({
   billingProviderId: String(visit.billingProviderId),
   treatingProviderId: String(visit.treatingProviderId),
   authorizationId: visit.authorizationId,
+  diagnosisCodes: [...visit.diagnosisCodes],
 })
 
 function lineOf(values: ChargeLineFormValues): VisitLinePayload {
@@ -160,6 +173,7 @@ export function toUpdateVisitPayload(values: EditVisitFormValues): UpdateVisitPa
     billing_provider_id: Number(values.billingProviderId),
     treating_provider_id: Number(values.treatingProviderId),
     authorization_id: values.authorizationId === null ? null : Number(values.authorizationId),
+    diagnosis_codes: [...values.diagnosisCodes],
   }
 }
 

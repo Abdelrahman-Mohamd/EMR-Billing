@@ -45,21 +45,94 @@ export function FilterPills({
             type="button"
             aria-pressed={on}
             onClick={() => toggle(option.value)}
-            className={cn(
-              'h-control-sm text-micro inline-flex items-center rounded-full px-3 font-medium transition-colors duration-100',
-              on
-                ? 'bg-brand-wash text-brand-deep shadow-[inset_0_0_0_1px_var(--color-brand-line)]'
-                : 'bg-canvas text-n600 hover:bg-n50 hover:text-ink shadow-[inset_0_0_0_1px_var(--color-rule-structural)]',
-            )}
+            className={pillClass(on)}
           >
-            {option.label}
-            {/* The space keeps "Accepted 6" two words for a screen reader; a flex row does not draw it. */}
-            {option.count !== undefined && ' '}
-            {option.count !== undefined && (
-              <span className={cn('ml-1.5 font-medium tabular-nums', on ? 'text-brand-deep' : 'text-n400')}>
-                {option.count}
-              </span>
-            )}
+            <PillLabel option={option} on={on} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+const pillClass = (on: boolean) =>
+  cn(
+    'h-control-sm text-micro inline-flex items-center rounded-full px-3 font-medium transition-colors duration-100',
+    on
+      ? 'bg-brand-wash text-brand-deep shadow-[inset_0_0_0_1px_var(--color-brand-line)]'
+      : 'bg-canvas text-n600 hover:bg-n50 hover:text-ink shadow-[inset_0_0_0_1px_var(--color-rule-structural)]',
+  )
+
+function PillLabel({ option, on }: { option: FilterPillOption; on: boolean }) {
+  return (
+    <>
+      {option.label}
+      {/* The space keeps "Accepted 6" two words for a screen reader; a flex row does not draw it. */}
+      {option.count !== undefined && ' '}
+      {option.count !== undefined && (
+        <span className={cn('ml-1.5 font-medium tabular-nums', on ? 'text-brand-deep' : 'text-n400')}>
+          {option.count}
+        </span>
+      )}
+    </>
+  )
+}
+
+/**
+ * The same pills when exactly one is on — a list narrowed to one value (an
+ * exception's reason), its first option usually "All". A radio group: one
+ * Tab stop, the arrow keys move the choice, a screen reader announces "radio,
+ * 2 of 4, checked".
+ */
+export function ChoicePills({
+  options,
+  value,
+  onChange,
+  label,
+  className,
+}: {
+  options: readonly FilterPillOption[]
+  value: string
+  onChange: (value: string) => void
+  /** Names the group for assistive technology, e.g. "Reason". */
+  label: string
+  className?: string
+}) {
+  const current = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  )
+  const move = (target: HTMLElement, step: number) => {
+    const next = options[(current + step + options.length) % options.length]
+    if (next === undefined) return
+    onChange(next.value)
+    const buttons = target.parentElement?.querySelectorAll<HTMLButtonElement>('[role=radio]')
+    buttons?.[(current + step + options.length) % options.length]?.focus()
+  }
+  return (
+    <div role="radiogroup" aria-label={label} className={cn('flex flex-wrap gap-2', className)}>
+      {options.map((option, index) => {
+        const on = index === current
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            tabIndex={on ? 0 : -1}
+            onClick={() => onChange(option.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                event.preventDefault()
+                move(event.currentTarget, 1)
+              } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                event.preventDefault()
+                move(event.currentTarget, -1)
+              }
+            }}
+            className={pillClass(on)}
+          >
+            <PillLabel option={option} on={on} />
           </button>
         )
       })}

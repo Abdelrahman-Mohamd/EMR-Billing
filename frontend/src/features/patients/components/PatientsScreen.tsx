@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { SlidersHorizontal, UserPlus, Users } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { SearchInput } from '@/components/ui/Input'
 import { Pagination } from '@/components/ui/Pagination'
 import { activeColumn } from '@/components/ui/RowActions'
@@ -11,7 +11,8 @@ import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLa
 import { PracticeSelect, usePractices } from '@/features/admin-practices'
 import { formatIsoDate } from '@/lib/utils/dates'
 import { genderName, listName, type PatientSummary } from '../model/patient'
-import { DEFAULT_FILTERS, activeFilterCount, matchesSearch, type PatientFilters } from '../model/roster'
+import { useDebouncedValue } from '@/lib/hooks/use-debounced-value'
+import { DEFAULT_FILTERS, activeFilterCount, type PatientFilters } from '../model/roster'
 import { usePatientWrites, usePatients, useSetPatientActive } from '../queries/use-patients'
 import { PatientDialog } from './PatientDialog'
 import { PatientFiltersDrawer } from './PatientFiltersDrawer'
@@ -33,10 +34,12 @@ interface Row {
  *
  * As on the other practice-scoped screens, the practice filter is in the URL
  * (`?practice=<id>`). The search text and the other filters stay in the
- * screen: a search can hold a patient's name, and PHI never goes in a URL.
+ * screen: a search can hold a patient's name, and PHI never goes in the app's
+ * URL.
  *
- * Every patient is read (all of the server's pages) and searched, filtered,
- * sorted and paged here — the list takes no search. Not shown, because the
+ * The search is the server's (`search`, asked once typing pauses — user,
+ * 2026-10-20); every patient it answers with (all of its pages) is filtered,
+ * sorted and paged here. Not shown, because the
  * patient list does not carry them: the prototype's Cases and Primary
  * insurance columns and insurance filter (a case's coverage), the "Open
  * balance" column and filter (billed charges), the location filter and the
@@ -47,16 +50,16 @@ interface Row {
  */
 export function PatientsScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
-  const patients = usePatients()
+  const [search, setSearch] = useState('')
+  // The server searches (`search`), once typing pauses.
+  const patients = usePatients(useDebouncedValue(search.trim()))
   const practices = usePractices()
   const writes = usePatientWrites()
   const setActive = useSetPatientActive()
-  const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<PatientFilters>(DEFAULT_FILTERS)
   const [filtering, setFiltering] = useState(false)
   const [creating, setCreating] = useState(false)
   const [statusOf, setStatusOf] = useState<PatientSummary | null>(null)
-  const [sort, setSort] = useState<Sort>({ key: 'name', direction: 'asc' })
   const [page, setPage] = useState(1)
 
   const setPractice = (value: string | null) => {
@@ -72,19 +75,7 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
   const rows: Row[] = (patients.data ?? [])
     .filter((patient) => practiceFilter === undefined || patient.practiceId === practiceFilter)
     .map((patient) => ({ patient }))
-    .filter((row) => matchesSearch(row.patient, search))
     .filter((row) => filters.status === 'All' || row.patient.isActive === (filters.status === 'Active'))
-    .sort((a, b) => {
-      const text = (left: string, right: string) =>
-        left.localeCompare(right, undefined, { sensitivity: 'base' })
-      const order =
-        sort.key === 'dob'
-          ? a.patient.dob.localeCompare(b.patient.dob)
-          : sort.key === 'emrId'
-            ? (a.patient.emrId ?? 0) - (b.patient.emrId ?? 0)
-            : text(listName(a.patient), listName(b.patient))
-      return sort.direction === 'asc' ? order : -order
-    })
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
@@ -105,7 +96,6 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
       key: 'name',
       header: 'Patient',
       primary: true,
-      sortable: true,
       cell: ({ patient }) => (
         <span className="block break-words">
           {patient.lastName}, <span className="text-n600 font-normal">{patient.firstName}</span>
@@ -116,7 +106,6 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
     {
       key: 'dob',
       header: 'Born',
-      sortable: true,
       cell: ({ patient }) => (
         <span className="block whitespace-nowrap">
           <span className="tabular-nums">{formatIsoDate(patient.dob)}</span>
@@ -127,7 +116,6 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
     {
       key: 'emrId',
       header: 'EMR ID',
-      sortable: true,
       cell: ({ patient }) =>
         patient.emrId === null ? (
           <span className="text-n400">—</span>
@@ -213,11 +201,6 @@ export function PatientsScreen({ practiceFilter }: { practiceFilter: number | un
           rows={pageRows}
           getRowId={({ patient }) => patient.id}
           loading={patients.isPending}
-          sort={sort}
-          onSortChange={(next) => {
-            setSort(next)
-            setPage(1)
-          }}
           // A row opens the patient's chart; "View chart" at its end says so.
           openHint="View chart"
           rowLink={({ patient }) => ({

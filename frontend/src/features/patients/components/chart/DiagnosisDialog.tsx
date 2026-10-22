@@ -1,42 +1,48 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import { isApiError, userMessage } from '@/lib/api/api-error'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { FormGrid } from '@/components/ui/Field'
-import { Form, FormField } from '@/components/ui/Form'
-import { SearchSelect } from '@/components/ui/SearchSelect'
-import type { Icd10Code } from '../../data/patient-records-store'
-import { MAX_DIAGNOSES } from '../../model/case'
-
-const schema = z.object({
-  code: z
-    .string()
-    .nullable()
-    .refine((value): boolean => value !== null, 'Select an ICD-10 code.'),
-})
-type Values = z.infer<typeof schema>
+import { Form, FormField, applyServerErrors } from '@/components/ui/Form'
+import { Input } from '@/components/ui/Input'
+import { Notice } from '@/components/ui/Notice'
+import { MAX_DIAGNOSES, type Diagnosis } from '../../model/case'
+import {
+  DESCRIPTION_MAX,
+  caseDiagnosisFormSchema,
+  type CaseDiagnosisFormValues,
+} from '../../schemas/case-diagnosis'
 
 /**
- * The prototype's "Add diagnosis": one ICD-10 code, from those not already on
- * the case. It takes the next pointer.
+ * Add or edit one of a case's diagnoses: its ICD-10-CM code and a
+ * description, as the server takes them. A new one takes the next pointer.
+ * The save waits for the server: whether the code is a real ICD-10-CM code,
+ * and whether the case already has it, land on the code; anything else (the
+ * case's 12) shows above the form.
  */
 export function DiagnosisDialog({
+  diagnosis,
   pointer,
-  codes,
-  onAdd,
+  onSave,
   onClose,
 }: {
-  /** The position it will take, 1–12. */
+  /** `null` adds a diagnosis. */
+  diagnosis: Diagnosis | null
+  /** Its position, 1–12. */
   pointer: number
-  /** The ICD-10 codes the case does not hold yet. */
-  codes: readonly Icd10Code[]
-  onAdd: (code: Icd10Code) => void
+  /** Resolves with the server's message. */
+  onSave: (values: CaseDiagnosisFormValues) => Promise<unknown>
   onClose: () => void
 }) {
   const formId = useId()
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { code: null } })
+  const [failure, setFailure] = useState<string | null>(null)
+  const form = useForm<CaseDiagnosisFormValues>({
+    resolver: zodResolver(caseDiagnosisFormSchema),
+    defaultValues: { code: diagnosis?.code ?? '', description: diagnosis?.description ?? '' },
+  })
+  const submitting = form.formState.isSubmitting
 
   return (
     <Dialog
@@ -44,16 +50,17 @@ export function DiagnosisDialog({
       onOpenChange={(open) => {
         if (!open) onClose()
       }}
-      title="Add diagnosis"
+      title={diagnosis === null ? 'Add diagnosis' : 'Edit diagnosis'}
       description={`Pointer ${pointer} of ${MAX_DIAGNOSES}.`}
       size="md"
+      dismissible={!submitting}
       footer={
         <>
-          <Button variant="quiet" onClick={onClose}>
+          <Button variant="quiet" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button type="submit" form={formId} variant="primary">
-            Add diagnosis
+          <Button type="submit" form={formId} variant="primary" loading={submitting}>
+            {diagnosis === null ? 'Add diagnosis' : 'Save diagnosis'}
           </Button>
         </>
       }
@@ -61,25 +68,52 @@ export function DiagnosisDialog({
       <Form
         id={formId}
         form={form}
-        onSubmit={(values) => {
-          const chosen = codes.find((code) => code.code === values.code)
-          if (chosen !== undefined) onAdd(chosen)
-          onClose()
+        onSubmit={async (values) => {
+          setFailure(null)
+          try {
+            await onSave(values)
+            onClose()
+          } catch (error) {
+            const leftover = applyServerErrors(form, error)
+            setFailure(isApiError(error) && error.kind !== 'validation' ? userMessage(error) : leftover)
+          }
         }}
       >
         <FormGrid>
-          <FormField name="code" label="ICD-10 code" required span={12}>
+          {failure !== null && (
+            <div className="col-span-12">
+              <Notice tone="critical">{failure}</Notice>
+            </div>
+          )}
+          <FormField
+            name="code"
+            label="ICD-10 code"
+            required
+            span={4}
+            info="An ICD-10-CM code, e.g. M54.2. Once per case."
+          >
             {(field) => (
-              <SearchSelect
-                value={typeof field.value === 'string' ? field.value : null}
-                onChange={field.onChange}
-                options={codes.map((code) => ({
-                  value: code.code,
-                  label: `${code.code} — ${code.description}`,
-                }))}
-                placeholder="Select an ICD-10 code"
-                searchPlaceholder="Search codes or descriptions"
-                emptyMessage="No ICD-10 codes to choose from."
+              <Input
+                {...field}
+                value={typeof field.value === 'string' ? field.value : ''}
+                onChange={(event) => field.onChange(event.target.value.toUpperCase())}
+                placeholder="Enter ICD-10 code"
+                autoCapitalize="characters"
+                autoComplete="off"
+                maxLength={8}
+                readOnly={submitting}
+              />
+            )}
+          </FormField>
+          <FormField name="description" label="Description" span={8}>
+            {(field) => (
+              <Input
+                {...field}
+                value={typeof field.value === 'string' ? field.value : ''}
+                placeholder="Enter description"
+                autoComplete="off"
+                maxLength={DESCRIPTION_MAX}
+                readOnly={submitting}
               />
             )}
           </FormField>

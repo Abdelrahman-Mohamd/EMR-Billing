@@ -39,14 +39,19 @@ const PER_PAGE = 15
 
 let server: User[]
 
-function page(number: number): UserPage {
+/** As the server pages and searches (the name or email, in part). */
+function page(number: number, search = ''): UserPage {
+  const q = search.toLowerCase()
+  const found = server.filter(
+    (user) => user.name.toLowerCase().includes(q) || user.email.toLowerCase().includes(q),
+  )
   const start = (number - 1) * PER_PAGE
-  const slice = server.slice(start, start + PER_PAGE)
+  const slice = found.slice(start, start + PER_PAGE)
   return {
     users: slice.map((user) => ({ ...user })),
     page: number,
-    pageCount: Math.max(1, Math.ceil(server.length / PER_PAGE)),
-    total: server.length,
+    pageCount: Math.max(1, Math.ceil(found.length / PER_PAGE)),
+    total: found.length,
     from: slice.length === 0 ? 0 : start + 1,
     to: start + slice.length,
   }
@@ -58,7 +63,7 @@ beforeEach(() => {
     { id: 2, name: 'Dana Whitfield', email: 'd.whitfield@example.test', isActive: true },
     { id: 3, name: 'Owen Park', email: 'o.park@example.test', isActive: false },
   ]
-  listMock.mockReset().mockImplementation((number) => Promise.resolve(page(number)))
+  listMock.mockReset().mockImplementation((number, search) => Promise.resolve(page(number, search)))
   getMock.mockReset().mockImplementation((id) => {
     const found = server.find((user) => user.id === id)
     return found
@@ -173,7 +178,19 @@ describe('Admin → Users', () => {
     expect(await screen.findByText('Showing 1–15 of 20 users', {}, { timeout: 5000 })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
     expect(await screen.findByText('Showing 16–20 of 20 users')).toBeInTheDocument()
-    expect(listMock).toHaveBeenLastCalledWith(2, expect.anything())
+    expect(listMock).toHaveBeenLastCalledWith(2, '', expect.anything())
+  })
+
+  it('searches on the server by name or email', async () => {
+    renderAt()
+    await screen.findByText('3 users', {}, { timeout: 5000 })
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search users by name or email' }), 'o.park')
+    await waitFor(() => expect(listMock).toHaveBeenLastCalledWith(1, 'o.park', expect.anything()))
+    expect(await screen.findByText('1 user')).toBeInTheDocument()
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search users by name or email' }), 'zz')
+    expect(await screen.findByText('No users match')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(await screen.findByText('3 users')).toBeInTheDocument()
   })
 
   it('shows a loading state, a failed load with a retry, and an empty list', async () => {

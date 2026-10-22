@@ -47,29 +47,44 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
   const addRow = useRef<HTMLDivElement>(null)
   const lineRefs = useRef(new Map<string, HTMLFieldSetElement>())
 
+  const { records } = refs
+  const codesOf = (id: string | null) =>
+    records.cases.find((item) => item.id === id)?.diagnoses.map((diagnosis) => diagnosis.code) ?? []
   const form = useForm<VisitFormValues>({
     resolver: zodResolver(visitFormSchema(today)),
-    defaultValues: newVisitValues(caseId ?? null, today),
+    defaultValues: newVisitValues(caseId ?? null, today, codesOf(caseId ?? null)),
   })
   const lines = useFieldArray({ control: form.control, name: 'lines' })
   const chosenCaseId = useWatch({ control: form.control, name: 'caseId' })
+  const chosenCodes = useWatch({ control: form.control, name: 'diagnosisCodes' })
   const submitting = create.isPending
 
-  const { records } = refs
   const chosenCase = records.cases.find((item) => item.id === chosenCaseId)
+  // The lines point at the visit's diagnoses, as chosen above them.
   const diagnoses: DiagnosisOption[] | null =
     chosenCase === undefined
       ? null
-      : chosenCase.diagnoses.map((diagnosis, index) => ({ pointer: index + 1, ...diagnosis }))
+      : chosenCodes.map((code, index) => ({
+          pointer: index + 1,
+          code,
+          description: chosenCase.diagnoses.find((diagnosis) => diagnosis.code === code)?.description ?? '',
+        }))
+  /** A pointer past the visit's diagnoses names nothing: it goes. */
+  const keepPointers = (codes: string[]) =>
+    form.getValues('lines').forEach((line, index) =>
+      form.setValue(
+        `lines.${index}.diagnosisPointers`,
+        line.diagnosisPointers.filter((pointer) => Number(pointer) <= codes.length),
+      ),
+    )
 
-  // Active patients' open cases, by patient: "Okonkwo, Nadia · R shoulder 2026".
+  // Active patients' open cases, in the server's order: "Okonkwo, Nadia · R shoulder 2026".
   const caseOptions = records.cases
     .filter((item) => item.isActive)
     .flatMap((item) => {
       const owner = records.patients.find((entry) => entry.id === item.patientId && entry.isActive)
       return owner === undefined ? [] : [{ value: item.id, label: `${listName(owner)} · ${item.name}` }]
     })
-    .sort((a, b) => a.label.localeCompare(b.label))
 
   const chooseCase = (next: string | null) => {
     form.setValue('caseId', next, { shouldValidate: form.formState.isSubmitted })
@@ -78,6 +93,7 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
     form.setValue('billingProviderId', null)
     form.setValue('treatingProviderId', null)
     form.setValue('authorizationId', null)
+    form.setValue('diagnosisCodes', codesOf(next))
     lines.fields.forEach((_, index) => form.setValue(`lines.${index}.diagnosisPointers`, []))
   }
 
@@ -136,7 +152,13 @@ export function NewVisitDialog({ caseId, onClose }: { caseId?: string; onClose: 
               />
             )}
           </FormField>
-          <VisitFields refs={refs} caseId={chosenCaseId} today={today} disabled={submitting} />
+          <VisitFields
+            refs={refs}
+            caseId={chosenCaseId}
+            today={today}
+            disabled={submitting}
+            onDiagnosesChange={keepPointers}
+          />
 
           <FormSection title="Charge lines" />
           {lines.fields.map((line, index) => (

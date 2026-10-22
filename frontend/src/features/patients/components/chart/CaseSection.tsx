@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import { Badge, Tag } from '@/components/ui/Badge'
@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils/cn'
 import { formatIsoDate, todayIso } from '@/lib/utils/dates'
 import { usePatientRecords } from '../../data/patient-records-store'
 import { AUTH_UNITS, authStatus, type Authorization } from '../../model/authorization'
-import { MAX_DIAGNOSES, injuryTypeName, type PatientCase } from '../../model/case'
+import { MAX_DIAGNOSES, injuryTypeName, type Diagnosis, type PatientCase } from '../../model/case'
 import { coveragesOf, primaryOf, rankName, type Coverage } from '../../model/coverage'
 import { effectiveRule } from '../../model/insurance-rules'
 import { casesOf, leadCase } from '../../model/roster'
@@ -24,7 +24,13 @@ import {
   useDeleteAuthorization,
   useUpdateAuthorization,
 } from '../../queries/use-authorizations'
-import { useDeletePatientCase, useSetCaseDiagnoses } from '../../queries/use-patient-cases'
+import {
+  useAddCaseDiagnosis,
+  useDeleteCaseDiagnosis,
+  useDeletePatientCase,
+  useUpdateCaseDiagnosis,
+} from '../../queries/use-patient-cases'
+import { toCaseDiagnosisUpdatePayload } from '../../schemas/case-diagnosis'
 import { toAuthorizationPayload, toAuthorizationUpdatePayload } from '../../schemas/authorization-form'
 import { AuthorizationDialog } from './AuthorizationDialog'
 import { CaseEditor } from './CaseEditor'
@@ -45,25 +51,29 @@ const required = (
  * is — chosen, or started, on the chart's case card. Then the case, a section
  * per topic as in the prototype (client 2026-09-30): Case details, the case's Insurance (primary
  * and secondary, chosen from the patient's list), Diagnoses (ICD-10, in pointer
- * order) and Authorizations. The case chosen is in the URL (`?case=<id>`);
+ * order — the order added: the server keeps no other) and Authorizations. The case chosen is in the URL (`?case=<id>`);
  * with none, the first open case.
  *
- * The authorizations are the server's (contract 2026-10-09): added, edited and
- * deleted there, each issued by one of the case's insurances; what visits have
- * used and what is left are the server's counts.
+ * The diagnoses (contract 2026-10-20) and the authorizations (2026-10-09) are
+ * the server's: added, edited and deleted there. Each authorization is issued
+ * by one of the case's insurances; what visits have used and what is left are
+ * the server's counts.
  */
 export function CaseSection({ patientId, caseId }: { patientId: string; caseId: string | undefined }) {
   const navigate = useNavigate()
   const records = usePatientRecords()
-  const setDiagnoses = useSetCaseDiagnoses()
+  const addDiagnosis = useAddCaseDiagnosis()
+  const updateDiagnosis = useUpdateCaseDiagnosis()
+  const deleteDiagnosis = useDeleteCaseDiagnosis()
   const removeCase = useDeletePatientCase()
   const [deletingCase, setDeletingCase] = useState(false)
   const insurances = useInsurances()
   const classes = useInsuranceClasses()
   const referrers = useReferringPhysicians()
   const [editing, setEditing] = useState<PatientCase | null | undefined>(undefined)
-  const [addingDiagnosis, setAddingDiagnosis] = useState(false)
-  const [removingDiagnosis, setRemovingDiagnosis] = useState<number | null>(null)
+  /** `undefined`: no dialog. `null`: adding. A diagnosis: editing it. */
+  const [editingDiagnosis, setEditingDiagnosis] = useState<Diagnosis | null | undefined>(undefined)
+  const [deletingDiagnosis, setDeletingDiagnosis] = useState<Diagnosis | null>(null)
   /** `undefined`: no dialog. `null`: adding. An authorization: editing it. */
   const [editingAuth, setEditingAuth] = useState<Authorization | null | undefined>(undefined)
   const [deletingAuth, setDeletingAuth] = useState<Authorization | null>(null)
@@ -154,28 +164,6 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
   const auths = records.authorizations.filter((auth) => auth.caseId === current.id)
   const today = todayIso()
 
-  /** The diagnoses, in pointer order, saved on the server: the whole list each time. */
-  const saveDiagnoses = async (codes: readonly string[], done: string) => {
-    try {
-      const message = await setDiagnoses.mutateAsync({ id: current.id, codes })
-      toast.success(done, message ?? undefined)
-    } catch (error) {
-      toast.error(
-        'The diagnoses were not saved',
-        isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
-      )
-    }
-  }
-  const codes = current.diagnoses.map((diagnosis) => diagnosis.code)
-  const moved = (index: number, direction: -1 | 1) => {
-    const next = [...codes]
-    const [a, b] = [next[index], next[index + direction]]
-    if (a === undefined || b === undefined) return next
-    next[index] = b
-    next[index + direction] = a
-    return next
-  }
-
   const authColumns: ReadonlyArray<Column<Authorization>> = [
     {
       key: 'number',
@@ -257,8 +245,6 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
       </RowActions>
     )),
   ]
-
-  const takenCodes = new Set(current.diagnoses.map((diagnosis) => diagnosis.code))
 
   return (
     <>
@@ -342,7 +328,7 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
         headingLevel={3}
         title="Diagnoses"
         meta={`${current.diagnoses.length} of ${MAX_DIAGNOSES}`}
-        info="The case’s ICD-10 codes, in order: the position is the diagnosis pointer on the claim (Box 21 / 24E). Each visit copies these codes when it arrives, so later edits here never change a claim already billed."
+        info="The case’s ICD-10 codes, in the order added: the position is the diagnosis pointer on the claim (Box 21 / 24E). Each new visit copies these codes, so later edits here never change a visit already recorded."
         aside={
           <Button
             size="sm"
@@ -352,7 +338,7 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
                 toast.warning('A case holds up to 12 diagnoses', 'Delete one before adding another.')
                 return
               }
-              setAddingDiagnosis(true)
+              setEditingDiagnosis(null)
             }}
           >
             Add diagnosis
@@ -367,7 +353,7 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
           <ol aria-label="Diagnoses" className="mt-3">
             {current.diagnoses.map((diagnosis, index) => (
               <li
-                key={diagnosis.code}
+                key={diagnosis.id}
                 className="border-rule-row flex items-center gap-3 border-b py-2.5 last:border-b-0"
               >
                 <span
@@ -387,27 +373,18 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
                     </>
                   )}
                 </span>
-                <span className="inline-flex flex-none gap-1.5">
-                  <IconAction
-                    label={`Move ${diagnosis.code} up`}
-                    disabled={index === 0}
-                    onClick={() => void saveDiagnoses(moved(index, -1), `${diagnosis.code} moved up`)}
-                  >
-                    <ArrowUp size={14} aria-hidden="true" />
-                  </IconAction>
-                  <IconAction
-                    label={`Move ${diagnosis.code} down`}
-                    disabled={index === current.diagnoses.length - 1}
-                    onClick={() => void saveDiagnoses(moved(index, 1), `${diagnosis.code} moved down`)}
-                  >
-                    <ArrowDown size={14} aria-hidden="true" />
-                  </IconAction>
+                <RowActions>
+                  <RowActionButton
+                    action="edit"
+                    label={`Edit diagnosis ${diagnosis.code}`}
+                    onClick={() => setEditingDiagnosis(diagnosis)}
+                  />
                   <RowActionButton
                     action="delete"
-                    label={`Delete ${diagnosis.code}`}
-                    onClick={() => setRemovingDiagnosis(index)}
+                    label={`Delete diagnosis ${diagnosis.code}`}
+                    onClick={() => setDeletingDiagnosis(diagnosis)}
                   />
-                </span>
+                </RowActions>
               </li>
             ))}
           </ol>
@@ -443,7 +420,7 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
           className="mt-2"
           caption={`Authorizations of ${current.name}`}
           columns={authColumns}
-          rows={[...auths].sort((a, b) => b.start.localeCompare(a.start))}
+          rows={auths}
           getRowId={(auth) => auth.id}
           empty={
             <CardEmpty title="No authorizations recorded">
@@ -457,37 +434,47 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
 
       {caseDialog}
 
-      {addingDiagnosis && (
+      {editingDiagnosis !== undefined && (
         <DiagnosisDialog
-          pointer={current.diagnoses.length + 1}
-          codes={records.icd10.filter((code) => !takenCodes.has(code.code))}
-          onAdd={(code) =>
-            void saveDiagnoses(
-              [...codes, code.code],
-              `${code.code} added as pointer ${current.diagnoses.length + 1}`,
-            )
+          key={editingDiagnosis?.id ?? 'new'}
+          diagnosis={editingDiagnosis}
+          pointer={
+            editingDiagnosis === null
+              ? current.diagnoses.length + 1
+              : current.diagnoses.findIndex((item) => item.id === editingDiagnosis.id) + 1
           }
-          onClose={() => setAddingDiagnosis(false)}
+          onSave={async (values) => {
+            const payload = toCaseDiagnosisUpdatePayload(values)
+            const message =
+              editingDiagnosis === null
+                ? await addDiagnosis.mutateAsync({ case_id: Number(current.id), ...payload })
+                : await updateDiagnosis.mutateAsync({ id: editingDiagnosis.id, payload })
+            toast.success(message ?? `${payload.icd10_code} saved`)
+          }}
+          onClose={() => setEditingDiagnosis(undefined)}
         />
       )}
 
       <ConfirmDialog
-        open={removingDiagnosis !== null}
+        open={deletingDiagnosis !== null}
         onOpenChange={(open) => {
-          if (!open) setRemovingDiagnosis(null)
+          if (!open) setDeletingDiagnosis(null)
         }}
-        title={`Delete ${removingDiagnosis === null ? '' : (current.diagnoses[removingDiagnosis]?.code ?? '')}?`}
-        description="It is taken off this case; pointers after it move up by one. Visits already received keep their snapshot."
+        title={`Delete diagnosis ${deletingDiagnosis?.code ?? ''}?`}
+        description="It is taken off this case; pointers after it move up by one. Visits already recorded keep their own codes."
         confirmLabel="Delete diagnosis"
         tone="destructive"
         onConfirm={async () => {
-          if (removingDiagnosis === null) return
-          const removed = codes[removingDiagnosis] ?? ''
-          await saveDiagnoses(
-            codes.filter((_, position) => position !== removingDiagnosis),
-            `${removed} deleted`,
-          )
-          setRemovingDiagnosis(null)
+          if (deletingDiagnosis === null) return
+          try {
+            const message = await deleteDiagnosis.mutateAsync(deletingDiagnosis.id)
+            toast.success(message ?? `${deletingDiagnosis.code} deleted`)
+          } catch (error) {
+            toast.error(
+              `${deletingDiagnosis.code} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
         }}
       />
 
@@ -568,27 +555,3 @@ export function CaseSection({ patientId, caseId }: { patientId: string; caseId: 
 
 const unitName = (auth: Authorization) =>
   AUTH_UNITS.find((unit) => unit.value === auth.unit)?.label ?? auth.unit
-
-/** A small icon button beside a diagnosis, in the row actions' style. */
-function IconAction({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string
-  disabled: boolean
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <Button
-      size="xs"
-      icon={children}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-    />
-  )
-}

@@ -1,6 +1,7 @@
 import { renameFieldErrors } from '@/lib/api/api-error'
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   FEE_ROW_FORM_FIELD_FOR,
   feeRowDetailResponseSchema,
@@ -15,7 +16,7 @@ import { toFeeRowPayload, toFeeRowUpdatePayload, type FeeRowFormValues } from '.
  * Fee schedules' only door to a server. **Live** (contracts confirmed
  * 2026-10-08), carrying the session's token: `GET /fee-schedules?page=N`,
  * `GET /fee-schedules/{id}`, `POST /fee-schedules`, `PUT /fee-schedules/{id}`
- * and `DELETE`. Only `page` is sent to the list. Writes resolve with the
+ * and `DELETE`. The list is asked for `page` and `per_page=100` (lib/api/pagination.ts). Writes resolve with the
  * server's message, which the screens show. Shapes in schemas/fee-row.ts.
  */
 export interface FeeSchedulesApi {
@@ -31,7 +32,7 @@ const live: FeeSchedulesApi = {
     request({
       method: 'GET',
       path: '/fee-schedules',
-      searchParams: { page },
+      searchParams: { page, per_page: MAX_PER_PAGE },
       schema: feeRowPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),

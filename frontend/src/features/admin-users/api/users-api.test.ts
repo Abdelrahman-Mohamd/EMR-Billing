@@ -46,6 +46,22 @@ afterEach(() => {
 })
 
 describe('users against the backend', () => {
+  it('asks the server to search, by name or email', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json(200, {
+        success: true,
+        message: 'Users retrieved successfully',
+        data: {
+          data: [wire(1, 'Super Admin'), wire(2, 'Ahmed')],
+          links: {},
+          meta: { current_page: 1, from: 1, last_page: 1, links: [], per_page: 15, to: 2, total: 2 },
+        },
+      }),
+    )
+    await listUsers(1, 'admin@')
+    expect(call(0).url).toBe(`${BASE}/users?page=1&search=admin%40`)
+  })
+
   it('lists one page with GET /users?page=N', async () => {
     fetchMock.mockResolvedValueOnce(
       json(200, {

@@ -1,5 +1,6 @@
 import { request } from '@/lib/api/http-client'
 import { serverMessageSchema, type ServerMessage } from '@/lib/api/server-message'
+import { MAX_PER_PAGE } from '@/lib/api/pagination'
 import {
   organizationDetailResponseSchema,
   organizationPageResponseSchema,
@@ -17,8 +18,10 @@ import {
  * **Live** (contracts confirmed 2026-10-07), carrying the session's token:
  * `GET /organizations?page=N` (15 a page), `GET /organizations/{id}`,
  * `POST /organizations`, `PUT /organizations/{id}` and
- * `DELETE /organizations/{id}`. Only `page` is sent to the list: no search,
- * filter or sort parameter is part of the contract. Create, update and delete
+ * `DELETE /organizations/{id}`. The screen's list sends `page` (the server's
+ * 15) and the screen's search as `search` (the name, in part — staging,
+ * 2026-10-20; user: use the server's search); the whole list, `per_page=100`.
+ * The server also takes `is_active`, which the screen does not filter by. Create, update and delete
  * answer no record — each resolves with the server's message, which the
  * screens show (lib/api/server-message.ts). Shapes in schemas/organization.ts.
  *
@@ -26,7 +29,12 @@ import {
  * without being sent.
  */
 export interface OrganizationsApi {
-  list: (page: number, signal?: AbortSignal) => Promise<OrganizationPage>
+  /** `perPage` left out: the server's 15. */
+  list: (
+    page: number,
+    signal?: AbortSignal,
+    options?: { perPage?: number; search?: string },
+  ) => Promise<OrganizationPage>
   get: (id: number, signal?: AbortSignal) => Promise<OrganizationDetail>
   create: (payload: OrganizationPayload) => Promise<ServerMessage>
   update: (id: number, payload: OrganizationPayload) => Promise<ServerMessage>
@@ -34,11 +42,15 @@ export interface OrganizationsApi {
 }
 
 const live: OrganizationsApi = {
-  list: (page, signal) =>
+  list: (page, signal, options = {}) =>
     request({
       method: 'GET',
       path: '/organizations',
-      searchParams: { page },
+      searchParams: {
+        page,
+        per_page: options.perPage,
+        search: options.search === '' ? undefined : options.search,
+      },
       schema: organizationPageResponseSchema,
       ...(signal ? { signal } : {}),
     }),
@@ -60,8 +72,13 @@ function backend(): Promise<OrganizationsApi> {
   return Promise.resolve(live)
 }
 
-export async function listOrganizations(page: number, signal?: AbortSignal): Promise<OrganizationPage> {
-  return (await backend()).list(page, signal)
+/** One page of the list — of the organizations matching `search`, when there is one. */
+export async function listOrganizations(
+  page: number,
+  search = '',
+  signal?: AbortSignal,
+): Promise<OrganizationPage> {
+  return (await backend()).list(page, signal, { search })
 }
 
 /**
@@ -72,9 +89,11 @@ export async function listOrganizations(page: number, signal?: AbortSignal): Pro
  */
 export async function listAllOrganizations(signal?: AbortSignal): Promise<Organization[]> {
   const api = await backend()
-  const first = await api.list(1, signal)
+  const first = await api.list(1, signal, { perPage: MAX_PER_PAGE })
   const rest = await Promise.all(
-    Array.from({ length: first.pageCount - 1 }, (_, index) => api.list(index + 2, signal)),
+    Array.from({ length: first.pageCount - 1 }, (_, index) =>
+      api.list(index + 2, signal, { perPage: MAX_PER_PAGE }),
+    ),
   )
   return [first, ...rest].flatMap((page) => page.organizations)
 }

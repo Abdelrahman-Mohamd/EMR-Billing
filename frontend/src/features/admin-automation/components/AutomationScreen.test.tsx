@@ -15,7 +15,7 @@ const SETTINGS: AutomationSettings = {
   options: [
     { id: 'hourly', kind: 'hours', hours: 1, time: null, label: 'Every hour' },
     { id: '4h', kind: 'hours', hours: 4, time: null, label: 'Every 4 hours' },
-    { id: 'daily-18', kind: 'daily', hours: null, time: '18:00', label: 'Every day at 18:00' },
+    { id: 'daily-18', kind: 'daily', hours: null, time: '18:00', label: 'Every day at 6:00 PM' },
   ],
   lastScheduledRun: null,
 }
@@ -35,43 +35,40 @@ function renderAt(path = '/admin/automation') {
   renderWithProviders(<RouterProvider router={router} />, { queryClient })
 }
 
-const setting = () =>
-  screen.findByRole('combobox', { name: 'Submit released charges automatically' }, { timeout: 5000 })
+const choices = () =>
+  screen.findByRole('radiogroup', { name: 'Submit released charges automatically' }, { timeout: 5000 })
+const inEffect = () => screen.getByRole('region', { name: 'In effect' })
 const toasts = () => useToastStore.getState().toasts
-
-async function openList() {
-  await setting()
-  await userEvent.click(screen.getByRole('button', { name: 'Manage the list' }))
-  return screen.getByRole('dialog', { name: 'Scheduled submission options' })
-}
+const rowOf = (group: HTMLElement, label: string) =>
+  within(group).getByRole('radio', { name: label }).closest('li') as HTMLElement
 
 describe('Admin → Submission & automation', () => {
-  it('shows the setting, its options and when it last ran, as the prototype does', async () => {
+  it('shows the choices as a list, the one in use marked, and what is in effect beside them', async () => {
     renderAt()
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Submission & automation' }, { timeout: 5000 }),
     ).toBeInTheDocument()
     expect(screen.getByText('When released charges are submitted automatically.')).toBeVisible()
-    const select = await setting()
-    expect(select).toHaveTextContent('Every day at 18:00')
-    expect(screen.getByText('Last run never.')).toBeVisible()
-    // What is in effect, beside the section title; nothing to save yet.
-    const section = screen.getByRole('region', { name: 'Scheduled submission' })
-    expect(within(section).getAllByText('Every day at 18:00').length).toBeGreaterThan(1)
+    const group = await choices()
+    expect(
+      within(group)
+        .getAllByRole('radio')
+        .map((radio) => radio.getAttribute('value')),
+    ).toEqual(['off', 'hourly', '4h', 'daily-18'])
+    expect(within(group).getByRole('radio', { name: 'Every day at 6:00 PM' })).toBeChecked()
+    expect(rowOf(group, 'Every day at 6:00 PM')).toHaveTextContent('In use')
+    // The one in use cannot be deleted; Off is not a schedule.
+    expect(within(rowOf(group, 'Every day at 6:00 PM')).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(rowOf(group, 'Off — submit manually')).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(group).getByRole('button', { name: 'Delete schedule Every hour' })).toBeVisible()
+
+    expect(inEffect()).toHaveTextContent('Every day at 6:00 PM')
+    expect(inEffect()).toHaveTextContent('Released chargesSubmitted on schedule')
+    expect(inEffect()).toHaveTextContent('Last runNever')
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled()
-
-    await userEvent.click(select)
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Off — submit manually',
-      'Every hour',
-      'Every 4 hours',
-      'Every day at 18:00',
-    ])
-    await userEvent.keyboard('{Escape}')
-
-    expect(screen.getByRole('heading', { level: 2, name: 'Scheduled submission' })).toBeInTheDocument()
+    // No dialog to manage the list: it is on the page.
+    expect(screen.queryByRole('button', { name: 'Manage the list' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Payer SLA' })).not.toBeInTheDocument()
-    expect(screen.queryByText(/The list is yours to fill/)).not.toBeInTheDocument()
     expect(screen.queryByText(/backend|not saved|temporary|demo|coming soon|mock/i)).not.toBeInTheDocument()
   })
 
@@ -81,23 +78,22 @@ describe('Admin → Submission & automation', () => {
       lastScheduledRun: new Date(new Date().setHours(18, 0, 0, 0)).toISOString(),
     })
     renderAt()
-    await setting()
-    expect(screen.getByText('Last run Today 18:00.')).toBeVisible()
+    await choices()
+    expect(inEffect()).toHaveTextContent('Last runToday 18:00')
   })
 
   it('saves the setting: off, or an interval', async () => {
     renderAt()
-    await userEvent.click(await setting())
-    await userEvent.click(screen.getByRole('option', { name: 'Off — submit manually' }))
-    expect(screen.getByRole('button', { name: 'Save settings' })).toBeEnabled()
+    const group = await choices()
+    await userEvent.click(within(group).getByRole('radio', { name: 'Off — submit manually' }))
+    expect(screen.getByText('The choice is not saved yet.')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
-    // Saved: in effect beside the title, and nothing left to save.
+    // Saved: in effect, marked in use, and nothing left to save.
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled()
-    expect(
-      within(screen.getByRole('region', { name: 'Scheduled submission' })).getAllByText(
-        'Off — submit manually',
-      ).length,
-    ).toBeGreaterThan(1)
+    expect(screen.queryByText('The choice is not saved yet.')).not.toBeInTheDocument()
+    expect(inEffect()).toHaveTextContent('Off — submit manually')
+    expect(inEffect()).toHaveTextContent('Submitted by hand')
+    expect(rowOf(group, 'Off — submit manually')).toHaveTextContent('In use')
     expect(toasts()).toEqual([
       expect.objectContaining({
         tone: 'success',
@@ -106,118 +102,96 @@ describe('Admin → Submission & automation', () => {
       }),
     ])
 
-    await userEvent.click(await setting())
-    await userEvent.click(screen.getByRole('option', { name: 'Every 4 hours' }))
+    await userEvent.click(within(group).getByRole('radio', { name: 'Every 4 hours' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(toasts().at(-1)).toEqual(
       expect.objectContaining({ description: 'The next scheduled run uses this interval.' }),
     )
-    // The saved option is the one in use.
-    const dialog = await openList()
-    const row = within(dialog).getByText('Every 4 hours').closest('tr') as HTMLElement
-    expect(row).toHaveTextContent('In use')
+    expect(rowOf(group, 'Every 4 hours')).toHaveTextContent('In use')
+    // The one no longer in use can be deleted again.
+    expect(within(group).getByRole('button', { name: 'Delete schedule Every day at 6:00 PM' })).toBeVisible()
   })
 
-  it('lists the options, marks the one in use, and never offers to remove it', async () => {
+  it('deletes a schedule after asking, and it is no longer offered', async () => {
     renderAt()
-    const dialog = await openList()
-    expect(
-      within(dialog).getByText(
-        'What the dropdown on this screen offers. The option in use cannot be removed.',
-      ),
-    ).toBeVisible()
-    const inUse = within(dialog).getByText('Every day at 18:00').closest('tr') as HTMLElement
-    expect(inUse).toHaveTextContent('In use')
-    expect(within(inUse).queryByRole('button')).not.toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Remove Every hour' })).toBeVisible()
-  })
-
-  it('removes an option after asking, and the dropdown no longer offers it', async () => {
-    renderAt()
-    const dialog = await openList()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove Every hour' }))
-    const confirm = screen.getByRole('alertdialog', { name: 'Remove this option?' })
+    const group = await choices()
+    await userEvent.click(within(group).getByRole('button', { name: 'Delete schedule Every hour' }))
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete this schedule?' })
     expect(within(confirm).getByText('“Every hour” will no longer be offered.')).toBeVisible()
-    await userEvent.click(within(confirm).getByRole('button', { name: 'Remove' }))
-    await waitFor(() => expect(within(dialog).queryByText('Every hour')).not.toBeInTheDocument())
-
-    // The footer's Close (the × in the corner is named Close too).
-    await userEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement)
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    await userEvent.click(await setting())
-    expect(screen.queryByRole('option', { name: 'Every hour' })).not.toBeInTheDocument()
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Delete schedule' }))
+    await waitFor(() =>
+      expect(within(group).queryByRole('radio', { name: 'Every hour' })).not.toBeInTheDocument(),
+    )
   })
 
-  it('adds an option — the field shown follows How often, with the prototype’s checks', async () => {
+  it('adds a schedule — the field shown follows How often, with the prototype’s checks', async () => {
     renderAt()
-    const dialog = await openList()
+    const group = await choices()
+    const add = screen.getByRole('region', { name: 'Add a schedule' })
     // Every day at a time: At, 18:00 to start with.
-    expect(within(dialog).getByRole('combobox', { name: 'How often' })).toHaveTextContent(
-      'Every day at a time',
-    )
-    const at = within(dialog).getByLabelText('At')
-    expect(at).toHaveValue('18:00')
-    expect(within(dialog).queryByLabelText(/every \(hours\)/i)).not.toBeInTheDocument()
+    expect(within(add).getByRole('combobox', { name: 'How often' })).toHaveTextContent('Every day at a time')
+    // Our own time field: the time typed, AM / PM picked beside it.
+    expect(within(add).getByRole('textbox', { name: 'At' })).toHaveValue('6:00')
+    expect(within(add).getByRole('combobox', { name: 'AM or PM' })).toHaveTextContent('PM')
+    expect(within(add).queryByRole('spinbutton')).not.toBeInTheDocument()
 
-    // The same option again is refused.
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Add option' }))
+    // The same schedule again is refused.
+    await userEvent.click(within(add).getByRole('button', { name: 'Add schedule' }))
     await waitFor(() =>
       expect(toasts()).toEqual([
         expect.objectContaining({
           tone: 'warning',
           title: 'Already on the list',
-          description: '“Every day at 18:00” is already an option.',
+          description: '“Every day at 6:00 PM” is already a schedule.',
         }),
       ]),
     )
 
     // Every few hours: Every (hours) instead of At, from 1 to 12.
-    await userEvent.click(within(dialog).getByRole('combobox', { name: 'How often' }))
+    await userEvent.click(within(add).getByRole('combobox', { name: 'How often' }))
     await userEvent.click(screen.getByRole('option', { name: 'Every few hours' }))
-    expect(within(dialog).queryByLabelText('At')).not.toBeInTheDocument()
-    const hours = within(dialog).getByRole('spinbutton', { name: /every \(hours\)/i })
+    expect(within(add).queryByRole('textbox', { name: 'At' })).not.toBeInTheDocument()
+    const hours = within(add).getByRole('spinbutton', { name: /every \(hours\)/i })
     await userEvent.clear(hours)
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Add option' }))
-    expect(await within(dialog).findByText('Say how many hours apart.')).toBeVisible()
+    await userEvent.click(within(add).getByRole('button', { name: 'Add schedule' }))
+    expect(await within(add).findByText('Say how many hours apart.')).toBeVisible()
     await userEvent.type(hours, '6')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Add option' }))
+    await userEvent.click(within(add).getByRole('button', { name: 'Add schedule' }))
     await waitFor(() =>
       expect(toasts().at(-1)).toEqual(
         expect.objectContaining({
           tone: 'success',
-          title: 'Option added',
-          description: '“Every 6 hours” is now in the dropdown.',
+          title: 'Schedule added',
+          description: '“Every 6 hours” can now be chosen.',
         }),
       ),
     )
-    expect(within(dialog).getByText('Every 6 hours')).toBeInTheDocument()
+    // Offered at once, not in use until saved.
+    expect(within(group).getByRole('radio', { name: 'Every 6 hours' })).not.toBeChecked()
 
     // Weekdays at a time.
-    await userEvent.click(within(dialog).getByRole('combobox', { name: 'How often' }))
+    await userEvent.click(within(add).getByRole('combobox', { name: 'How often' }))
     await userEvent.click(screen.getByRole('option', { name: 'Weekdays at a time' }))
-    const weekdaysAt = within(dialog).getByLabelText('At')
-    await userEvent.clear(weekdaysAt)
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Add option' }))
-    expect(await within(dialog).findByText('Choose a time of day.')).toBeVisible()
-    await userEvent.type(weekdaysAt, '07:30')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Add option' }))
-    await waitFor(() => expect(within(dialog).getByText('Weekdays at 07:30')).toBeInTheDocument())
-
-    // Offered by the setting at once.
-    // The footer's Close (the × in the corner is named Close too).
-    await userEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement)
-    await userEvent.click(await setting())
-    expect(screen.getByRole('option', { name: 'Weekdays at 07:30' })).toBeInTheDocument()
+    const at = within(add).getByRole('textbox', { name: 'At' })
+    await userEvent.clear(at)
+    await userEvent.click(within(add).getByRole('button', { name: 'Add schedule' }))
+    expect(await within(add).findByText('Enter a time, e.g. 6:07.')).toBeVisible()
+    // Any minute, not only a listed one.
+    await userEvent.type(at, '7:32')
+    await userEvent.click(within(add).getByRole('combobox', { name: 'AM or PM' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'AM' }))
+    await userEvent.click(within(add).getByRole('button', { name: 'Add schedule' }))
+    await waitFor(() =>
+      expect(within(group).getByRole('radio', { name: 'Weekdays at 7:32 AM' })).toBeInTheDocument(),
+    )
   })
 
-  it('says how it works with no options yet', async () => {
+  it('says what to do with no schedules yet', async () => {
     resetAutomation({ schedule: 'off', options: [], lastScheduledRun: null })
     renderAt()
-    expect(await setting()).toHaveTextContent('Off — submit manually')
-    const dialog = await openList()
-    expect(within(dialog).getByText('No options yet')).toBeVisible()
-    expect(
-      within(dialog).getByText('Without one, released charges are only submitted by hand.'),
-    ).toBeVisible()
+    const group = await choices()
+    expect(within(group).getByRole('radio', { name: 'Off — submit manually' })).toBeChecked()
+    expect(within(group).getByText('No schedules yet — add one below.')).toBeVisible()
+    expect(inEffect()).toHaveTextContent('Submitted by hand')
   })
 })

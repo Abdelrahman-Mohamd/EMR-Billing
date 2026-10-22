@@ -57,9 +57,8 @@ import { scrollToSection, useScrollSpy, useScrollToHashOnce } from './chart-scro
  * The case shown is in the URL (`?case=<id>`); with none, the first open case.
  *
  * The patient is read from the server (`GET /patients/{id}`) each time the
- * chart opens; their cases are the server's too (`GET /patient-cases`). The
- * coverage, each case's choice of insurance and the authorizations are still
- * kept in this tab.
+ * chart opens; their cases (with their diagnoses), the cases' insurances and
+ * the authorizations are the server's too. Nothing is kept in this tab.
  *
  * The case's visits (from Visits, handed over by the route) follow the case's
  * cards, each opening the visit with its charge lines and claims.
@@ -436,7 +435,7 @@ function MenuLink({
         scrollToSection(id)
       }}
       className={cn(
-        'text-meta flex h-[38px] min-w-0 flex-none items-center gap-2.5 rounded-full px-3 whitespace-nowrap no-underline',
+        'text-meta flex h-[38px] min-w-0 flex-none items-center gap-2.5 rounded-md px-3 whitespace-nowrap no-underline',
         on
           ? 'bg-brand-wash text-brand-deep [&_svg]:text-brand font-medium'
           : 'text-n600 hover:bg-n50 hover:text-ink [&_svg]:text-n400',

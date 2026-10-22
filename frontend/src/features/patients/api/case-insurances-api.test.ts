@@ -108,8 +108,8 @@ describe('case insurances against the backend', () => {
       .mockResolvedValueOnce(json(200, page([wire(16)], 2, 2)))
     const all = await listCaseInsurances()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/case-insurances?page=1`,
-      `${BASE}/case-insurances?page=2`,
+      `${BASE}/case-insurances?page=1&per_page=100`,
+      `${BASE}/case-insurances?page=2&per_page=100`,
     ])
     expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
     expect(all[0]).toEqual({

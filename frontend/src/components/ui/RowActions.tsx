@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Ban, Pencil, RotateCcw, Trash2 } from 'lucide-react'
+import { Ban, Pencil, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { toast } from '@/stores/toast-store'
 import { Button } from './Button'
@@ -20,7 +20,7 @@ import { Switch } from './Switch'
  *   into its cached list) and the toast says so in the server's words
  *   (`statusChanged`) — or why not (`statusChangeFailed`).
  * - **Actions** (`actionsColumn`): the last column, right-aligned, holding
- *   small icon buttons — Edit (pencil), Delete (trash, in red) — each named
+ *   small icon buttons — Edit (pencil), Re-check (arrows), Delete (trash, in red) — each named
  *   for its row ("Edit Harborline") with the plain verb as its tooltip.
  *   A table offers only the actions its feature supports; a read-only table
  *   has no actions column.
@@ -35,6 +35,7 @@ export function RowActions({ children }: { children: ReactNode }) {
 
 const ACTION = {
   edit: { icon: <Pencil size={14} aria-hidden="true" />, title: 'Edit', variant: 'default' },
+  recheck: { icon: <RefreshCw size={14} aria-hidden="true" />, title: 'Re-check', variant: 'default' },
   delete: { icon: <Trash2 size={14} aria-hidden="true" />, title: 'Delete', variant: 'danger' },
 } as const
 

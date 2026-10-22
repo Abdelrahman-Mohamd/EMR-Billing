@@ -1,3 +1,5 @@
+import { formatTime } from '@/lib/utils/time'
+
 /**
  * Scheduled submission as the prototype shows it (PRD V2 §5.1; options from
  * the client meeting of 2026-09-23). **Frontend only:** no backend exists for
@@ -23,9 +25,9 @@ export interface ScheduleOption {
   kind: ScheduleKind
   /** For "every few hours": how many hours apart (1–12). */
   hours: number | null
-  /** For a time of day: "18:00". */
+  /** For a time of day, 24-hour: "18:00". */
   time: string | null
-  /** As the dropdown shows it: "Every 4 hours", "Weekdays at 07:30". */
+  /** As the list shows it: "Every 4 hours", "Weekdays at 7:30 AM". */
   label: string
 }
 
@@ -40,8 +42,8 @@ export interface AutomationSettings {
   lastScheduledRun: string | null
 }
 
-/** The prototype's names for an option. */
+/** The prototype's names for an option — a time of day on the 12-hour clock, as the time field shows it. */
 export function scheduleLabel(option: Pick<ScheduleOption, 'kind' | 'hours' | 'time'>): string {
   if (option.kind === 'hours') return `Every ${option.hours === 1 ? 'hour' : `${option.hours ?? ''} hours`}`
-  return `${option.kind === 'daily' ? 'Every day' : 'Weekdays'} at ${option.time ?? ''}`
+  return `${option.kind === 'daily' ? 'Every day' : 'Weekdays'} at ${formatTime(option.time ?? '') || (option.time ?? '')}`
 }

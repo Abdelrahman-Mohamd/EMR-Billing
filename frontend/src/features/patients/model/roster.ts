@@ -1,6 +1,5 @@
 import type { PatientCase } from './case'
 import { primaryOf, type Coverage } from './coverage'
-import type { PatientSummary } from './patient'
 
 /** The roster's status filter — the prototype's three choices, Active by default. */
 export const STATUS_FILTERS = ['Active', 'Inactive', 'All'] as const
@@ -32,17 +31,4 @@ export function primaryInsuranceId(
   coverages: readonly Coverage[],
 ): number | undefined {
   return item === undefined ? undefined : primaryOf(coverages, item.id)?.insuranceId
-}
-
-/** The prototype's search: first and last name in either order, Billing ID or EMR ID. */
-export function matchesSearch(patient: PatientSummary, query: string): boolean {
-  const q = query.trim().toLowerCase()
-  if (q === '') return true
-  const names =
-    `${patient.firstName} ${patient.lastName} ${patient.lastName}, ${patient.firstName}`.toLowerCase()
-  return (
-    names.includes(q) ||
-    String(patient.billingId).includes(q) ||
-    (patient.emrId !== null && String(patient.emrId).includes(q))
-  )
 }

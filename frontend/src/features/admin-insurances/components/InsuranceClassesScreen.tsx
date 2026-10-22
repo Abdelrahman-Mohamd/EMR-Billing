@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Layers, Plus } from 'lucide-react'
 import { Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { RowActionButton, actionsColumn, StatusChangeDialog, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
@@ -46,7 +46,6 @@ export function InsuranceClassesScreen({ practiceFilter }: { practiceFilter: num
   /** The row whose Active switch was flipped, waiting for confirmation. */
   const [statusOf, setStatusOf] = useState<InsuranceClass | null>(null)
   const [deleting, setDeleting] = useState<InsuranceClass | null>(null)
-  const [sort, setSort] = useState<Sort>({ key: 'code', direction: 'asc' })
 
   const practiceName = (id: number) => practices.data?.find((practice) => practice.id === id)?.name
   const filter = practiceFilter === undefined ? null : String(practiceFilter)
@@ -57,21 +56,14 @@ export function InsuranceClassesScreen({ practiceFilter }: { practiceFilter: num
       replace: true,
     })
 
-  const rows = (classes.data ?? [])
-    .filter((insuranceClass) => practiceFilter === undefined || insuranceClass.practiceId === practiceFilter)
-    .sort((a, b) => {
-      const order =
-        sort.key === 'name'
-          ? a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-          : a.code.localeCompare(b.code, undefined, { sensitivity: 'base' })
-      return sort.direction === 'asc' ? order : -order
-    })
+  const rows = (classes.data ?? []).filter(
+    (insuranceClass) => practiceFilter === undefined || insuranceClass.practiceId === practiceFilter,
+  )
 
   const columns: ReadonlyArray<Column<InsuranceClass>> = [
     {
       key: 'code',
       header: 'Code',
-      sortable: true,
       cell: (insuranceClass) => (
         <span className="text-ink font-medium whitespace-nowrap">{insuranceClass.code}</span>
       ),
@@ -80,7 +72,6 @@ export function InsuranceClassesScreen({ practiceFilter }: { practiceFilter: num
       key: 'name',
       header: 'Class',
       primary: true,
-      sortable: true,
       // Room for a two-word class name without breaking inside a word.
       width: '12rem',
       cell: (insuranceClass) => <span className="block">{insuranceClass.name}</span>,
@@ -168,8 +159,6 @@ export function InsuranceClassesScreen({ practiceFilter }: { practiceFilter: num
         loading={classes.isPending}
         error={classes.isError}
         onRetry={() => void classes.refetch()}
-        sort={sort}
-        onSortChange={setSort}
         empty={
           filter === null ? (
             <EmptyState

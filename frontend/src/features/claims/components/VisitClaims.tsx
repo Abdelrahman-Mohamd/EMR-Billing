@@ -11,8 +11,8 @@ import { isReleased, useVisitReferences, type Visit } from '@/features/visits'
 import { isApiError, userMessage } from '@/lib/api/api-error'
 import { formatIsoDate } from '@/lib/utils/dates'
 import { formatMoney } from '@/lib/utils/money'
-import { useClaims, useDeleteClaim } from '../queries/use-claims'
-import { canDelete, claimStatus, formatName, type Claim } from '../schemas/claim'
+import { useClaims, useDeleteClaim, useScrubClaim } from '../queries/use-claims'
+import { canDelete, canScrub, claimStatus, formatName, type Claim } from '../schemas/claim'
 import { CreateClaimDialog } from './CreateClaimDialog'
 import { EditClaimDialog } from './EditClaimDialog'
 
@@ -25,24 +25,41 @@ const money = (amount: string) => {
  * A visit's claims, on the visit: one per insurance billed, each for the whole
  * visit — the insurance, format, total, status (with what the scrub found) and
  * when it was sent. A released visit can be billed: "Create claim" to one of
- * the case's insurances not billed yet. Each claim can be edited (its status
- * moved on, its format, the clearinghouse's reference) and, until sent,
+ * the case's insurances not billed yet. Each claim shows the server's
+ * references (its claim number, the payer's, the clearinghouse's) and can be
+ * edited (its status moved on, its format, the clearinghouse's reference) and,
+ * until sent, scrubbed again — after the data it flagged is fixed — or
  * deleted.
  */
 export function VisitClaims({ visit }: { visit: Visit }) {
-  const claims = useClaims()
+  // Only this visit's, asked of the server (`visit_id`).
+  const claims = useClaims({ visitId: visit.id })
   const refs = useVisitReferences()
   const remove = useDeleteClaim()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Claim | null>(null)
   const [deleting, setDeleting] = useState<Claim | null>(null)
-  const mine = (claims.data ?? []).filter((claim) => claim.visitId === visit.id)
+  const mine = claims.data ?? []
   const released = isReleased(visit)
-  // The case's insurances not billed for this visit yet, by priority.
+  // The case's insurances not billed for this visit yet, in the server's order.
   const billable = refs.records.coverages
     .filter((coverage) => coverage.caseId === visit.caseId)
     .filter((coverage) => !mine.some((claim) => claim.coverageId === coverage.id))
-    .sort((a, b) => a.rank - b.rank)
+
+  const scrub = useScrubClaim()
+  const scrubAgain = async (claim: Claim) => {
+    try {
+      const result = await scrub.mutateAsync(claim.id)
+      const errors = result.claim.scrubErrors
+      if (errors.length > 0) toast.warning(result.message ?? 'Claim scrubbed', errors.join(' '))
+      else toast.success(result.message ?? 'Claim scrubbed')
+    } catch (error) {
+      toast.error(
+        `The claim to ${claim.insuranceName} was not scrubbed`,
+        isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+      )
+    }
+  }
 
   const columns: ReadonlyArray<Column<Claim>> = [
     {
@@ -53,6 +70,16 @@ export function VisitClaims({ visit }: { visit: Visit }) {
         <span className="block min-w-0">
           <span className="break-words">{claim.insuranceName || '—'}</span>
           {claim.rankLabel !== '' && <CellSub>{claim.rankLabel}</CellSub>}
+        </span>
+      ),
+    },
+    {
+      key: 'number',
+      header: 'Claim #',
+      cell: (claim) => (
+        <span className="block min-w-0">
+          <span className="tabular-nums">{claim.controlNumber || '—'}</span>
+          {claim.payerClaimNumber !== '' && <CellSub>Payer # {claim.payerClaimNumber}</CellSub>}
         </span>
       ),
     },
@@ -89,6 +116,16 @@ export function VisitClaims({ visit }: { visit: Visit }) {
             {claim.sentDate === '' ? '—' : formatIsoDate(claim.sentDate)}
           </span>
           {claim.clearinghouseRef !== '' && <CellSub>Ref. {claim.clearinghouseRef}</CellSub>}
+          {(claim.clearinghouseStatus !== '' || claim.clearinghouseBatchId !== '') && (
+            <CellSub>
+              {[
+                claim.clearinghouseStatus,
+                claim.clearinghouseBatchId === '' ? '' : `batch ${claim.clearinghouseBatchId}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </CellSub>
+          )}
         </span>
       ),
     },
@@ -99,6 +136,14 @@ export function VisitClaims({ visit }: { visit: Visit }) {
           label={`Edit the claim to ${claim.insuranceName}`}
           onClick={() => setEditing(claim)}
         />
+        {canScrub(claim) && (
+          <RowActionButton
+            action="recheck"
+            title="Scrub again"
+            label={`Scrub the claim to ${claim.insuranceName} again`}
+            onClick={() => void scrubAgain(claim)}
+          />
+        )}
         {canDelete(claim) && (
           <RowActionButton
             action="delete"

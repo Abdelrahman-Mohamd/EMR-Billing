@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Plug } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
-import { Section } from '@/components/ui/Card'
+import { DetailCard } from '@/components/ui/DetailCard'
 import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { FilterPills } from '@/components/ui/FilterPills'
 import { Pagination } from '@/components/ui/Pagination'
@@ -93,10 +93,10 @@ export function PayloadLogSection({
   ]
 
   return (
-    <Section title="Payload log" className="pb-0">
-      <p className="text-micro text-n500 mt-2.5">
-        Every payload received from the EMR and what reconciliation did with it
-      </p>
+    <DetailCard
+      title="Payload log"
+      info="Every payload received from the EMR and what reconciliation did with it."
+    >
       <FilterPills
         label="Filter by result"
         className="mt-4"
@@ -131,6 +131,6 @@ export function PayloadLogSection({
           ) : undefined
         }
       />
-    </Section>
+    </DetailCard>
   )
 }

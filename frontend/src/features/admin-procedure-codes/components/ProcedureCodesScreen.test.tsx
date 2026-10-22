@@ -168,13 +168,14 @@ describe('Setup → Procedure codes', () => {
       'Active',
     ])
     expect(await rowOf('97110')).toHaveTextContent('Timed (8-minute rule)')
-    // Sorted by code.
+    // In the server's order — nothing is sorted in the browser — and no column offers a sort.
     const rows = within(await table()).getAllByRole('row')
+    expect(within(await table()).queryAllByRole('button', { name: /sort|code|fee/i })).toEqual([])
     expect(rows.slice(1).map((row) => row.querySelector('td')?.textContent?.slice(0, 5))).toEqual([
-      '97033',
-      '97039',
       '97110',
       '97140',
+      '97033',
+      '97039',
     ])
     // The server's label for the type; $0.00 marked; no "New from EMR" (not in the contract).
     expect(await rowOf('97033')).toHaveTextContent('Modality')
@@ -372,7 +373,7 @@ describe('Setup → Procedure codes', () => {
     )
   }, 15_000)
 
-  it('pages 20 codes at a time and sorts by fee', async () => {
+  it('pages 20 codes at a time, in the server’s order', async () => {
     codes = Array.from({ length: 25 }, (_, index) =>
       code(index + 1, { code: `9${String(7000 + index)}`, default_fee: (100 - index).toFixed(2) }),
     )
@@ -380,9 +381,8 @@ describe('Setup → Procedure codes', () => {
     expect(await screen.findByText('Showing 1–20 of 25 codes', {}, { timeout: 5000 })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
     expect(await screen.findByText('Showing 21–25 of 25 codes')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /default fee/i }))
-    expect(await screen.findByText('Showing 1–20 of 25 codes')).toBeInTheDocument()
     const firstRow = within(await table()).getAllByRole('row')[1] as HTMLElement
-    expect(firstRow).toHaveTextContent('$76.00')
+    expect(firstRow).toHaveTextContent('97020')
+    expect(screen.queryByRole('button', { name: /default fee/i })).not.toBeInTheDocument()
   })
 })

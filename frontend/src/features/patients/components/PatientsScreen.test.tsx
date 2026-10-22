@@ -10,7 +10,6 @@ import type { Insurance, InsuranceClass } from '@/features/admin-insurances'
 import type { Practice } from '@/features/admin-practices'
 import type { ReferringPhysician } from '@/features/admin-referring-physicians'
 import { createPatient, getPatient, listPatients, setPatientActive, updatePatient } from '../api/patients-api'
-import { resetPatientRecords } from '../data/patient-records-store'
 import type { Patient } from '../model/patient'
 import { insurance, insuranceClass, patient, practice, referrer } from './test-fixtures'
 
@@ -90,7 +89,23 @@ beforeEach(() => {
     patient({ id: '10420', firstName: 'Grace', lastName: 'Holloway', emrId: 56362821, isActive: false }),
     patient({ id: '10424', practiceId: 2, firstName: 'Isabella', lastName: 'Marino', emrId: 56363345 }),
   ]
-  listMock.mockReset().mockImplementation(() => Promise.resolve(structuredClone(patients)))
+  // As the server searches (staging, 2026-10-20): part of a first or last
+  // name, or a whole Billing ID or EMR ID.
+  listMock.mockReset().mockImplementation((search = '') => {
+    const q = search.toLowerCase()
+    return Promise.resolve(
+      structuredClone(
+        patients.filter(
+          (item) =>
+            q === '' ||
+            item.firstName.toLowerCase().includes(q) ||
+            item.lastName.toLowerCase().includes(q) ||
+            String(item.billingId) === q ||
+            String(item.emrId) === q,
+        ),
+      ),
+    )
+  })
   getMock.mockReset().mockImplementation((id) => {
     const found = patients.find((item) => item.id === id)
     return found
@@ -103,7 +118,6 @@ beforeEach(() => {
     patients = patients.map((item) => (item.id === id ? { ...item, isActive } : item))
     return Promise.resolve('Patient updated successfully')
   })
-  resetPatientRecords({})
 })
 afterEach(() => {
   useToastStore.getState().clear()
@@ -137,7 +151,8 @@ describe('Patients — the roster', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Patients' }, { timeout: 5000 }),
     ).toBeInTheDocument()
-    expect(await names()).toEqual(['Brennan, Harold', 'Marino, Isabella', 'Okonkwo, Nadia'])
+    // In the server's order: nothing is sorted in the browser.
+    expect(await names()).toEqual(['Okonkwo, Nadia', 'Brennan, Harold', 'Marino, Isabella'])
     const headers = within(await table())
       .getAllByRole('columnheader')
       .map((header) => header.textContent)
@@ -154,25 +169,26 @@ describe('Patients — the roster', () => {
     expect(screen.queryByText(/backend|not saved|temporary|demo|coming soon|mock/i)).not.toBeInTheDocument()
   })
 
-  it('searches by name in either order, Billing ID or EMR ID — and the search never reaches the URL', async () => {
+  it('asks the server to search by name, Billing ID or EMR ID — and the search never reaches the app’s URL', async () => {
     const router = renderAt()
     await table()
     const search = screen.getByRole('searchbox', { name: 'Search by name, Billing ID or EMR ID' })
-    await userEvent.type(search, 'okonkwo, nad')
-    expect(await names()).toEqual(['Okonkwo, Nadia'])
+    await userEvent.type(search, 'okonk')
+    await waitFor(() => expect(listMock).toHaveBeenLastCalledWith('okonk', expect.anything()))
+    await waitFor(async () => expect(await names()).toEqual(['Okonkwo, Nadia']))
     await userEvent.clear(search)
     await userEvent.type(search, '10413')
-    expect(await names()).toEqual(['Brennan, Harold'])
+    await waitFor(async () => expect(await names()).toEqual(['Brennan, Harold']))
     await userEvent.clear(search)
     await userEvent.type(search, '56363345')
-    expect(await names()).toEqual(['Marino, Isabella'])
+    await waitFor(async () => expect(await names()).toEqual(['Marino, Isabella']))
     expect(router.state.location.search).toEqual({})
 
     await userEvent.clear(search)
     await userEvent.type(search, 'nobody')
     expect(await screen.findByText('No patients match')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Clear search and filters' }))
-    expect(await names()).toHaveLength(3)
+    await waitFor(async () => expect(await names()).toHaveLength(3))
   })
 
   it('filters by practice, kept in the URL', async () => {
@@ -231,7 +247,9 @@ describe('Patients — the roster', () => {
   it('opens a patient’s chart from the roster', async () => {
     const router = renderAt()
     await userEvent.click(within(await rowOf('Okonkwo')).getByRole('link'))
-    expect(await screen.findByRole('heading', { level: 3, name: 'Demographics' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { level: 3, name: 'Demographics' }, { timeout: 5000 }),
+    ).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/patients/10412')
     expect(getMock).toHaveBeenCalledWith('10412', expect.anything())
   })

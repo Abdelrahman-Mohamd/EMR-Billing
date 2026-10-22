@@ -76,6 +76,12 @@ afterEach(() => {
 })
 
 describe('organizations against the backend', () => {
+  it('asks the server to search, by name', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, page([item(1, 'PTc Health Group')], 1, 1, 1)))
+    await listOrganizations(1, 'ptc')
+    expect(call(0).url).toBe(`${BASE}/organizations?page=1&search=ptc`)
+  })
+
   it('lists one page with GET /organizations?page=N and the session token', async () => {
     fetchMock.mockResolvedValueOnce(json(200, page([item(1, 'PTc Health Group')], 1, 1, 1)))
     const result = await listOrganizations(1)
@@ -107,9 +113,9 @@ describe('organizations against the backend', () => {
       .mockResolvedValueOnce(json(200, page([item(31)], 3, 3, 32)))
     const all = await listAllOrganizations()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/organizations?page=1`,
-      `${BASE}/organizations?page=2`,
-      `${BASE}/organizations?page=3`,
+      `${BASE}/organizations?page=1&per_page=100`,
+      `${BASE}/organizations?page=2&per_page=100`,
+      `${BASE}/organizations?page=3&per_page=100`,
     ])
     expect(all.map((organization) => organization.id)).toEqual([1, 2, 16, 31])
   })

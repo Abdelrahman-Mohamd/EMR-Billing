@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Circle, FlaskConical, Plus, RefreshCw } from 'lucide-react'
+import { Circle, FlaskConical, GitBranch, Plus } from 'lucide-react'
 import { Tag } from '@/components/ui/Badge'
 import { Button, buttonClass } from '@/components/ui/Button'
 import { DataTable, type Column } from '@/components/ui/DataTable'
@@ -8,11 +8,20 @@ import { ConfirmDialog, Dialog } from '@/components/ui/Dialog'
 import { EmptyState, ErrorState } from '@/components/ui/States'
 import { RowActionButton, actionsColumn, StatusChangeDialog, activeColumn } from '@/components/ui/RowActions'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
-import { useInsuranceClasses, useInsurances } from '@/features/admin-insurances'
+import { useInsurances } from '@/features/admin-insurances'
 import { PracticeSelect, usePractices } from '@/features/admin-practices'
 import { useProcedureCodes } from '@/features/admin-procedure-codes'
-import { useCodingRules } from '../data/coding-rule-store'
-import { ruleName, scopeKey, type CodingRule } from '../model/coding-rule'
+import { isApiError, userMessage } from '@/lib/api/api-error'
+import { toast } from '@/stores/toast-store'
+import { ruleName, type CodingRule } from '../model/coding-rule'
+import {
+  useCodingRules,
+  useCreateCodingRule,
+  useDeleteCodingRule,
+  useSetCodingRuleActive,
+  useUpdateCodingRule,
+} from '../queries/use-coding-rules'
+import { toCodingRulePayload } from '../schemas/coding-rule-form'
 import { CodingRuleDialog, type Option } from './CodingRuleDialog'
 import { RuleTester } from './RuleTester'
 
@@ -24,28 +33,26 @@ import { RuleTester } from './RuleTester'
  * first); and "Test the rules", a dialog opened from the header. Not paged, searched or
  * filtered: the prototype does none of these.
  *
- * Which rules a practice sees: the default rules (every payer) and the rules
- * of its own insurance classes and insurances. The practice is kept in the URL
- * (`?practice=<id>`, an opaque id) and chosen in the filter bar under the
- * header, where the other practice-scoped screens keep it; with none,
- * the first practice — the prototype shows the current practice.
+ * The rules are the server's (schemas/coding-rule.ts, worked out on staging
+ * 2026-10-20): each belongs to a practice, and the list asks for the chosen
+ * practice's (`practice_id`) — its default rules (every payer) and its
+ * insurances' rules. The practice is kept in the URL (`?practice=<id>`, an
+ * opaque id) and chosen in the filter bar under the header, where the other
+ * practice-scoped screens keep it; with none, the first practice — the
+ * prototype shows the current practice. Every save, switch and delete waits
+ * for the server and says what it answered. The insurances and procedure codes
+ * come from their own features.
  *
- * **Frontend only.** There is no backend for coding rules: they live in this
- * browser tab (`data/coding-rule-store.ts`). That is architecture, not
- * product: the screen shows no message about it. The insurances, classes and
- * procedure codes come from their own features.
- *
- * Not built: the prototype offers New, Edit, Active and Delete only to users
- * whose role allows them; there is no permission model here yet
- * (docs/FRONTEND_ARCHITECTURE.md §8). Nothing here scrubs a claim.
+ * Not built: the prototype's class rules (the server has none), and New,
+ * Edit, Active and Delete offered only to users whose role allows them — there
+ * is no permission model here yet (docs/FRONTEND_ARCHITECTURE.md §8). Nothing
+ * here scrubs a claim: releasing a visit does, on the server.
  */
 export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
   const practices = usePractices()
   const insurances = useInsurances()
-  const classes = useInsuranceClasses()
   const procedureCodes = useProcedureCodes()
-  const store = useCodingRules()
   /** `undefined`: no dialog. `null`: adding. A rule: editing it. */
   const [editing, setEditing] = useState<CodingRule | null | undefined>(undefined)
   /** The row whose Active switch was flipped, waiting for confirmation. */
@@ -55,15 +62,18 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
   const [testing, setTesting] = useState(false)
 
   const practice = practices.data?.find((item) => item.id === practiceFilter) ?? practices.data?.[0]
+  const rules = useCodingRules(practice?.id)
+  const create = useCreateCodingRule()
+  const update = useUpdateCodingRule()
+  const setActive = useSetCodingRuleActive()
+  const remove = useDeleteCodingRule()
   const payers = (insurances.data ?? []).filter((item) => item.practiceId === practice?.id)
-  const practiceClasses = (classes.data ?? []).filter((item) => item.practiceId === practice?.id)
   const loading =
     practices.isPending ||
     insurances.isPending ||
-    classes.isPending ||
     procedureCodes.isPending ||
-    !store.ready
-  const failed = practices.isError || insurances.isError || classes.isError
+    (practice !== undefined && rules.isPending)
+  const failed = practices.isError || insurances.isError || rules.isError
 
   const choose = (value: string | null) =>
     void navigate({
@@ -72,41 +82,27 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
       replace: true,
     })
 
-  // The default rules and this practice's own, in the order they were added.
-  const rows = store.rules.filter((rule) =>
-    rule.scope.kind === 'default'
-      ? true
-      : rule.scope.kind === 'class'
-        ? practiceClasses.some((item) => item.id === (rule.scope.kind === 'class' ? rule.scope.classId : -1))
-        : payers.some((item) => item.id === (rule.scope.kind === 'insurance' ? rule.scope.insuranceId : -1)),
-  )
+  // The practice's rules, in the server's order.
+  const rows = rules.data ?? []
 
   const appliesTo = (rule: CodingRule) => {
     const { scope } = rule
     if (scope.kind === 'default') return 'Default (all payers)'
-    if (scope.kind === 'class')
-      return `${practiceClasses.find((item) => item.id === scope.classId)?.name ?? 'Class'} class`
-    return `${payers.find((item) => item.id === scope.insuranceId)?.name ?? 'Payer'} only`
+    const name = rule.insuranceName || payers.find((item) => item.id === scope.insuranceId)?.name
+    return `${name ?? 'Payer'} only`
   }
 
-  const codeOptions: Option[] = [...(procedureCodes.data ?? [])]
-    .sort((a, b) => a.code.localeCompare(b.code))
-    .map((code) => ({ value: code.code, label: `${code.code} — ${code.description}` }))
+  const codeOptions: Option[] = [...(procedureCodes.data ?? [])].map((code) => ({
+    value: String(code.id),
+    label: `${code.code} — ${code.description}`,
+  }))
   // The tester's codes show as short chips: the code, with its description in the list.
-  const testerCodeOptions = [...(procedureCodes.data ?? [])]
-    .sort((a, b) => a.code.localeCompare(b.code))
-    .map((code) => ({ value: code.code, label: code.code, description: code.description }))
-  // The prototype offers the active classes; a rule already on an inactive class keeps it.
-  const scopeOptions = (rule: CodingRule | null): Option[] => [
-    { value: 'default', label: 'Default — all payers' },
-    ...practiceClasses
-      .filter((item) => item.isActive || (rule !== null && scopeKey(rule.scope) === `class:${item.id}`))
-      .map((item) => ({ value: `class:${item.id}`, label: `Class — ${item.name}` })),
-    ...payers.map((item) => ({
-      value: `insurance:${item.id}`,
-      label: `${item.name} only (overrides default)`,
-    })),
-  ]
+  const testerCodeOptions = [...(procedureCodes.data ?? [])].map((code) => ({
+    value: String(code.id),
+    label: code.code,
+    description: code.description,
+  }))
+  const scopeOptions: Option[] = payers.map((item) => ({ value: `insurance:${item.id}`, label: item.name }))
 
   const openNew = () => ((procedureCodes.data ?? []).length === 0 ? setNeedsCodes(true) : setEditing(null))
 
@@ -166,7 +162,7 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
     <PageContainer>
       <PageHeader
         title="Coding rules"
-        description="Replace and Drop rules run during scrubbing; payer-specific rules override default rules."
+        description="Replace or drop a CPT / HCPCS code for an insurance: the rule changes a visit’s charge lines when it is released."
         actions={
           practices.data !== undefined && practices.data.length > 0 ? (
             <>
@@ -174,7 +170,8 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
               <Button
                 icon={<FlaskConical size={16} aria-hidden="true" />}
                 onClick={() => setTesting(true)}
-                disabled={loading}
+                // Nothing to test until there is a rule.
+                disabled={loading || rows.length === 0}
               >
                 Test the rules
               </Button>
@@ -209,44 +206,63 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
           onRetry={() => {
             void practices.refetch()
             void insurances.refetch()
-            void classes.refetch()
+            void rules.refetch()
           }}
         />
       ) : !practices.isPending && practice === undefined ? (
         <EmptyState
-          icon={<RefreshCw size={20} />}
+          icon={<GitBranch size={20} />}
           title="No practice yet"
           description="Coding rules belong to a practice. Create the practice and its primary location first."
         />
       ) : (
-        <div>
-          <DataTable
-            caption={practice === undefined ? 'Coding rules' : `Coding rules of ${practice.name}`}
-            columns={columns}
-            rows={rows}
-            getRowId={(rule) => rule.id}
-            loading={loading}
-            empty={
+        <DataTable
+          caption={practice === undefined ? 'Coding rules' : `Coding rules of ${practice.name}`}
+          columns={columns}
+          rows={rows}
+          getRowId={(rule) => String(rule.id)}
+          loading={loading}
+          empty={
+            // What a rule is and the one next step — the page header already says when rules run.
+            (procedureCodes.data ?? []).length === 0 ? (
               <EmptyState
-                icon={<RefreshCw size={20} />}
+                icon={<GitBranch size={20} />}
                 title="No coding rules yet"
-                description={`Coding rules are optional. A Replace rule swaps one CPT / HCPCS code for another and a Drop rule removes a code during scrubbing; a payer-specific rule overrides a default rule.${(procedureCodes.data ?? []).length > 0 ? '' : ' Rules act on procedure codes, so add those first.'}`}
+                description="Rules act on procedure codes, and there are none yet."
+                action={
+                  <Link to="/setup/procedure-codes" className={buttonClass('default', 'sm')}>
+                    Add a procedure code
+                  </Link>
+                }
               />
-            }
-          />
-          <p className="text-micro text-n500 mt-3">
-            Rules run on fresh submissions, resubmissions and corrected claims, and change the billing record
-            itself.
-          </p>
-        </div>
+            ) : (
+              <EmptyState
+                icon={<GitBranch size={20} />}
+                title={
+                  practice === undefined ? 'No coding rules yet' : `No coding rules for ${practice.name}`
+                }
+                description="Rules are optional. A Replace rule swaps one code for another; a Drop rule removes it."
+                action={
+                  <Button variant="primary" icon={<Plus size={16} aria-hidden="true" />} onClick={openNew}>
+                    New rule
+                  </Button>
+                }
+              />
+            )
+          }
+          footer={
+            rows.length > 0
+              ? `${rows.length} ${rows.length === 1 ? 'rule' : 'rules'} · active rules change a visit’s charge lines when it is released`
+              : undefined
+          }
+        />
       )}
 
       {testing && (
         <RuleTester
+          practiceId={practice?.id ?? 0}
           insurances={payers}
-          rules={store.rules}
           codeOptions={testerCodeOptions}
-          appliesTo={appliesTo}
           onClose={() => setTesting(false)}
         />
       )}
@@ -256,8 +272,15 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
           key={editing?.id ?? 'new'}
           rule={editing}
           codeOptions={codeOptions}
-          scopeOptions={scopeOptions(editing)}
-          onSave={(values) => (editing === null ? store.create(values) : store.update(editing.id, values))}
+          scopeOptions={scopeOptions}
+          onSave={async (values) => {
+            const payload = toCodingRulePayload(values)
+            const message =
+              editing === null
+                ? await create.mutateAsync({ practice_id: practice?.id ?? 0, ...payload })
+                : await update.mutateAsync({ id: editing.id, payload })
+            toast.success(message ?? 'Rule saved', 'It runs when a visit is released.')
+          }}
           onClose={() => setEditing(undefined)}
         />
       )}
@@ -303,16 +326,24 @@ export function CodingRulesScreen({ practiceFilter }: { practiceFilter: number |
         }
         confirmLabel="Delete rule"
         tone="destructive"
-        onConfirm={() => {
-          if (deleting !== null) store.remove(deleting.id)
-          setDeleting(null)
+        onConfirm={async () => {
+          if (deleting === null) return
+          try {
+            const message = await remove.mutateAsync(deleting.id)
+            toast.success(message ?? `Rule ${ruleName(deleting)} deleted`)
+          } catch (error) {
+            toast.error(
+              `Rule ${ruleName(deleting)} was not deleted`,
+              isApiError(error) ? userMessage(error) : 'Something went wrong. Please try again.',
+            )
+          }
         }}
       />
       {statusOf !== null && (
         <StatusChangeDialog
           name={`Rule ${ruleName(statusOf)}`}
           isActive={statusOf.isActive}
-          onConfirm={() => store.setActive(statusOf.id, !statusOf.isActive)}
+          onConfirm={() => setActive.mutateAsync({ id: statusOf.id, isActive: !statusOf.isActive })}
           onClose={() => setStatusOf(null)}
         />
       )}

@@ -48,7 +48,12 @@ const seed = vi.hoisted(() => {
     cases: [],
   })
   // A case as the server sends it, parsed.
-  const patientCase = (id: string, patientId: string, name: string, icd10Codes: string[]) => ({
+  const patientCase = (
+    id: string,
+    patientId: string,
+    name: string,
+    diagnoses: Array<{ id: string; code: string; description: string }>,
+  ) => ({
     id,
     patientId,
     name,
@@ -60,7 +65,7 @@ const seed = vi.hoisted(() => {
     startOfCare: '2026-09-14',
     dischargeDate: '',
     isActive: true,
-    icd10Codes,
+    diagnoses,
   })
   // The case's primary insurance as the server sends it, parsed.
   const coverage = (id: string, caseId: string) => ({
@@ -95,17 +100,19 @@ const seed = vi.hoisted(() => {
   })
   return { patient, patientCase, coverage, code }
 })
-const { SEED_PATIENTS, SEED_CASES, SEED_COVERAGES, SEED_RECORDS, SEED_CODES } = vi.hoisted(() => ({
+const { SEED_PATIENTS, SEED_CASES, SEED_COVERAGES, SEED_CODES } = vi.hoisted(() => ({
   SEED_PATIENTS: [seed.patient('11', 'Nadia', 'Okonkwo')],
-  SEED_CASES: [seed.patientCase('20', '11', 'R shoulder 2026', ['M75.101', 'M25.511'])],
+  SEED_CASES: [
+    seed.patientCase('20', '11', 'R shoulder 2026', [
+      {
+        id: '1',
+        code: 'M75.101',
+        description: 'Unspecified rotator cuff tear of right shoulder, not traumatic',
+      },
+      { id: '2', code: 'M25.511', description: 'Pain in right shoulder' },
+    ]),
+  ],
   SEED_COVERAGES: [seed.coverage('30', '20')],
-  SEED_RECORDS: {
-    // What the case's codes read as.
-    icd10: [
-      { code: 'M75.101', description: 'Unspecified rotator cuff tear of right shoulder, not traumatic' },
-      { code: 'M25.511', description: 'Pain in right shoulder' },
-    ],
-  },
   SEED_CODES: [
     seed.code('97110', 'Therapeutic exercise'),
     seed.code('97140', 'Manual therapy techniques', { modifierOverride: true, modifiers: ['GP', '59'] }),
@@ -125,11 +132,6 @@ vi.mock('@/features/patients/api/case-insurances-api', () => ({
 vi.mock('@/features/patients/api/authorizations-api', () => ({
   listAuthorizations: () => Promise.resolve([]),
 }))
-vi.mock('@/features/patients/data/patient-records-store', async (importOriginal) => {
-  const actual = await importOriginal<{ resetPatientRecords: (records: object) => void }>()
-  actual.resetPatientRecords(SEED_RECORDS)
-  return actual
-})
 vi.mock('@/features/admin-procedure-codes/api/procedure-codes-api', () => ({
   listProcedureCodes: () => Promise.resolve(SEED_CODES),
 }))
@@ -151,11 +153,13 @@ const listClaimsMock = vi.hoisted(() => vi.fn())
 const createClaimMock = vi.hoisted(() => vi.fn())
 const updateClaimMock = vi.hoisted(() => vi.fn())
 const deleteClaimMock = vi.hoisted(() => vi.fn())
+const scrubClaimMock = vi.hoisted(() => vi.fn())
 vi.mock('@/features/claims/api/claims-api', () => ({
   listClaims: listClaimsMock,
   createClaim: createClaimMock,
   updateClaim: updateClaimMock,
   deleteClaim: deleteClaimMock,
+  scrubClaim: scrubClaimMock,
 }))
 const practicesMock = vi.hoisted(() => vi.fn<() => Promise<Practice[]>>())
 vi.mock('@/features/admin-practices/api/practices-api', () => ({
@@ -247,6 +251,8 @@ const line = (
   diagnosisPointers,
   placeOfService: '11',
   notes: '',
+  codingRuleId: null,
+  originalProcedureCodeId: null,
 })
 
 /** A visit as the server lists it, parsed. */
@@ -294,6 +300,10 @@ const CLAIM = {
   totalAmount: '105.00',
   sentDate: '',
   clearinghouseRef: '',
+  controlNumber: 'C1',
+  payerClaimNumber: '',
+  clearinghouseBatchId: '',
+  clearinghouseStatus: '',
   insuranceName: '1003 – Aetna',
   rankLabel: 'Primary',
   memberId: 'W0001',
@@ -316,9 +326,16 @@ const detailOf = (visit: Visit): Visit => ({
 
 beforeEach(() => {
   visits = [VISIT]
+  // As the server filters them: a case's when asked.
   vi.mocked(listVisits)
     .mockReset()
-    .mockImplementation(() => Promise.resolve(structuredClone(visits)))
+    .mockImplementation((filter = {}) =>
+      Promise.resolve(
+        structuredClone(
+          visits.filter((visit) => filter.caseId === undefined || visit.caseId === filter.caseId),
+        ),
+      ),
+    )
   vi.mocked(getVisit)
     .mockReset()
     .mockImplementation((id) => {
@@ -428,7 +445,15 @@ beforeEach(() => {
       return Promise.resolve('Charge line deleted successfully')
     })
   claims = [CLAIM]
-  listClaimsMock.mockReset().mockImplementation(() => Promise.resolve(structuredClone(claims)))
+  listClaimsMock
+    .mockReset()
+    .mockImplementation((filter: { visitId?: number } = {}) =>
+      Promise.resolve(
+        structuredClone(
+          claims.filter((claim) => filter.visitId === undefined || claim.visitId === filter.visitId),
+        ),
+      ),
+    )
   createClaimMock
     .mockReset()
     .mockImplementation((payload: { visit_id: number; case_insurance_id: number }) => {
@@ -445,6 +470,16 @@ beforeEach(() => {
         : claim,
     )
     return Promise.resolve('Claim updated successfully')
+  })
+  // A re-scrub that still finds the data wrong: the claim fails, saying why.
+  scrubClaimMock.mockReset().mockImplementation((id: number) => {
+    const errors = [
+      'The practice billing address needs a 9-digit ZIP+4 for an electronic claim (2010AA-N403).',
+    ]
+    claims = claims.map((claim) =>
+      claim.id === id ? { ...claim, status: 'failed', scrubErrors: errors } : claim,
+    )
+    return Promise.resolve({ message: 'Claim scrubbed', claim: claims.find((claim) => claim.id === id) })
   })
   deleteClaimMock.mockReset().mockImplementation((id: number) => {
     claims = claims.filter((claim) => claim.id !== id)
@@ -578,6 +613,8 @@ describe('Visits — a new visit', () => {
       billing_provider_id: 1,
       treating_provider_id: 2,
       authorization_id: null,
+      // The case's diagnoses, as the visit starts with them.
+      diagnosis_codes: ['M75.101', 'M25.511'],
       charge_lines: [
         { procedure_code_id: 97110, units: 2 },
         {
@@ -708,6 +745,10 @@ describe('Visits — one visit', () => {
       expect(within(dialog).getByRole('combobox', { name: /^location/i })).toHaveTextContent('Bay Ridge'),
     )
     await choose(dialog, /^location/i, 'Park Slope')
+    // The visit's own diagnoses: one taken off.
+    await userEvent.click(within(dialog).getByRole('combobox', { name: /^diagnoses/i }))
+    await userEvent.click(screen.getByRole('option', { name: /M25\.511/ }))
+    await userEvent.keyboard('{Escape}')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save visit' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(updateVisitApi).toHaveBeenCalledWith(7, {
@@ -716,6 +757,7 @@ describe('Visits — one visit', () => {
       billing_provider_id: 1,
       treating_provider_id: 2,
       authorization_id: null,
+      diagnosis_codes: ['M75.101'],
     })
     expect(toasts()).toEqual([expect.objectContaining({ title: 'Visit updated successfully' })])
     expect(
@@ -809,10 +851,13 @@ describe('Visits — one visit', () => {
     expect(within(dialog).getByRole('combobox', { name: /^bill to/i })).toHaveTextContent(
       '1003 – Aetna (primary)',
     )
+    // The format starts as the server's own default.
+    expect(within(dialog).getByRole('combobox', { name: /^format/i })).toHaveTextContent('837P (electronic)')
+    await choose(dialog, /^format/i, 'CMS-1500 (paper)')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Create claim' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    // The visit and the insurance: the server bills every line of it.
-    expect(createClaimMock).toHaveBeenCalledWith({ visit_id: 7, case_insurance_id: 30 })
+    // The visit, the insurance and the format — the payload's fields, and only those.
+    expect(createClaimMock).toHaveBeenCalledWith({ visit_id: 7, case_insurance_id: 30, format: 'CMS1500' })
     expect(toasts()).toEqual([expect.objectContaining({ title: 'Claim created and scrubbed' })])
     expect(await within(section).findByText('Scrubbed')).toBeInTheDocument()
     // Each insurance once: nothing left to bill.
@@ -843,10 +888,39 @@ describe('Visits — one visit', () => {
     expect(updateClaimMock).toHaveBeenCalledWith(1, { status: 'sent' })
     expect(toasts()).toEqual([expect.objectContaining({ title: 'Claim updated successfully' })])
     expect(await within(section).findByText('Sent', { selector: 'span' })).toBeInTheDocument()
-    // Sent: it can no longer be deleted.
+    // Sent: it can no longer be deleted, nor scrubbed again.
     expect(
       within(section).queryByRole('button', { name: 'Delete the claim to 1003 – Aetna' }),
     ).not.toBeInTheDocument()
+    expect(
+      within(section).queryByRole('button', { name: 'Scrub the claim to 1003 – Aetna again' }),
+    ).not.toBeInTheDocument()
+  }, 20_000)
+
+  it('scrubs a claim not yet sent again — and shows what the scrub found', async () => {
+    await openVisit()
+    const section = await screen.findByRole('region', { name: 'Claims' }, { timeout: 5000 })
+    // The server's own claim number.
+    expect(await within(section).findByText('C1')).toBeInTheDocument()
+    await userEvent.click(
+      await within(section).findByRole('button', { name: 'Scrub the claim to 1003 – Aetna again' }),
+    )
+    await waitFor(() =>
+      expect(toasts()).toEqual([
+        expect.objectContaining({
+          tone: 'warning',
+          title: 'Claim scrubbed',
+          description:
+            'The practice billing address needs a 9-digit ZIP+4 for an electronic claim (2010AA-N403).',
+        }),
+      ]),
+    )
+    expect(scrubClaimMock).toHaveBeenCalledWith(1)
+    expect(await within(section).findByText('Failed scrub')).toBeInTheDocument()
+    // Not sent: it can still be scrubbed again, or deleted.
+    expect(
+      within(section).getByRole('button', { name: 'Delete the claim to 1003 – Aetna' }),
+    ).toBeInTheDocument()
   }, 20_000)
 
   it('deletes a claim not yet sent, after asking — or says why not', async () => {

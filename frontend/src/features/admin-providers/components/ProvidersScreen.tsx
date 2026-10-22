@@ -6,7 +6,7 @@ import { isValidNpi } from '@/lib/validation/npi'
 import { toast } from '@/stores/toast-store'
 import { StatusDot, Tag } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { ConfirmDialog } from '@/components/ui/Dialog'
 import { RowActionButton, actionsColumn, StatusChangeDialog, activeColumn } from '@/components/ui/RowActions'
 import { EmptyState } from '@/components/ui/States'
@@ -44,7 +44,6 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
   /** The row whose Active switch was flipped, waiting for confirmation. */
   const [statusOf, setStatusOf] = useState<Provider | null>(null)
   const [deleting, setDeleting] = useState<Provider | null>(null)
-  const [sort, setSort] = useState<Sort>({ key: 'code', direction: 'asc' })
 
   const filter = practiceFilter === undefined ? null : String(practiceFilter)
   const setFilter = (value: string | null) =>
@@ -54,16 +53,9 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
       replace: true,
     })
 
-  const compare = (a: Provider, b: Provider) => {
-    const text = (left: string, right: string) =>
-      left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true })
-    if (sort.key === 'name') return text(a.lastName, b.lastName) || text(a.firstName, b.firstName)
-    if (sort.key === 'providerType') return text(typeName(a), typeName(b))
-    return text(a.code, b.code)
-  }
-  const rows = (providers.data ?? [])
-    .filter((provider) => practiceFilter === undefined || provider.practiceId === practiceFilter)
-    .sort((a, b) => (sort.direction === 'asc' ? compare(a, b) : -compare(a, b)))
+  const rows = (providers.data ?? []).filter(
+    (provider) => practiceFilter === undefined || provider.practiceId === practiceFilter,
+  )
 
   const typeTag = (provider: Provider) => {
     const meaning = providerTypeMeaning(provider.type)
@@ -79,14 +71,12 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
     {
       key: 'code',
       header: 'Provider ID',
-      sortable: true,
       cell: (provider) => <span className="text-ink font-medium whitespace-nowrap">{provider.code}</span>,
     },
     {
       key: 'name',
       header: 'Provider',
       primary: true,
-      sortable: true,
       cell: (provider) => (
         // From 1280px, room for "Aisha Rahman, PT, DPT" on one line beside the hold and type columns.
         <span className="block break-words xl:min-w-44">
@@ -118,7 +108,7 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
         </span>
       ),
     },
-    { key: 'providerType', header: 'Provider type', sortable: true, cell: typeTag },
+    { key: 'providerType', header: 'Provider type', cell: typeTag },
     activeColumn<Provider>({
       isActive: (provider) => provider.isActive,
       label: (provider) => providerName(provider),
@@ -174,8 +164,6 @@ export function ProvidersScreen({ practiceFilter }: { practiceFilter: number | u
         loading={providers.isPending}
         error={providers.isError}
         onRetry={() => void providers.refetch()}
-        sort={sort}
-        onSortChange={setSort}
         empty={
           filter === null ? (
             <EmptyState

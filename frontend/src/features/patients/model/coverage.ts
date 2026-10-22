@@ -70,9 +70,9 @@ export const SUBSCRIBER_RELATIONSHIPS = ['Self', 'Spouse', 'Child', 'Other'] as 
 export const CLAIM_NUMBER_TYPES = ['AM', 'WC'] as const
 export const WORKERS_COMP = 'WC'
 
-/** A case's insurances, in rank order. */
+/** A case's insurances, in the server's order (each shows its priority). */
 export const coveragesOf = (coverages: readonly Coverage[], caseId: string) =>
-  coverages.filter((coverage) => coverage.caseId === caseId).sort((a, b) => a.rank - b.rank)
+  coverages.filter((coverage) => coverage.caseId === caseId)
 
 /** A case's primary insurance, if it has one. */
 export const primaryOf = (coverages: readonly Coverage[], caseId: string) =>

@@ -142,20 +142,20 @@ describe('Setup → Release buckets', () => {
     ).toHaveAttribute('data-status', 'active')
     await within(await table()).findByText('Manual Release – WC Payers')
     const rows = within(await table()).getAllByRole('row')
-    // Sorted by name.
-    expect(rows[1]).toHaveTextContent('Manual Release – Auto / No-Fault')
-    expect(rows[2]).toHaveTextContent('Manual Release – Northgate')
-    expect(await within(rows[2] as HTMLElement).findAllByText('Northgate Sports & Spine')).not.toHaveLength(0)
-    expect(rows[3]).toHaveTextContent('Manual Release – WC Payers')
-    expect(rows[3]).toHaveTextContent('Workers’ comp payers reviewed before sending.')
+    // In the server's order: nothing is sorted in the browser.
+    expect(rows[1]).toHaveTextContent('Manual Release – WC Payers')
+    expect(rows[1]).toHaveTextContent('Workers’ comp payers reviewed before sending.')
+    expect(rows[2]).toHaveTextContent('Manual Release – Auto / No-Fault')
+    expect(rows[3]).toHaveTextContent('Manual Release – Northgate')
+    expect(await within(rows[3] as HTMLElement).findAllByText('Northgate Sports & Spine')).not.toHaveLength(0)
     // Only what the backend sends: no held-insurance names, no claims waiting.
     expect(
       within(await table())
         .getAllByRole('columnheader')
         .map((header) => header.textContent),
     ).toEqual(['Bucket', 'Practice', 'Insurances', 'Active', 'Actions'])
-    expect(within(rows[3] as HTMLElement).getAllByRole('cell')[2]).toHaveTextContent('3')
-    expect(within(rows[1] as HTMLElement).getByRole('switch', { name: /: active$/ })).not.toBeChecked()
+    expect(within(rows[1] as HTMLElement).getAllByRole('cell')[2]).toHaveTextContent('3')
+    expect(within(rows[2] as HTMLElement).getByRole('switch', { name: /: active$/ })).not.toBeChecked()
     expect(screen.getByText('3 release buckets')).toBeInTheDocument()
   })
 

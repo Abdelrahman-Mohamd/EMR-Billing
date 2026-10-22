@@ -3,8 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { Send } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button, buttonClass } from '@/components/ui/Button'
-import { CellSub, DataTable, type Column, type Sort } from '@/components/ui/DataTable'
-import { SearchInput } from '@/components/ui/Input'
+import { CellSub, DataTable, type Column } from '@/components/ui/DataTable'
 import { Pagination } from '@/components/ui/Pagination'
 import { EmptyState } from '@/components/ui/States'
 import { FilterBar, PageContainer, PageHeader } from '@/components/shared/PageLayout'
@@ -22,41 +21,24 @@ const PAGE_SIZE = 12
  * service of the visit billed, the insurance billed (with its priority), the
  * format, total, status (with what the scrub found) and when it was sent.
  * A row opens its visit, where the claim is edited or deleted. Claims are made
- * from a released visit, so there is no "New claim" here. Search by patient,
- * insurance or clearinghouse reference; the practice filter is in the URL
- * (`?practice=`).
+ * from a released visit, so there is no "New claim" here. The practice filter
+ * is in the URL (`?practice=`). No search and no sorting: the server takes
+ * neither for claims (staging, 2026-10-20), and the list is never searched or
+ * ordered in the browser (user, 2026-10-20).
  */
 export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | undefined }) {
   const navigate = useNavigate()
   const claims = useClaims()
   const refs = useVisitReferences()
-  const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<Sort>({ key: 'date', direction: 'desc' })
   const [page, setPage] = useState(1)
 
   const setPractice = (value: string | null) =>
     void navigate({ to: '/claims', search: value === null ? {} : { practice: Number(value) } })
-  const query = search.trim().toLowerCase()
-  const filtered = query !== '' || practiceFilter !== undefined
+  const filtered = practiceFilter !== undefined
 
-  const rows = (claims.data ?? [])
-    .filter((claim) => practiceFilter === undefined || refs.practiceOf(claim) === practiceFilter)
-    .filter(
-      (claim) =>
-        query === '' ||
-        [
-          refs.patientListName(claim),
-          refs.patientFullName(claim),
-          claim.insuranceName,
-          claim.clearinghouseRef,
-        ].some((text) => text.toLowerCase().includes(query)),
-    )
-    .sort((a, b) => {
-      const key = (claim: Claim) =>
-        sort.key === 'patient' ? refs.patientListName(claim).toLowerCase() : claim.dateOfService
-      const order = key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : b.id - a.id
-      return sort.direction === 'asc' ? order : -order
-    })
+  const rows = (claims.data ?? []).filter(
+    (claim) => practiceFilter === undefined || refs.practiceOf(claim) === practiceFilter,
+  )
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const pageRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
@@ -69,14 +51,12 @@ export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | unde
     {
       key: 'patient',
       header: 'Patient',
-      sortable: true,
       primary: true,
       cell: (claim) => <span className="break-words">{refs.patientListName(claim)}</span>,
     },
     {
       key: 'date',
       header: 'Date of service',
-      sortable: true,
       cell: (claim) => (
         <span className="whitespace-nowrap tabular-nums">
           {claim.dateOfService === '' ? '—' : formatIsoDate(claim.dateOfService)}
@@ -90,6 +70,16 @@ export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | unde
         <span className="block min-w-0">
           <span className="break-words">{claim.insuranceName || '—'}</span>
           {claim.rankLabel !== '' && <CellSub>{claim.rankLabel}</CellSub>}
+        </span>
+      ),
+    },
+    {
+      key: 'number',
+      header: 'Claim #',
+      cell: (claim) => (
+        <span className="block min-w-0">
+          <span className="tabular-nums">{claim.controlNumber || '—'}</span>
+          {claim.payerClaimNumber !== '' && <CellSub>Payer # {claim.payerClaimNumber}</CellSub>}
         </span>
       ),
     },
@@ -137,13 +127,22 @@ export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | unde
             {claim.sentDate === '' ? '—' : formatIsoDate(claim.sentDate)}
           </span>
           {claim.clearinghouseRef !== '' && <CellSub>Ref. {claim.clearinghouseRef}</CellSub>}
+          {(claim.clearinghouseStatus !== '' || claim.clearinghouseBatchId !== '') && (
+            <CellSub>
+              {[
+                claim.clearinghouseStatus,
+                claim.clearinghouseBatchId === '' ? '' : `batch ${claim.clearinghouseBatchId}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </CellSub>
+          )}
         </span>
       ),
     },
   ]
 
   const clearAll = () => {
-    setSearch('')
     setPage(1)
     if (practiceFilter !== undefined) setPractice(null)
   }
@@ -152,21 +151,7 @@ export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | unde
     <PageContainer>
       <PageHeader title="Claims" description="Follow each visit’s claims, from scrubbing to payment." />
 
-      <FilterBar
-        search={
-          <SearchInput
-            aria-label="Search by patient, insurance or clearinghouse reference"
-            placeholder="Search by patient or insurance…"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value)
-              setPage(1)
-            }}
-            autoComplete="off"
-          />
-        }
-        {...(filtered ? { onReset: clearAll } : {})}
-      >
+      <FilterBar {...(filtered ? { onReset: clearAll } : {})}>
         <PracticeSelect
           aria-label="Filter by practice"
           value={practiceFilter === undefined ? null : String(practiceFilter)}
@@ -185,19 +170,16 @@ export function ClaimsScreen({ practiceFilter }: { practiceFilter: number | unde
         loading={claims.isPending || !refs.ready}
         error={claims.isError}
         onRetry={() => void claims.refetch()}
-        sort={sort}
-        onSortChange={(next) => {
-          setSort(next)
-          setPage(1)
-        }}
         rowLink={(claim) => ({ to: '/visits/$visitId', params: { visitId: String(claim.visitId) } })}
+        // A row opens the claim's visit, where its claims are; "View visit" says so, as on Patients.
+        openHint="View visit"
         empty={
           filtered ? (
             <EmptyState
               icon={<Send size={20} />}
               title="No claims match"
-              description="Try a different search, or show every practice."
-              action={<Button onClick={clearAll}>Clear search and filters</Button>}
+              description="Show every practice to see them all."
+              action={<Button onClick={clearAll}>Show every practice</Button>}
             />
           ) : (
             <EmptyState

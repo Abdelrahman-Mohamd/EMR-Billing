@@ -3,10 +3,11 @@ import {
   createPatientCase,
   deletePatientCase,
   listPatientCases,
-  setCaseDiagnoses,
   updatePatientCase,
   updatePatientCaseFields,
 } from '../api/patient-cases-api'
+import { createCaseDiagnosis, deleteCaseDiagnosis, updateCaseDiagnosis } from '../api/case-diagnoses-api'
+import type { CaseDiagnosisPayload, CaseDiagnosisUpdatePayload } from '../schemas/case-diagnosis'
 import type {
   PatientCaseFieldsPayload,
   PatientCasePayload,
@@ -66,11 +67,29 @@ export function useUpdatePatientCaseFields() {
   })
 }
 
-/** Adds, moves or removes a diagnosis: the whole list, in pointer order. */
-export function useSetCaseDiagnoses() {
+// A case lists its diagnoses, so a diagnosis's change refreshes the cases.
+
+export function useAddCaseDiagnosis() {
   const invalidate = useInvalidateCases()
   return useMutation({
-    mutationFn: ({ id, codes }: { id: string; codes: readonly string[] }) => setCaseDiagnoses(id, codes),
+    mutationFn: (payload: CaseDiagnosisPayload) => createCaseDiagnosis(payload),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateCaseDiagnosis() {
+  const invalidate = useInvalidateCases()
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: CaseDiagnosisUpdatePayload }) =>
+      updateCaseDiagnosis(id, payload),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteCaseDiagnosis() {
+  const invalidate = useInvalidateCases()
+  return useMutation({
+    mutationFn: (id: string) => deleteCaseDiagnosis(id),
     onSuccess: invalidate,
   })
 }

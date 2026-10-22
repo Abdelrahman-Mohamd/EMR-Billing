@@ -81,8 +81,8 @@ describe('referring physicians against the backend', () => {
       .mockResolvedValueOnce(json(200, page([wire(16)], 2, 2)))
     const all = await listReferringPhysicians()
     expect(fetchMock.mock.calls.map(([url]) => url as string)).toEqual([
-      `${BASE}/referring-physicians?page=1`,
-      `${BASE}/referring-physicians?page=2`,
+      `${BASE}/referring-physicians?page=1&per_page=100`,
+      `${BASE}/referring-physicians?page=2&per_page=100`,
     ])
     expect(call(0).headers.get('Authorization')).toBe('Bearer test-token-123')
     expect(all.map((physician) => [physician.id, physician.typeLabel])).toEqual([
